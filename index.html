@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voxelforge — Phase 0 (WebGPU)</title>
+  <link data-trunk rel="rust" data-cargo-features="webgpu" data-wasm-opt="z" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: ui-monospace, monospace; }
+    canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+    #hud {
+      position: fixed; top: 8px; left: 10px; z-index: 10;
+      color: #dff; text-shadow: 0 1px 2px #000; font-size: 13px; line-height: 1.5;
+      pointer-events: none;
+    }
+    #gpu { color: #7f7; }
+    b { color: #ffd36b; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div>Voxelforge web · <span id="gpu">checking WebGPU…</span></div>
+    <div>FPS <b id="fps">–</b></div>
+    <div id="status">booting…</div>
+    <div id="bench"></div>
+    <div id="result"></div>
+  </div>
+  <canvas id="bevy"></canvas>
+  <script type="module">
+    const gpu = document.getElementById('gpu');
+    if (!('gpu' in navigator)) {
+      gpu.textContent = 'WebGPU NOT available in this browser';
+      gpu.style.color = '#f77';
+    } else {
+      navigator.gpu.requestAdapter().then(a => {
+        gpu.textContent = a ? 'WebGPU adapter OK' : 'WebGPU present but no adapter';
+        gpu.style.color = a ? '#7f7' : '#f77';
+      });
+    }
+  </script>
+</body>
+</html>

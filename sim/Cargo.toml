@@ -1,0 +1,5 @@
+[package]
+name = "voxelforge-sim"
+version = "0.1.0"
+edition = "2021"
+description = "Shared simulation types — block IDs, chunk data, world-gen. No Bevy, no rendering."

@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────
+# Voxelforge .gitignore
+# Keep: source (Rust crates, scripts, maps, docs), Cargo.lock, the
+# curated golden refs in docs/assets/, and the hero-golden-* targets.
+# Drop:  Rust build output, compiled binaries, and the hundreds of
+#        experimental render/log artifacts the look passes left behind.
+# ─────────────────────────────────────────────────────────────
+
+# ── Rust / build artifacts ───────────────────────────────────
+/target
+**/target/
+/dist
+*.exe
+*.pdb
+# Cargo.lock is intentionally committed (binary crate → reproducible builds).
+
+# ── Editor / OS / GPU cache junk ─────────────────────────────
+*.bak-*
+NVIDIA Corporation/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Build & run logs (experimental cruft) ────────────────────
+*.log
+*.err
+*.out
+*.done
+*.meta
+bench-out.txt
+logs_*.txt
+# stray build-output notes dropped inside the client crate
+client/build_*.txt
+
+# ── Render outputs / experimental beauty-shot iterations ─────
+# The look passes produced ~220 throwaway PNGs at the repo root.
+# Ignore every top-level PNG, then re-include only the golden refs
+# the acceptance workflow compares against. (docs/assets/*.png are
+# in a subdirectory and are never matched by this root-only rule.)
+/*.png
+!/hero-golden-a.png
+!/hero-golden-b.png
+!/hero-golden-c.png

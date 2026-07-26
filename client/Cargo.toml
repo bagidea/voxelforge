@@ -1,0 +1,34 @@
+[package]
+name = "voxelforge"
+version = "0.1.0"
+edition = "2021"
+description = "Voxelforge client — Bevy 0.19, greedy-meshed chunks, full post stack, fly camera."
+
+[[bin]]
+name = "voxelforge"
+path = "src/main.rs"
+
+# Isolated hero-shot renderer (Flamingo) — builds hero.rs without main.rs, so the
+# Golden Beauty-Shot can be re-rendered while main.rs is mid-edit. Temporary.
+[[bin]]
+name = "voxelforge_shot"
+path = "src/shot_main.rs"
+
+[features]
+# PCSS soft shadows (bible pass #4 / gate G4) are behind an experimental Bevy
+# flag; on by default so the hero shot gets penumbras out of the box.
+default = ["experimental_pbr_pcss"]
+experimental_pbr_pcss = ["bevy/experimental_pbr_pcss"]
+# Web build enables the WebGPU backend instead of the default WebGL2.
+webgpu = ["bevy/webgpu"]
+
+[dependencies]
+voxelforge-sim = { path = "../sim" }
+bevy = "0.19"
+# Map files are plain JSON (see maps/FORMAT.md) — both already in the lock via bevy.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "Location"] }
+wasm-bindgen = "0.2"
