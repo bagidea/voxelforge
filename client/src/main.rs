@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::{ChunkData, ChunkPos, CHUNK_SIZE as CHUNK};
-use voxelforge_sim::worldgen::terrain_height;
+use voxelforge_sim::worldgen::{self, terrain_height};
 use voxel::{build_atlas, greedy_mesh_chunk};
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,7 @@ struct Cfg {
     emissive: Option<f32>, // scale on the window pane emissive
     dfog: Option<f32>,     // DistanceFog density
     soft: Option<f32>,     // PCSS soft_shadow_size (sun apparent size; wider = softer)
+    seed: u64,            // world-gen seed (VOXELFORGE_SEED, default 42)
 }
 
 /// Parse "a,b,c" env into a fixed float array (all-or-nothing).
@@ -109,6 +110,10 @@ fn read_cfg() -> Cfg {
         emissive: std::env::var("VOXELFORGE_EMISSIVE").ok().and_then(|v| v.parse().ok()),
         dfog: std::env::var("VOXELFORGE_DFOG").ok().and_then(|v| v.parse().ok()),
         soft: std::env::var("VOXELFORGE_SOFT").ok().and_then(|v| v.parse().ok()),
+        seed: std::env::var("VOXELFORGE_SEED")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(42),
     }
 }
 
@@ -143,6 +148,7 @@ fn read_cfg() -> Cfg {
         emissive: None,
         dfog: None,
         soft: None,
+        seed: 42,
     }
 }
 
@@ -220,17 +226,32 @@ struct WalkDemo {
     done: bool,
 }
 
+/// The player avatar (third-person). Its `Transform.translation` is the *eye*
+/// position (feet + EYE_HEIGHT) — the same convention `move_body` has always used,
+/// so all the walk physics is reused unchanged. The visible body mesh rides along
+/// as a child, and the transform's Y-rotation is the avatar's facing (`face_yaw`).
 #[derive(Component)]
 struct FlyCam {
-    yaw: f32,
-    pitch: f32,
+    /// The direction the avatar is currently turned to face (smoothed toward the
+    /// movement direction each frame). Drives the body mesh's rotation.
+    face_yaw: f32,
     /// Vertical (+residual) velocity used by walk mode's gravity/jump; unused in fly.
     vel: Vec3,
     /// true = grounded walking body (gravity + AABB voxel collision); false =
-    /// free noclip fly camera. Toggled live with F.
+    /// free noclip fly (EDIT mode building). Toggled live with F.
     walking: bool,
     /// Set the frame the body rests on a solid voxel below — gates the jump.
     grounded: bool,
+}
+
+/// The orbit camera — rides a spring-arm/boom behind + above the avatar (Roblox
+/// style). Mouse drives `yaw`/`pitch`; `dist` is the boom length, pulled in by
+/// `camera_boom` when a wall would otherwise clip between camera and avatar.
+#[derive(Component)]
+struct OrbitCam {
+    yaw: f32,
+    pitch: f32,
+    dist: f32,
 }
 
 #[derive(Component)]
@@ -349,6 +370,9 @@ fn setup(
     cfg: Res<Cfg>,
     mut bench: ResMut<Bench>,
 ) {
+    // Seed the terrain generator before any chunk queries happen.
+    worldgen::set_seed(cfg.seed);
+
     let atlas = images.add(build_atlas());
     let material = materials.add(StandardMaterial {
         base_color_texture: Some(atlas),
@@ -418,32 +442,78 @@ fn setup(
         Transform::from_xyz(60.0, 120.0, 40.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    // Camera — a free fly cam by default; the walk-demo instead drops a grounded
-    // player above the grid centre so gravity settles them onto the ground in view
-    // of the screenshot (works for both terrain and a loaded map's floor).
+    // Player avatar + orbit camera (third-person). The walk-demo drops a grounded
+    // body high over the grid centre so gravity settles it onto the ground in the
+    // screenshot; otherwise the avatar starts near the surface as a free-fly body
+    // (EDIT building) you can drop into walk with F. The avatar's Transform is the
+    // *eye* position — the same convention move_body uses — with a visible body mesh
+    // riding along as a child, and a separate camera trailing on the boom.
     let c = side as f32 * CHUNK as f32 * 0.5;
-    let (cam_tf, fly) = if cfg.walk_demo {
-        // On a loaded map the surface is whatever the file put down, so drop from a
-        // fixed safe height instead of the procedural terrain height.
-        let drop_ref = if loaded_map.is_some() { 8 } else { terrain_height(c, c) };
-        let eye = Vec3::new(c, drop_ref as f32 + EYE_HEIGHT + 12.0, c);
-        // Face diagonally into the ground with a slight downward pitch so what the
-        // player lands on fills the first-person frame.
-        let yaw = -std::f32::consts::FRAC_PI_4;
-        let pitch = -0.3;
-        let tf = Transform::from_translation(eye).with_rotation(
-            Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch),
-        );
-        (tf, FlyCam { yaw, pitch, vel: Vec3::ZERO, walking: true, grounded: false })
+    // On a loaded map the surface is whatever the file put down, so use a fixed safe
+    // height instead of the procedural terrain height.
+    let ground = if loaded_map.is_some() { 8 } else { terrain_height(c, c) };
+    let (eye, face_yaw, walking) = if cfg.walk_demo {
+        (
+            Vec3::new(c, ground as f32 + EYE_HEIGHT + 12.0, c),
+            -std::f32::consts::FRAC_PI_4,
+            true,
+        )
     } else {
-        let tf = Transform::from_xyz(-CHUNK as f32 * 0.7, CHUNK as f32 * 1.6, -CHUNK as f32 * 0.7)
-            .looking_at(Vec3::new(c, 8.0, c), Vec3::Y);
-        (tf, FlyCam { yaw: 0.0, pitch: 0.0, vel: Vec3::ZERO, walking: false, grounded: false })
+        (Vec3::new(c, ground as f32 + EYE_HEIGHT + 1.0, c), 0.0, false)
     };
+    let orbit_yaw = face_yaw;
+    let orbit_pitch = -0.25;
+
+    // The visible body: a capsule the size of the collision box, plus a small dark
+    // "face" block on its front (local -Z) so its heading is legible when it turns.
+    let body_mesh = meshes.add(Capsule3d::new(PLAYER_HALF_W, PLAYER_HEIGHT - 2.0 * PLAYER_HALF_W));
+    let body_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.92, 0.38, 0.16),
+        perceptual_roughness: 0.7,
+        ..default()
+    });
+    let face_mesh = meshes.add(Cuboid::new(0.34, 0.18, 0.12));
+    let face_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.10, 0.10, 0.13),
+        perceptual_roughness: 0.6,
+        ..default()
+    });
+    // Capsule centre sits at the body's mid-height: feet + PLAYER_HEIGHT/2, i.e.
+    // EYE_HEIGHT - PLAYER_HEIGHT/2 below the eye (the avatar's own origin).
+    let body_dy = -(EYE_HEIGHT - PLAYER_HEIGHT * 0.5);
+    commands
+        .spawn((
+            Transform::from_translation(eye)
+                .with_rotation(Quat::from_axis_angle(Vec3::Y, face_yaw)),
+            Visibility::default(),
+            FlyCam {
+                face_yaw,
+                vel: Vec3::ZERO,
+                walking,
+                grounded: false,
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Mesh3d(body_mesh),
+                MeshMaterial3d(body_mat),
+                Transform::from_xyz(0.0, body_dy, 0.0),
+            ));
+            parent.spawn((
+                Mesh3d(face_mesh),
+                MeshMaterial3d(face_mat),
+                Transform::from_xyz(0.0, body_dy + 0.55, -0.34),
+            ));
+        });
+
     commands.spawn((
         Camera3d::default(),
-        cam_tf,
-        fly,
+        Transform::from_translation(eye + Vec3::new(0.0, PIVOT_UP, BOOM_DIST)),
+        OrbitCam {
+            yaw: orbit_yaw,
+            pitch: orbit_pitch,
+            dist: BOOM_DIST,
+        },
         AmbientLight {
             brightness: 380.0,
             ..default()
@@ -724,16 +794,37 @@ fn highest_solid(world: &World, wx: i32, wz: i32) -> Option<i32> {
     (0..CHUNK).rev().find(|&y| solid_at(world, wx, y, wz))
 }
 
+/// Rotate an angle toward a target by at most `max_step` radians, taking the
+/// short way round the circle (used to swing the avatar's facing to its heading).
+fn turn_toward(cur: f32, target: f32, max_step: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let mut d = (target - cur).rem_euclid(TAU);
+    if d > PI {
+        d -= TAU;
+    }
+    cur + d.clamp(-max_step, max_step)
+}
+
+/// Third-person controller (Roblox style): the mouse orbits the camera on a boom
+/// behind + above the avatar; WASD moves the avatar relative to where the camera
+/// looks; the avatar turns to face its heading. Grounded walk reuses `move_body`
+/// (gravity + AABB voxel collision + step-up) exactly; EDIT mode is a free noclip
+/// fly. The camera follows every frame, pulling in against walls via `camera_boom`.
 fn fly_camera(
     time: Res<Time>,
+    cfg: Res<Cfg>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse_btn: Res<ButtonInput<MouseButton>>,
     mut motion: MessageReader<MouseMotion>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
-    mut cam: Query<(&mut Transform, &mut FlyCam)>,
+    mut player_q: Query<(&mut Transform, &mut FlyCam), Without<OrbitCam>>,
+    mut cam_q: Query<(&mut Transform, &mut OrbitCam)>,
     world: Option<Res<World>>,
 ) {
-    let Ok((mut tf, mut fly)) = cam.single_mut() else {
+    let Ok((mut ptf, mut fly)) = player_q.single_mut() else {
+        return;
+    };
+    let Ok((mut ctf, mut orbit)) = cam_q.single_mut() else {
         return;
     };
     let Ok(mut cursor) = cursors.single_mut() else {
@@ -748,100 +839,107 @@ fn fly_camera(
         cursor.grab_mode = CursorGrabMode::None;
         cursor.visible = true;
     }
-    // F switches between grounded walk (gravity + collision) and free fly.
+    // F switches between grounded walk (gravity + collision) and free noclip fly.
     if keys.just_pressed(KeyCode::KeyF) {
         fly.walking = !fly.walking;
         fly.vel = Vec3::ZERO;
     }
 
-    // Mouse look — shared by both modes.
+    // Mouse orbits the camera (yaw around, pitch clamped so it never rolls over).
     if cursor.grab_mode == CursorGrabMode::Locked {
         let mut delta = Vec2::ZERO;
         for ev in motion.read() {
             delta += ev.delta;
         }
-        fly.yaw -= delta.x * 0.0025;
-        fly.pitch = (fly.pitch - delta.y * 0.0025).clamp(-1.54, 1.54);
-        tf.rotation = Quat::from_axis_angle(Vec3::Y, fly.yaw)
-            * Quat::from_axis_angle(Vec3::X, fly.pitch);
+        orbit.yaw -= delta.x * 0.0025;
+        orbit.pitch = (orbit.pitch - delta.y * 0.0025).clamp(PITCH_MIN, PITCH_MAX);
     } else {
         motion.clear();
     }
 
     let dt = time.delta_secs();
 
-    // ---- WALK: grounded body, horizontal from yaw only, gravity does the rest.
-    if fly.walking {
-        let Some(world) = world.as_deref() else {
-            return;
-        };
-        let fwd = tf.forward();
-        let flat_fwd = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero();
-        let rt = tf.right();
-        let flat_right = Vec3::new(rt.x, 0.0, rt.z).normalize_or_zero();
-        let mut wish = Vec3::ZERO;
-        if keys.pressed(KeyCode::KeyW) {
-            wish += flat_fwd;
-        }
-        if keys.pressed(KeyCode::KeyS) {
-            wish -= flat_fwd;
-        }
-        if keys.pressed(KeyCode::KeyD) {
-            wish += flat_right;
-        }
-        if keys.pressed(KeyCode::KeyA) {
-            wish -= flat_right;
-        }
-        let speed = if keys.pressed(KeyCode::ControlLeft) { 10.0 } else { 6.0 };
-        let horiz = wish.normalize_or_zero() * speed * dt;
+    // Camera orientation → the horizontal basis WASD moves along (camera-relative).
+    let cam_rot =
+        Quat::from_axis_angle(Vec3::Y, orbit.yaw) * Quat::from_axis_angle(Vec3::X, orbit.pitch);
+    let fwd = cam_rot * Vec3::NEG_Z;
+    let flat_fwd = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero();
+    let flat_right = Vec3::new(-flat_fwd.z, 0.0, flat_fwd.x);
 
-        fly.vel.y = (fly.vel.y - GRAVITY * dt).max(-TERMINAL);
-        if fly.grounded && keys.just_pressed(KeyCode::Space) {
-            fly.vel.y = JUMP_SPEED;
-        }
-        let delta = Vec3::new(horiz.x, fly.vel.y * dt, horiz.z);
-        // Auto-step only when on the ground and not shooting upward (mid-jump you
-        // clear ledges by arcing over them, not by teleporting up their face).
-        let can_step = fly.grounded && fly.vel.y <= 0.0;
-        let (np, grounded) = move_body(world, tf.translation, delta, can_step);
-        tf.translation = np;
-        fly.grounded = grounded;
-        if grounded && fly.vel.y < 0.0 {
-            fly.vel.y = 0.0;
-        }
-        return;
-    }
-
-    // ---- FLY: free noclip camera (WASD + vertical, sprint on Ctrl).
-    let mut dir = Vec3::ZERO;
-    let f = tf.forward();
-    let r = tf.right();
+    let mut wish = Vec3::ZERO;
     if keys.pressed(KeyCode::KeyW) {
-        dir += *f;
+        wish += flat_fwd;
     }
     if keys.pressed(KeyCode::KeyS) {
-        dir -= *f;
+        wish -= flat_fwd;
     }
     if keys.pressed(KeyCode::KeyD) {
-        dir += *r;
+        wish += flat_right;
     }
     if keys.pressed(KeyCode::KeyA) {
-        dir -= *r;
+        wish -= flat_right;
     }
-    if keys.pressed(KeyCode::Space) {
-        dir += Vec3::Y;
+    // Headless proof: once grounded, auto-walk forward for a beat so the screenshot
+    // catches the avatar mid-stride with the camera trailing behind it.
+    if cfg.walk_demo && fly.walking && fly.grounded {
+        let t = time.elapsed_secs();
+        if (2.0..3.1).contains(&t) {
+            wish += flat_fwd;
+        }
     }
-    if keys.pressed(KeyCode::ShiftLeft) {
-        dir -= Vec3::Y;
-    }
-    let speed = if keys.pressed(KeyCode::ControlLeft) {
-        90.0
+    let wish = wish.normalize_or_zero();
+
+    if fly.walking {
+        // ---- WALK: grounded body — reuse move_body's gravity/collision/step-up.
+        if let Some(world) = world.as_deref() {
+            let speed = if keys.pressed(KeyCode::ControlLeft) { 10.0 } else { 6.0 };
+            let horiz = wish * speed * dt;
+            fly.vel.y = (fly.vel.y - GRAVITY * dt).max(-TERMINAL);
+            if fly.grounded && keys.just_pressed(KeyCode::Space) {
+                fly.vel.y = JUMP_SPEED;
+            }
+            let delta = Vec3::new(horiz.x, fly.vel.y * dt, horiz.z);
+            let can_step = fly.grounded && fly.vel.y <= 0.0;
+            let (np, grounded) = move_body(world, ptf.translation, delta, can_step);
+            ptf.translation = np;
+            fly.grounded = grounded;
+            if grounded && fly.vel.y < 0.0 {
+                fly.vel.y = 0.0;
+            }
+        }
     } else {
-        28.0
-    };
-    if dir != Vec3::ZERO {
-        tf.translation += dir.normalize() * speed * dt;
+        // ---- FLY: free noclip (EDIT building) — full 3D move, sprint on Ctrl.
+        let mut dir = wish;
+        if keys.pressed(KeyCode::Space) {
+            dir += Vec3::Y;
+        }
+        if keys.pressed(KeyCode::ShiftLeft) {
+            dir -= Vec3::Y;
+        }
+        let speed = if keys.pressed(KeyCode::ControlLeft) { 90.0 } else { 28.0 };
+        if dir != Vec3::ZERO {
+            ptf.translation += dir.normalize() * speed * dt;
+        }
     }
+
+    // Turn the avatar to face its heading (its body mesh's forward is local -Z).
+    if wish != Vec3::ZERO {
+        let target = (-wish.x).atan2(-wish.z);
+        fly.face_yaw = turn_toward(fly.face_yaw, target, TURN_RATE * dt);
+    }
+    ptf.rotation = Quat::from_axis_angle(Vec3::Y, fly.face_yaw);
+
+    // ---- Camera follow: ride the boom behind + above the avatar, pulled in when
+    // a wall would come between the camera and the avatar (so it never clips).
+    let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
+    let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
+    let dist = match world.as_deref() {
+        Some(world) => camera_boom(world, pivot, back, BOOM_DIST),
+        None => BOOM_DIST,
+    };
+    orbit.dist = dist;
+    ctf.translation = pivot + back * dist;
+    ctf.rotation = cam_rot;
 }
 
 // ---------------------------------------------------------------------------
@@ -887,6 +985,14 @@ const JUMP_SPEED: f32 = 9.0; // ~1.4-block hop
 const TERMINAL: f32 = 55.0; // fall-speed clamp
 const STEP_HEIGHT: f32 = 1.0; // auto-climb a single-block ledge while walking
 const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before stepping
+
+// ---- Third-person orbit camera (spring-arm / boom) ------------------------
+const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
+const BOOM_MARGIN: f32 = 0.35; // keep the camera this far off a wall it pulls up to
+const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
+const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
+const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
+const TURN_RATE: f32 = 12.0; // how fast the avatar turns to face its movement (rad/s)
 
 /// Does the player body — camera (eye) at `eye` — overlap any solid voxel? A tiny
 /// epsilon inset stops a body that merely *touches* a block face from sticking.
@@ -984,6 +1090,24 @@ fn move_body(world: &World, eye: Vec3, delta: Vec3, can_step: bool) -> (Vec3, bo
         grounded = true;
     }
     (p, grounded)
+}
+
+/// How far back along `dir` (a unit boom vector pointing from the pivot toward the
+/// camera) the camera can sit before a solid voxel would come between it and the
+/// avatar. Marches out from the pivot with the same `solid_at` grid test the edit
+/// raycast uses, stopping `BOOM_MARGIN` short of the first block it meets — so the
+/// camera slides in against walls instead of clipping through them.
+fn camera_boom(world: &World, pivot: Vec3, dir: Vec3, want: f32) -> f32 {
+    const STEP: f32 = 0.1;
+    let mut d = 0.0;
+    while d < want {
+        let p = pivot + dir * (d + BOOM_MARGIN);
+        if solid_at(world, p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32) {
+            return d;
+        }
+        d += STEP;
+    }
+    want
 }
 
 /// One raycast hit: the solid voxel struck and the empty cell just before it
@@ -1106,7 +1230,7 @@ fn set_world_voxel(
 /// placing have a clear target (the same raycast the edits fire from). Drawn every
 /// frame with gizmos — no entity churn — and only when the ray actually hits.
 fn highlight_target(
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
     world: Res<World>,
     editor: Res<Editor>,
     mut gizmos: Gizmos,
@@ -1132,7 +1256,7 @@ fn edit_voxels(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     cursors: Query<&CursorOptions, With<PrimaryWindow>>,
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<World>,
@@ -1187,7 +1311,7 @@ fn edit_voxels(
 fn editor_controls(
     keys: Res<ButtonInput<KeyCode>>,
     cursors: Query<&CursorOptions, With<PrimaryWindow>>,
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<World>,
@@ -1341,7 +1465,7 @@ fn edit_demo(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<World>,
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
 ) {
     if !cfg.edit_demo || demo.done || time.elapsed_secs() < 1.2 {
         return;
@@ -1459,6 +1583,16 @@ fn walk_demo(
         if land_ok { "PASS" } else { "FAIL" },
         !sky,
         if land_ok && buried && !sky { "PASS" } else { "FAIL" }
+    );
+
+    // Camera-boom collision: the spring-arm must pull in toward a wall (solid ground
+    // below) yet extend fully into open air (empty sky above) — the same solid_at
+    // grid test the aim raycast uses, so a wall can never come between cam & avatar.
+    let boom_down = camera_boom(world, eye, Vec3::NEG_Y, BOOM_DIST);
+    let boom_up = camera_boom(world, eye, Vec3::Y, BOOM_DIST);
+    println!(
+        "CAM_BOOM into_ground={boom_down:.2} into_sky={boom_up:.2} => {}",
+        if boom_down < BOOM_DIST - 0.5 && boom_up >= BOOM_DIST { "PASS" } else { "FAIL" }
     );
 
     // The step-up proof below scans procedural terrain for a 1-block ledge; on a
