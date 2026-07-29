@@ -24,7 +24,9 @@ echo "binary: $BIN"
 
 # Build with a separate target dir so we never fight Poppy's lock.
 echo "=== build ==="
-cargo build --bin voxelforge --target-dir target-combat 2>&1
+# Go through build_safe.sh; a plain `cargo build` here dies mid-spawn with
+# 0xc0000142 STATUS_DLL_INIT_FAILED at a random crate (see docs/LANES.md).
+bash "$(dirname "$0")/build_safe.sh" build --bin voxelforge --target-dir target-combat 2>&1
 rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "BUILD FAILED exit=$rc"
