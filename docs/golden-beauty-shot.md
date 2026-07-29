@@ -82,6 +82,16 @@ now on the **CEO-approved TILT-DOWN camera** — is **locked with its geometry +
 `docs/assets/wide-hero-final.png` · driver `scripts/render_wide_hero.sh` · binary `voxelforge_shot`
 (env `VOXELFORGE_WIDE=1`, so the locked narrow hero stays byte-identical).
 
+> **This frame is also the PARITY BASELINE (2026-07-29).** Every new frame — native
+> re-render, web/wasm capture, regression check — is graded as a **delta against this
+> file**, not against the 1:1 tight reference at the top of this document: the P0 axes
+> are measured on a fixed resample with fixed fg/bg boxes, so a different camera moves
+> every number (that is why this frame reads DOF 0.17 against a target of 3.0 and is
+> still correct). `scripts/grade_web_parity.py` enforces it as gate **W0-D**, and
+> `scripts/hero_recipe.py` re-reads `render_wide_hero.sh` so the web build's query
+> string and the native control can never drift onto different recipes.
+> Rules + logs: [`web-parity-checklist.md`](web-parity-checklist.md).
+
 ### Reproduce it exactly (camera / lighting / framing recipe)
 
 Build once, then run the driver — every value below is baked into `scripts/render_wide_hero.sh`:

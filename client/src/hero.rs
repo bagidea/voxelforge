@@ -188,7 +188,11 @@ pub fn setup_hero(
             &table_d
         }
     };
-    let wide = std::env::var("VOXELFORGE_WIDE").is_ok();
+    // Every look knob below comes from `Cfg` — never `std::env::var` directly.
+    // env::var returns Err on wasm32, so a direct read silently rendered the web
+    // build with all-defaults while native honoured the recipe. Cfg is filled
+    // from env on native and from the query string on web (see main.rs).
+    let wide = cfg.wide;
     // Wall pair selector: the WIDE establishing frame gets the de-checkered honey
     // plaster (smooth at distance); the locked narrow hero keeps the shipped pair
     // exactly, so its signed frame stays byte-identical.
@@ -363,7 +367,7 @@ pub fn setup_hero(
     // can't clear the axis. This extends the lit planked tabletop FORWARD (z -1..2) so
     // the bright counter/counter_dk checker (22-pt albedo gap) fills the fg zone
     // instead of the dark floor. VOXELFORGE_FGAPRON=1 to enable; bake only on sign-off.
-    if std::env::var("VOXELFORGE_FGAPRON").is_ok() {
+    if cfg.fg_apron {
         fill(&mut commands, &cabinet, 4, 11, 0, 2, -1, 2); // support under the apron
         for x in 4..11 {
             for z in -1..2 {
@@ -415,7 +419,7 @@ pub fn setup_hero(
     //   • The checker floor + the planked island top RUN FORWARD to z=-14/-10
     //     so the near foreground is one continuous warm tabletop/floor.
     // Bake as the default framing ONLY on Flamingo + CEO sign-off.
-    if std::env::var("VOXELFORGE_WIDE").is_ok() {
+    if wide {
         // 1) DE-CHECKERED parquet floor across the FULL deepened footprint
         //    (z -14..16 — the base checker floor is skipped when wide). Boards
         //    run in Z (recede toward the window like the ref); tone varies per
@@ -531,10 +535,7 @@ pub fn setup_hero(
         //    frame, so TAA doesn't smear them). env VOXELFORGE_DUST scales density
         //    (0 = off). Specks are sub-pixel-small so they can't move p95, but the
         //    hi-pass grain they add nudges micro-contrast up.
-        let dust: f32 = std::env::var("VOXELFORGE_DUST")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0);
+        let dust: f32 = cfg.dust.unwrap_or(1.0);
         if dust > 0.0 {
             // hash(i, salt) -> [0,1): a cheap integer mix so motes scatter in 3D
             // instead of falling on a lattice (three different salts per mote).
@@ -575,10 +576,7 @@ pub fn setup_hero(
     // (env `VOXELFORGE_BLUESCALE`, default 1.0 = prior look). Lowering blue (not
     // adding red) raises R-B and saturation at the same time — the brief's
     // "ลดฟ้า ไม่ใช่ดันแดงกลบ". Baked to 0.55 once the sweep landed.
-    let bscale: f32 = std::env::var("VOXELFORGE_BLUESCALE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.50);
+    let bscale: f32 = cfg.bluescale.unwrap_or(0.50);
     let (elev, azim, illum) = cfg.sun.unwrap_or([20.0, 195.0, 12000.0]).into_tuple3();
     let dir = sun_dir(elev, azim);
     // Position the light off the room and aim it in; direction is what matters.
@@ -630,14 +628,8 @@ pub fn setup_hero(
         // Two bounce cards, independently scaled so the tuning can push the
         // dark-lifter (card 2) hard for G3's p05 WITHOUT the broad floor bounce
         // (card 1) inflating the p95 highlight band — they pull opposite axes.
-        let b1: f32 = std::env::var("VOXELFORGE_BOUNCE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0);
-        let b2: f32 = std::env::var("VOXELFORGE_BOUNCE2")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1.0);
+        let b1: f32 = cfg.bounce.unwrap_or(1.0);
+        let b2: f32 = cfg.bounce2.unwrap_or(1.0);
         // 1) FLOOR BOUNCE — the sunlit honey parquet throws warm light UP and
         //    across toward the shaded -X wall. Lights undersides (counter lip,
         //    bowl foot, table edge) + the far shade wall with indirect amber that
@@ -745,10 +737,7 @@ pub fn setup_hero(
     // bounce-lit shade + midtones untouched — the range compression a flat AcesFitted
     // curve can't do. WIDE-only so the narrow hero's grade is byte-identical.
     // env VOXELFORGE_SHOULDER (1.0 = no shoulder).
-    let shoulder: f32 = std::env::var("VOXELFORGE_SHOULDER")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.86);
+    let shoulder: f32 = cfg.shoulder.unwrap_or(0.86);
     let (hi_contrast, hi_gain) = if wide { (1.0, shoulder) } else { (g_contrast, 1.0) };
 
     // Warm-bounce fill COLOUR. Default is the shipped honey tint (byte-identical
@@ -757,12 +746,8 @@ pub fn setup_hero(
     // FIRE-RED (the ref is AMBER: its G leg is higher). `VOXELFORGE_AMBCOLOR=r,g,b`
     // lets the wide render lift the G leg toward amber without touching the locked
     // shipped default. B is bscale-scaled only in the default path.
-    let amb_col = std::env::var("VOXELFORGE_AMBCOLOR")
-        .ok()
-        .and_then(|s| {
-            let v: Vec<f32> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-            if v.len() == 3 { Some([v[0], v[1], v[2]]) } else { None }
-        })
+    let amb_col = cfg
+        .ambcolor
         .unwrap_or([0.784, 0.541, 0.180 * bscale]);
 
     commands.spawn((

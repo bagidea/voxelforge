@@ -56,3 +56,15 @@ godot/.godot/
 
 # ── Editor runtime config (generated on first run, see editor_config.rs) ─
 /editor_config.json
+
+# ── Side-lane build dirs & throwaway probes ──────────────────
+# `target-combat/` is a 3.2 GB CARGO_TARGET_DIR used by the combat lane so
+# it never fights the main build's lock; `**/target/` above misses the name.
+/target-combat/
+**/__pycache__/
+# One-off rustc/cl.exe toolchain probes from the Windows link-error hunt.
+/_check_rustc_cl.ps1
+/_parse_cl.ps1
+# editor_config.json is generated on first run — the root rule missed the
+# copy the client writes next to its own crate.
+client/editor_config.json

@@ -1,0 +1,78 @@
+{
+  "web": "docs/assets/wasm-hero-v3.png",
+  "native": "docs/assets/native-control-v3.png",
+  "admissibility": {
+    "web": {
+      "size": [
+        1280,
+        720
+      ],
+      "aspect": 1.7777777777777777,
+      "black_frac": 0.0,
+      "colors": 16963
+    },
+    "native": {
+      "size": [
+        1280,
+        720
+      ],
+      "aspect": 1.7777777777777777,
+      "black_frac": 0.0,
+      "colors": 16706
+    }
+  },
+  "backend": "BrowserWebGpu",
+  "capture_url": "http://127.0.0.1:57259/?hero&wide&cam=7.6,6.4,-6.0,7.6,2.7,8.0,60&sun=19,196,26000&dof=8,10&exposure=9.0&grade=0.02,1.00,1.30&ambient=2800&ambcolor=0.70,0.60,0.44&bluescale=0.85&bounce=1.0&bounce2=1.7&shoulder=0.64&dust=3.0",
+  "baseline": {
+    "file": "E:\\Projects\\bagidea-ai-agents-office\\workspace\\projects\\Voxelforge\\docs\\assets\\wide-hero-final.png",
+    "same_file": false,
+    "drift": {
+      "warmth": 0.1918487548828125,
+      "blue": -0.013723373413085938,
+      "sat": 0.019287109375,
+      "p95": 0.0,
+      "micro": -0.011493206024169922
+    },
+    "off": []
+  },
+  "gates_web": {
+    "G3": "PASS",
+    "G5": "PASS",
+    "G6": "PASS"
+  },
+  "axes": {
+    "web": {
+      "warmth": 128.95843505859375,
+      "blue": 5.197673320770264,
+      "sat": 94.47257995605469,
+      "dof": 0.17410384723656736,
+      "micro": 5.929379463195801,
+      "p95": 177.36460876464844,
+      "_warmth_global": 108.63016510009766,
+      "_sat_global": 86.27263641357422,
+      "_dof_fg": 1.0121287107467651,
+      "_dof_bg": 5.813362121582031
+    },
+    "native": {
+      "warmth": 129.06732177734375,
+      "blue": 5.180613994598389,
+      "sat": 94.50226593017578,
+      "dof": 0.17665224493180628,
+      "micro": 5.90765905380249,
+      "p95": 177.36460876464844,
+      "_warmth_global": 110.00950622558594,
+      "_sat_global": 86.63162231445312,
+      "_dof_fg": 1.017816424369812,
+      "_dof_bg": 5.761695384979248
+    }
+  },
+  "dof_rel": 0.9855739297498161,
+  "penumbra": {
+    "web": 4.83,
+    "native": 4.92
+  },
+  "verdict": "PASS",
+  "fails": [],
+  "waived": [],
+  "notes": []
+}

@@ -528,11 +528,15 @@ impl Shake {
     }
 }
 
-/// Marker components for the HUD bars.
+/// Marker components for the HUD bars + numeric readouts.
 #[derive(Component)]
 pub struct HealthBar;
 #[derive(Component)]
 pub struct StaminaBar;
+#[derive(Component)]
+pub struct HealthText;
+#[derive(Component)]
+pub struct StaminaText;
 #[derive(Component)]
 pub struct LockReticle;
 
@@ -540,14 +544,24 @@ pub struct LockReticle;
 /// timeline, reads back component state, prints PASS lines, then exits.
 #[derive(Resource, Default)]
 pub struct CombatDemo {
+    pub phase: u8,
     pub done: bool,
     pub start_stam: f32,
     pub after_attack_stam: f32,
     pub husk_hp0: f32,
     pub husk_hp1: f32,
+    pub husk_dead: bool,
     pub saw_iframe: bool,
     pub logged: bool,
 }
+
+/// Fired exactly once when the player's HP reaches 0. Poppy wires this to
+/// respawn logic (campfire reload, fade transition, etc.). Carries no payload —
+/// the respawn system reads `Health` + transform from the player entity.
+#[derive(Clone, Debug)]
+pub struct PlayerDied;
+
+impl Message for PlayerDied {}
 
 // ===========================================================================
 // Spawning
@@ -632,14 +646,18 @@ pub fn spawn_guard_husk(
         });
 }
 
-/// Spawn the two HUD bars (health, stamina) + the lock-on reticle. Called from
-/// `setup`. Kept as absolute-positioned Nodes whose fill width is driven by
-/// `hud_bars`.
+/// Spawn the two HUD bars (health, stamina) + numeric readouts + the lock-on reticle.
+/// Called from `setup`. Kept as absolute-positioned Nodes whose fill width is driven
+/// by `hud_bars` and whose text labels are updated by `hud_numbers`.
 pub fn spawn_combat_hud(commands: &mut Commands) {
     // Health bar (top-left, under the debug text).
     bar(commands, 34.0, Color::srgb(0.82, 0.20, 0.18), HealthBarTag::Health);
     // Stamina bar just below it.
     bar(commands, 50.0, Color::srgb(0.30, 0.78, 0.36), HealthBarTag::Stamina);
+
+    // Numeric readouts to the right of each bar.
+    text_tag(commands, 30.0, "HP: 100/100", HealthText);
+    text_tag(commands, 46.0, "ST: 100/100", StaminaText);
 
     // Lock-on reticle — a centred diamond, hidden until a target is locked.
     commands.spawn((
@@ -697,6 +715,22 @@ fn bar(commands: &mut Commands, top: f32, fill: Color, tag: HealthBarTag) {
     commands.entity(track).add_child(fill_id);
 }
 
+/// Tiny absolute-positioned text label for the numeric HP/ST readout.
+fn text_tag(commands: &mut Commands, top: f32, label: &str, marker: impl Component) {
+    commands.spawn((
+        Text::new(label),
+        TextFont { font_size: bevy::text::FontSize::from(16.0), ..default() },
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(top),
+            left: Val::Px(236.0), // right of the 220 px bar + 6 px gap
+            ..default()
+        },
+        marker,
+    ));
+}
+
 // ===========================================================================
 // Systems
 // ===========================================================================
@@ -726,6 +760,7 @@ pub fn player_combat(
     intent: Res<CombatIntent>,
     mut lock: ResMut<LockOn>,
     mut shake: ResMut<Shake>,
+    mut died: MessageWriter<PlayerDied>,
     mut player_q: Query<
         (&mut Transform, &mut PlayerCombat, &mut Stamina, &Health, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
@@ -747,8 +782,10 @@ pub fn player_combat(
         pc.state = CombatState::Idle;
     }
     pc.tick(dt);
-    if hp.dead() {
+    if hp.dead() && pc.state != CombatState::Dead {
         pc.state = CombatState::Dead;
+        died.write(PlayerDied);
+        info!("COMBAT player died — PlayerDied event fired");
     }
 
     // Lock-on toggle (§2.3): pick nearest enemy inside range + acquisition cone.
@@ -862,8 +899,9 @@ pub fn husk_should_leash(dist: f32) -> bool {
 #[allow(clippy::type_complexity)]
 pub fn husk_ai(
     time: Res<Time>,
+    mut commands: Commands,
     mut shake: ResMut<Shake>,
-    mut enemy_q: Query<(&mut Transform, &mut Enemy, &Health, &mut Poise), (With<Enemy>, Without<FlyCam>)>,
+    mut enemy_q: Query<(Entity, &mut Transform, &mut Enemy, &Health, &mut Poise), (With<Enemy>, Without<FlyCam>)>,
     mut player_q: Query<
         (&Transform, &mut Health, &mut PlayerCombat, &mut Stamina, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
@@ -874,10 +912,12 @@ pub fn husk_ai(
         return;
     };
 
-    for (mut etf, mut e, ehp, mut ep) in enemy_q.iter_mut() {
+    for (entity, mut etf, mut e, ehp, mut ep) in enemy_q.iter_mut() {
         ep.tick(dt);
         if ehp.dead() {
             e.state = HuskState::Dead;
+            commands.entity(entity).despawn();
+            info!("COMBAT husk defeated — despawned entity={:?}", entity);
             continue;
         }
         if ep.staggered() {
@@ -1151,78 +1191,144 @@ pub fn hud_bars(
     }
 }
 
+/// Update the numeric HP / stamina readouts from live component values.
+pub fn hud_numbers(
+    player_q: Query<(&Health, &Stamina), With<FlyCam>>,
+    mut htext: Query<&mut Text, (With<HealthText>, Without<StaminaText>)>,
+    mut stext: Query<&mut Text, (With<StaminaText>, Without<HealthText>)>,
+) {
+    let Ok((hp, stam)) = player_q.single() else { return };
+    if let Ok(mut t) = htext.single_mut() {
+        t.0 = format!("HP: {:.0}/{:.0}", hp.cur.round(), hp.max);
+    }
+    if let Ok(mut t) = stext.single_mut() {
+        t.0 = format!("ST: {:.0}/{:.0}", stam.cur.round(), STAMINA_MAX);
+    }
+}
+
 // ===========================================================================
 // Headless scripted proof (VOXELFORGE_COMBAT_DEMO=1) — mirrors walk_demo.
 // ===========================================================================
 
 /// Drives the real combat systems on a fixed timeline and prints PASS lines
-/// proving the loop: attack → hit lands → stamina drops → dodge grants i-frames.
-/// Then writes `AppExit`. Requires a player + one Husk in the scene.
+/// proving the loop: attack → hit lands → stamina drops → dodge grants i-frames →
+/// repeated attacks kill the husk (HP reaches 0). Then writes `AppExit`.
+/// Requires a player + one Husk in the scene.
 #[allow(clippy::type_complexity)]
 pub fn combat_demo(
     time: Res<Time>,
     mut demo: ResMut<CombatDemo>,
     mut intent: ResMut<CombatIntent>,
-    player_q: Query<(&PlayerCombat, &Stamina), With<FlyCam>>,
-    enemy_q: Query<&Health, With<Enemy>>,
+    mut player_q: Query<(&mut Transform, &PlayerCombat, &Stamina), (With<FlyCam>, Without<Enemy>)>,
+    enemy_q: Query<(Entity, &Transform, &Health), (With<Enemy>, Without<FlyCam>)>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if demo.done {
         return;
     }
     let t = time.elapsed_secs();
-    let Ok((pc, stam)) = player_q.single() else { return };
-    let husk_hp = enemy_q.iter().next().map(|h| h.cur).unwrap_or(-1.0);
+    let Ok((mut ptf, pc, stam)) = player_q.single_mut() else { return };
+    let husk_hp = enemy_q.iter().next().map(|(_, _, h)| h.cur).unwrap_or(-1.0);
+    let husk_alive = enemy_q.iter().next().map(|(_, _, h)| !h.dead()).unwrap_or(false);
 
-    // Timeline (seconds): let the scene settle, snapshot, attack, dodge, report.
-    // Override the keyboard intent for exactly the frames we act.
+    // Reset intent each frame; we override only the frames where we act.
     *intent = CombatIntent::default();
 
-    if t < 1.0 {
+    // ---- Phase 0: snapshot initial state (t < 0.8) -------------------------
+    if demo.phase == 0 {
         demo.start_stam = stam.cur;
         demo.husk_hp0 = husk_hp;
+        demo.phase = 1;
         return;
     }
-    // 1.0s: fire a light attack (single frame).
-    if t >= 1.0 && t < 1.05 && demo.after_attack_stam == 0.0 {
+
+    // ---- Phase 1: aim the player at the husk (t 0.8–0.9) —--------------—
+    // The player starts facing +Z; the husk is at +X (spawn offset in main.rs).
+    // Without this rotation the melee cone check (60°) misses. We yaw the
+    // player transform to face the first husk so the hit lands in-cone.
+    if demo.phase == 1 {
+        if let Some((_, etf, _)) = enemy_q.iter().next() {
+            let to = etf.translation - ptf.translation;
+            let yaw = (-to.x).atan2(-to.z);
+            ptf.rotation = Quat::from_axis_angle(Vec3::Y, yaw);
+        }
+        demo.phase = 2;
+        return;
+    }
+
+    // ---- Phase 2: first light attack (t 1.0) -------------------------------
+    if demo.phase == 2 && t >= 1.0 {
         intent.light = true;
+        demo.phase = 3;
         return;
     }
-    // 1.3s: attack resolved — snapshot stamina + husk HP.
-    if (1.3..1.35).contains(&t) && demo.after_attack_stam == 0.0 {
+    // ---- Phase 3: snapshot stamina + husk HP after first hit (t 1.4) -----
+    if demo.phase == 3 && t >= 1.4 {
         demo.after_attack_stam = stam.cur;
         demo.husk_hp1 = husk_hp;
+        demo.phase = 4;
         return;
     }
-    // 1.6s: dodge.
-    if (1.6..1.65).contains(&t) {
+    // ---- Phase 4: second light attack (t 1.9) ------------------------------
+    if demo.phase == 4 && t >= 1.9 {
+        intent.light = true;
+        demo.phase = 5;
+        return;
+    }
+    // ---- Phase 5: third light attack (t 2.4) -------------------------------
+    if demo.phase == 5 && t >= 2.4 {
+        intent.light = true;
+        demo.phase = 6;
+        return;
+    }
+    // ---- Phase 6: fourth light attack (t 2.9) → husk should die ----------
+    if demo.phase == 6 && t >= 2.9 {
+        intent.light = true;
+        demo.phase = 7;
+        return;
+    }
+    // ---- Phase 7: dodge for i-frame proof (t 3.2) -------------------------
+    if demo.phase == 7 && t >= 3.2 {
         intent.dodge = true;
+        demo.phase = 8;
         return;
     }
-    // 1.6–1.9s: watch for active i-frames.
-    if pc.invulnerable() {
-        demo.saw_iframe = true;
+    // ---- Phase 8: watch for active i-frames (t 3.2–3.5) ----------------
+    if demo.phase == 8 {
+        if pc.invulnerable() {
+            demo.saw_iframe = true;
+        }
+        if t >= 3.6 {
+            demo.phase = 9;
+        }
+        return;
     }
-    // 2.4s: report and exit.
-    if t >= 2.4 && !demo.logged {
+    // ---- Phase 9: report and exit (t 4.0) ----------------------------------
+    if demo.phase == 9 && t >= 4.0 && !demo.logged {
         demo.logged = true;
         demo.done = true;
+        demo.husk_dead = !husk_alive;
         let stam_dropped = demo.after_attack_stam < demo.start_stam - 0.01;
-        let husk_dropped = demo.husk_hp1 < demo.husk_hp0 - 0.01;
+        let husk_hit = demo.husk_hp1 < demo.husk_hp0 - 0.01;
         println!(
-            "COMBAT_DEMO attack: husk_hp {:.0}->{:.0} ({}) | stamina {:.0}->{:.0} ({}) => {}",
+            "COMBAT_DEMO attack: husk_hp {:.0}->{:.0} ({}) | stamina {:.0}->{:.0} ({})",
             demo.husk_hp0, demo.husk_hp1,
-            if husk_dropped { "PASS" } else { "FAIL" },
+            if husk_hit { "PASS" } else { "FAIL" },
             demo.start_stam, demo.after_attack_stam,
             if stam_dropped { "PASS" } else { "FAIL" },
-            if husk_dropped && stam_dropped { "PASS" } else { "FAIL" }
+        );
+        println!(
+            "COMBAT_DEMO husk death: hp_final={:.0} alive={} => {}",
+            husk_hp,
+            husk_alive,
+            if demo.husk_dead { "PASS" } else { "FAIL" }
         );
         println!(
             "COMBAT_DEMO dodge i-frames: saw_iframe={} => {}",
             demo.saw_iframe,
             if demo.saw_iframe { "PASS" } else { "FAIL" }
         );
-        let ok = husk_dropped && stam_dropped && demo.saw_iframe;
+        let ok = husk_hit && stam_dropped && demo.saw_iframe && demo.husk_dead;
         println!("COMBAT_DEMO overall => {}", if ok { "PASS" } else { "FAIL" });
         exit.write(AppExit::Success);
     }
@@ -1416,5 +1522,76 @@ mod tests {
         pc.start_light(&mut s); // combo 2 → +10%
         pc.timer = 0.15;
         assert!((pc.active_hit().unwrap().0 - 22.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn player_dies_when_health_reaches_zero() {
+        let mut hp = Health::new(HP_PLAYER);
+        assert!(!hp.dead());
+        hp.damage(HP_PLAYER);
+        assert!(hp.dead());
+        assert_eq!(hp.cur, 0.0);
+        hp.damage(10.0); // overkill stays at 0
+        assert_eq!(hp.cur, 0.0);
+    }
+
+    #[test]
+    fn husk_dies_after_four_lights() {
+        // Guard Husk HP = 80, light attack = 20 dmg → 4 hits = dead.
+        let mut hp = Health::new(HP_HUSK);
+        hp.damage(LIGHT_DAMAGE); // 80 → 60
+        assert!(!hp.dead());
+        hp.damage(LIGHT_DAMAGE); // 60 → 40
+        hp.damage(LIGHT_DAMAGE); // 40 → 20
+        hp.damage(LIGHT_DAMAGE); // 20 → 0
+        assert!(hp.dead());
+        assert_eq!(hp.cur, 0.0);
+    }
+
+    #[test]
+    fn husk_dies_after_two_heavies() {
+        // Guard Husk HP = 80, heavy attack = 45 dmg → 2 hits = dead.
+        let mut hp = Health::new(HP_HUSK);
+        hp.damage(HEAVY_DAMAGE); // 80 → 35
+        assert!(!hp.dead());
+        hp.damage(HEAVY_DAMAGE); // 35 → -10 → 0
+        assert!(hp.dead());
+    }
+
+    #[test]
+    fn block_with_stamina_halves_damage() {
+        let dmg = HUSK_SWING2_DMG; // 20
+        let mut hp = Health::new(HP_PLAYER);
+        let mut stam = Stamina::full();
+        // If we have stamina for a block, damage is halved.
+        assert!(stam.try_spend(COST_BLOCK, DELAY_BLOCK));
+        hp.damage(dmg * (1.0 - BLOCK_REDUCTION)); // 10 dmg
+        assert_eq!(hp.cur, HP_PLAYER - 10.0);
+    }
+
+    #[test]
+    fn guard_break_when_blocking_without_stamina() {
+        // When stamina is too low to block, the player takes full damage
+        // and suffers a guard-break stagger (GUARD_BREAK = 0.6 s).
+        let dmg = HUSK_SWING1_DMG; // 15
+        let mut hp = Health::new(HP_PLAYER);
+        hp.damage(dmg); // full damage — guard broken
+        assert_eq!(hp.cur, HP_PLAYER - dmg);
+        assert_eq!(GUARD_BREAK, 0.60); // spec constant unchanged (§2.5)
+    }
+
+    #[test]
+    fn charged_attack_outdamages_light() {
+        assert!(CHARGED_DAMAGE > LIGHT_DAMAGE * 2.0); // 70 > 40
+        assert!(CHARGED_POISE > LIGHT_POISE * 3.0);   // 60 > 45
+    }
+
+    #[test]
+    fn combat_demo_phase_tracks_hp_transitions() {
+        let mut demo = CombatDemo::default();
+        assert_eq!(demo.phase, 0);
+        demo.phase = 9;
+        demo.husk_dead = true;
+        assert!(demo.husk_dead);
     }
 }

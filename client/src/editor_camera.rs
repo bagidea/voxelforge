@@ -62,17 +62,29 @@ impl Default for EditorCamera {
     }
 }
 
+/// Spawned-flag for the optional gizmo-demo cube. See [`spawn_gizmo_demo`].
+#[derive(Resource, Debug, Default)]
+struct GizmoDemoSpawned(bool);
+
 pub struct EditorCameraPlugin;
 
 impl Plugin for EditorCameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorCamera>()
+            .init_resource::<GizmoDemoSpawned>()
             // Seed the camera from wherever the view currently is, and free the
             // cursor — but only for interactive boots (OnEnter also fires for the
             // default Editor state on a scripted launch).
             .add_systems(
                 OnEnter(AppState::Editor),
-                enter_editor_camera.run_if(not_scripted),
+                (
+                    enter_editor_camera,
+                    // Optional visual-verification helper: drops a Selectable cube
+                    // at the origin and selects it so the gizmo renders. Disabled
+                    // unless VOXELFORGE_GIZMO_DEMO is set.
+                    spawn_gizmo_demo,
+                )
+                    .run_if(not_scripted),
             )
             .add_systems(
                 Update,
@@ -210,6 +222,46 @@ fn editor_camera_control(
         tf.translation = ec.focus - fwd * ec.distance;
         tf.rotation = rot;
     }
+}
+
+/// Optional verification helper: when `VOXELFORGE_GIZMO_DEMO` is set, spawn a
+/// single selectable cube at the origin and select it so a screenshot run can
+/// show the transform gizmo. This is gated by an env var so normal editor boots
+/// are unaffected.
+fn spawn_gizmo_demo(
+    mut commands: Commands,
+    mut spawned: ResMut<GizmoDemoSpawned>,
+    mut selection: ResMut<Selection>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if spawned.0 {
+        return;
+    }
+    spawned.0 = true;
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var("VOXELFORGE_GIZMO_DEMO").is_err() {
+        return;
+    }
+    #[cfg(target_arch = "wasm32")]
+    return;
+
+    let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
+    let mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.9, 0.7, 0.2),
+        perceptual_roughness: 0.8,
+        ..default()
+    });
+    let entity = commands
+        .spawn((
+            Mesh3d(cube),
+            MeshMaterial3d(mat),
+            Transform::from_xyz(0.0, 2.0, 0.0),
+            Selectable,
+            Name::new("gizmo_demo_cube"),
+        ))
+        .id();
+    selection.set(entity);
 }
 
 /// Left-click raycast: pick the nearest [`Selectable`] under the cursor and write

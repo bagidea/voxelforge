@@ -17,6 +17,7 @@ mod gizmo;
 mod hero;
 mod import;
 mod mapfile;
+mod scene;
 mod voxel;
 // NOTE: no top-level `mod input_map;` — input_map.rs is already pulled in as a
 // submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
@@ -43,10 +44,16 @@ use editor::AppState;
 // ---------------------------------------------------------------------------
 
 #[derive(Resource, Clone)]
-struct Cfg {
+pub(crate) struct Cfg {
     bench: bool,
     grid: usize,
-    shot: Option<String>,
+    pub(crate) shot: Option<String>,
+    /// `--play`: skip the editor entirely and boot straight into the playable scene
+    /// (`scene::ScenePlugin` — map/campfire/spawn) in [`AppState::Play`].
+    pub(crate) play: bool,
+    /// `--play-demo`: the scripted headless proof of that scene (walk + respawn).
+    /// Implies `--play`.
+    pub(crate) play_demo: bool,
     /// Phase 1 hero look-shot scene instead of terrain.
     hero: bool,
     /// Force a present mode (root-causing the FPS cliff): one of
@@ -64,7 +71,7 @@ struct Cfg {
     /// through the same `paint_at_cursor` path the interactive editor uses).
     editor_demo: bool,
     /// Load a saved map file at startup (world = file contents, no procedural terrain).
-    map_load: Option<String>,
+    pub(crate) map_load: Option<String>,
     /// Author-a-tiny-map demo: start blank, build a scene, save it here, then shoot.
     map_save: Option<String>,
     // Hero-shot tunables (env-driven so the shot re-frames without a recompile).
@@ -81,6 +88,20 @@ struct Cfg {
     dfog: Option<f32>,     // DistanceFog density
     soft: Option<f32>,     // PCSS soft_shadow_size (sun apparent size; wider = softer)
     seed: u64,            // world-gen seed (VOXELFORGE_SEED, default 42)
+    // ── Hero LOOK knobs ──────────────────────────────────────────────────────
+    // These used to be read with `std::env::var` directly inside hero.rs, which
+    // silently disabled the ENTIRE locked recipe on wasm (env::var is always Err
+    // there): the web build rendered "hero, narrow, every default" no matter what
+    // the URL said. They travel through Cfg now like every other knob — env on
+    // native, query string on web — so one recipe drives both.
+    wide: bool,            // WIDE establishing framing (VOXELFORGE_WIDE / ?wide)
+    fg_apron: bool,        // foreground counter apron (VOXELFORGE_FGAPRON / ?fgapron)
+    dust: Option<f32>,     // dust-mote density scale (0 = off)
+    bluescale: Option<f32>, // sun/ambient blue-leg scale
+    bounce: Option<f32>,   // GI card 1 (floor bounce) intensity scale
+    bounce2: Option<f32>,  // GI card 2 (dark lifter) intensity scale
+    shoulder: Option<f32>, // WIDE highlight roll-off gain (1.0 = no shoulder)
+    ambcolor: Option<[f32; 3]>, // warm-bounce fill colour r,g,b
 }
 
 /// Parse "a,b,c" env into a fixed float array (all-or-nothing).
@@ -97,8 +118,22 @@ fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
     }
 }
 
+/// True when the binary was launched with `flag` on the command line. The play
+/// switches are real CLI flags (`cargo run --bin voxelforge -- --play`) rather than
+/// env vars, because "start the game" is something a person types, not a recipe a
+/// script exports — the `VOXELFORGE_*` twins below keep the scripted lanes working.
+#[cfg(not(target_arch = "wasm32"))]
+fn has_arg(flag: &str) -> bool {
+    std::env::args().skip(1).any(|a| a == flag)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn read_cfg() -> Cfg {
+    // --play-demo is the scripted proof *of* --play, so it turns --play on too.
+    let play_demo = has_arg("--play-demo") || std::env::var("VOXELFORGE_PLAY_DEMO").is_ok();
+    // --combat-demo is the combat-loop proof (hit→kill→die→respawn). It also
+    // turns --play on — needs the full scene (campsite, player, husk encounter).
+    let combat_demo = has_arg("--combat-demo") || std::env::var("VOXELFORGE_COMBAT_DEMO").is_ok();
     Cfg {
         bench: std::env::var("VOXELFORGE_BENCH").is_ok(),
         grid: std::env::var("VOXELFORGE_GRID")
@@ -106,6 +141,8 @@ fn read_cfg() -> Cfg {
             .and_then(|v| v.parse().ok())
             .unwrap_or(6),
         shot: std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty()),
+        play: play_demo || combat_demo || has_arg("--play") || std::env::var("VOXELFORGE_PLAY").is_ok(),
+        play_demo,
         hero: std::env::var("VOXELFORGE_HERO").is_ok(),
         present: std::env::var("VOXELFORGE_PRESENT").ok().filter(|s| !s.is_empty()),
         start_side: std::env::var("VOXELFORGE_START_SIDE")
@@ -115,7 +152,7 @@ fn read_cfg() -> Cfg {
             .max(1),
         edit_demo: std::env::var("VOXELFORGE_EDIT_DEMO").is_ok(),
         walk_demo: std::env::var("VOXELFORGE_WALK_DEMO").is_ok(),
-        combat_demo: std::env::var("VOXELFORGE_COMBAT_DEMO").is_ok(),
+        combat_demo,
         editor_demo: std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok(),
         map_load: std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty()),
         map_save: std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty()),
@@ -133,6 +170,90 @@ fn read_cfg() -> Cfg {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(42),
+        wide: std::env::var("VOXELFORGE_WIDE").is_ok(),
+        fg_apron: std::env::var("VOXELFORGE_FGAPRON").is_ok(),
+        dust: std::env::var("VOXELFORGE_DUST").ok().and_then(|v| v.parse().ok()),
+        bluescale: std::env::var("VOXELFORGE_BLUESCALE").ok().and_then(|v| v.parse().ok()),
+        bounce: std::env::var("VOXELFORGE_BOUNCE").ok().and_then(|v| v.parse().ok()),
+        bounce2: std::env::var("VOXELFORGE_BOUNCE2").ok().and_then(|v| v.parse().ok()),
+        shoulder: std::env::var("VOXELFORGE_SHOULDER").ok().and_then(|v| v.parse().ok()),
+        ambcolor: env_floats("VOXELFORGE_AMBCOLOR"),
+    }
+}
+
+// ── Query-string parsing (web) ───────────────────────────────────────────────
+// The web build's ONLY way to pass a recipe in — it is the exact counterpart of
+// the env vars above, so `?hero&wide&sun=20,195,12000` on web == the same
+// VOXELFORGE_* set on native. Matching is per-key (not `search.contains(..)`,
+// which fired on any substring — `?nowide` used to switch WIDE *on*).
+
+/// `%2C` → `,` and `+` → space. Only ASCII escapes appear in these knobs (numbers
+/// and commas), so a byte-wise decode is enough — no UTF-8 continuation handling.
+#[cfg(target_arch = "wasm32")]
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 3 <= b.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                Ok(c) => {
+                    out.push(c as char);
+                    i += 3;
+                }
+                Err(_) => {
+                    out.push('%');
+                    i += 1;
+                }
+            },
+            b'+' => {
+                out.push(' ');
+                i += 1;
+            }
+            c => {
+                out.push(c as char);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// `?a=1&b=2` → the decoded value of `key`, or None when absent/valueless.
+#[cfg(target_arch = "wasm32")]
+fn qs_raw(search: &str, key: &str) -> Option<String> {
+    search.trim_start_matches('?').split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        (k == key).then(|| pct_decode(v))
+    })
+}
+
+/// Bare presence flag: `?hero` and `?hero=1` both count, `?nothero` does not.
+#[cfg(target_arch = "wasm32")]
+fn qs_flag(search: &str, key: &str) -> bool {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .any(|kv| kv.split('=').next() == Some(key))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn qs_num<T: std::str::FromStr>(search: &str, key: &str) -> Option<T> {
+    qs_raw(search, key)?.trim().parse().ok()
+}
+
+/// Same all-or-nothing contract as `env_floats`: `?cam=a,b,c` with the wrong
+/// arity is ignored rather than half-applied.
+#[cfg(target_arch = "wasm32")]
+fn qs_floats<const N: usize>(search: &str, key: &str) -> Option<[f32; N]> {
+    let raw = qs_raw(search, key)?;
+    let parts: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    if parts.len() == N {
+        let mut out = [0.0; N];
+        out.copy_from_slice(&parts);
+        Some(out)
+    } else {
+        None
     }
 }
 
@@ -141,35 +262,45 @@ fn read_cfg() -> Cfg {
     let search = web_sys::window()
         .and_then(|w| w.location().search().ok())
         .unwrap_or_default();
-    let bench = search.contains("bench");
-    let grid = search
-        .split(['?', '&'])
-        .find_map(|kv| kv.strip_prefix("grid=").and_then(|v| v.parse().ok()))
-        .unwrap_or(6);
     Cfg {
-        bench,
-        grid,
+        bench: qs_flag(&search, "bench"),
+        grid: qs_num(&search, "grid").unwrap_or(6),
+        // No filesystem in the browser: screenshots/map IO stay native-only.
         shot: None,
-        hero: search.contains("hero"),
+        // `?play` is the web twin of `--play` (the scene falls back to procedural
+        // terrain there — `scene::play_map` can't stat a file in a browser).
+        play: qs_flag(&search, "play") || qs_flag(&search, "playdemo"),
+        play_demo: qs_flag(&search, "playdemo"),
+        hero: qs_flag(&search, "hero"),
         present: None,
-        start_side: 1,
-        edit_demo: search.contains("editdemo"),
-        walk_demo: search.contains("walkdemo"),
-        combat_demo: search.contains("combatdemo"),
-        editor_demo: search.contains("paintdemo"),
+        start_side: qs_num(&search, "startside").unwrap_or(1).max(1),
+        edit_demo: qs_flag(&search, "editdemo"),
+        walk_demo: qs_flag(&search, "walkdemo"),
+        combat_demo: qs_flag(&search, "combatdemo"),
+        editor_demo: qs_flag(&search, "paintdemo"),
         map_load: None,
         map_save: None,
-        cam: None,
-        sun: None,
-        dof: None,
-        fog: None,
-        exposure: None,
-        grade: None,
-        ambient: None,
-        emissive: None,
-        dfog: None,
-        soft: None,
-        seed: 42,
+        cam: qs_floats(&search, "cam"),
+        sun: qs_floats(&search, "sun"),
+        dof: qs_floats(&search, "dof"),
+        fog: qs_num(&search, "fog"),
+        exposure: qs_num(&search, "exposure"),
+        grade: qs_floats(&search, "grade"),
+        ambient: qs_num(&search, "ambient"),
+        emissive: qs_num(&search, "emissive"),
+        dfog: qs_num(&search, "dfog"),
+        // Read for parity even though the web build drops PCSS (see hero.rs) —
+        // the field is cfg'd out at the use site, not here.
+        soft: qs_num(&search, "soft"),
+        seed: qs_num(&search, "seed").unwrap_or(42),
+        wide: qs_flag(&search, "wide"),
+        fg_apron: qs_flag(&search, "fgapron"),
+        dust: qs_num(&search, "dust"),
+        bluescale: qs_num(&search, "bluescale"),
+        bounce: qs_num(&search, "bounce"),
+        bounce2: qs_num(&search, "bounce2"),
+        shoulder: qs_num(&search, "shoulder"),
+        ambcolor: qs_floats(&search, "ambcolor"),
     }
 }
 
@@ -201,7 +332,7 @@ struct ChunkSlot {
 pub(crate) struct World {
     material: Handle<StandardMaterial>,
     /// Keyed by (chunk_x, chunk_z) — only the y=0 layer is spawned in Phase 0.
-    chunks: HashMap<(i32, i32), ChunkSlot>,
+    pub(crate) chunks: HashMap<(i32, i32), ChunkSlot>,
     total_quads: usize,
 }
 
@@ -271,12 +402,12 @@ pub(crate) struct FlyCam {
     /// movement direction each frame). Drives the body mesh's rotation.
     pub(crate) face_yaw: f32,
     /// Vertical (+residual) velocity used by walk mode's gravity/jump; unused in fly.
-    vel: Vec3,
+    pub(crate) vel: Vec3,
     /// true = grounded walking body (gravity + AABB voxel collision); false =
     /// free noclip fly (EDIT mode building). Toggled live with F.
-    walking: bool,
+    pub(crate) walking: bool,
     /// Set the frame the body rests on a solid voxel below — gates the jump.
-    grounded: bool,
+    pub(crate) grounded: bool,
 }
 
 /// The orbit camera — rides a spring-arm/boom behind + above the avatar (Roblox
@@ -285,8 +416,8 @@ pub(crate) struct FlyCam {
 #[derive(Component)]
 pub(crate) struct OrbitCam {
     pub(crate) yaw: f32,
-    pitch: f32,
-    dist: f32,
+    pub(crate) pitch: f32,
+    pub(crate) dist: f32,
 }
 
 #[derive(Component)]
@@ -312,7 +443,15 @@ const PHASE: f32 = 2.0;
 const MAX_SIDE: i32 = 32; // up to 1024 chunks (ramp stops early once FPS dips <55)
 
 fn main() {
-    let cfg = read_cfg();
+    let mut cfg = read_cfg();
+
+    // `--play` boots the game, so the scene — not the caller — decides which world
+    // that is: Shiba's hand-built village once `maps/edhari.json` lands, procedural
+    // terrain until then. An explicit VOXELFORGE_MAP_LOAD still wins.
+    if cfg.play && cfg.map_load.is_none() {
+        cfg.map_load = scene::play_map();
+    }
+    let cfg = cfg;
 
     let present_mode = match cfg.present.as_deref() {
         Some("vsync") => PresentMode::AutoVsync,
@@ -361,15 +500,17 @@ fn main() {
         app.insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 })
             .insert_resource(cfg)
             .add_systems(Startup, hero::setup_hero)
-            .add_systems(Update, (fly_camera, screenshot_once));
+            .add_systems(Update, (fly_camera, screenshot_once, hero_hud));
     } else {
         // ---- Editor shell ---------------------------------------------------
         // EditorPlugin owns AppState{Editor, Play} + the SelectedBlock resource +
         // the interactive build loop (raycast break/place in Editor). Round-2
         // assembly plugs the team's editor crates that have LANDED ON DISK in
         // beside it. Wired now (files present): editor_ui (Yamamoto), import
-        // (Kevin), editor_config/InputConfigPlugin (Sun). Still-pending seams:
-        //   .add_plugins(scene::ScenePlugin)          // Rose  — world/scene + hero spawn (scene.rs NOT yet delivered — leave off)
+        // (Kevin), editor_config/InputConfigPlugin (Sun), and `scene` — the
+        // playable world `--play` boots into (map load → spawn + campfire →
+        // death/respawn loop). ScenePlugin is added unconditionally; every system
+        // in it gates on `cfg.play`, so the editor/bench/shot lanes are untouched.
         // Interactive editor camera + transform gizmo are OUT of scope this round
         // (Director handed them to another owner) — no camera sub-plugin is wired
         // yet. In an interactive Editor session `fly_camera` is still gated off (see
@@ -382,12 +523,17 @@ fn main() {
             || cfg.combat_demo
             || cfg.editor_demo
             || cfg.map_save.is_some()
-            || cfg.map_load.is_some();
+            || cfg.play_demo
+            // A --play session is a human at the controls, so it is NOT scripted —
+            // but it never sits in AppState::Editor either, so the editor camera
+            // still keeps its hands off (see `in_interactive_editor`).
+            || (cfg.map_load.is_some() && !cfg.play);
         app.add_plugins((
             editor::EditorPlugin,
             editor_ui::EditorUiPlugin,
             import::ImportPlugin,
             editor_config::InputConfigPlugin,
+            scene::ScenePlugin,
             // Editor camera (orbit/pan/zoom on the middle button) + transform
             // gizmo. Both gate on `in_interactive_editor` so scripted/headless
             // runs keep using the play-mode `fly_camera` for their screenshots.
@@ -414,6 +560,11 @@ fn main() {
             .insert_resource(combat::LockOn::default())
             .insert_resource(combat::Shake::default())
             .insert_resource(combat::CombatDemo::default())
+            // `player_combat` takes a `MessageWriter<PlayerDied>`, so the message
+            // type MUST be registered or the very first Play frame panics on the
+            // missing `Messages<PlayerDied>` resource. `scene::on_player_death` is
+            // the reader — the death→campfire seam Kevin left for this side.
+            .add_message::<combat::PlayerDied>()
             .add_systems(Startup, (setup, boot_state))
             // Sandbox↔Play encounter lifecycle: the default Editor state spawns no
             // husk; the Guard Husk + HUD come in on entering Play (once) and are
@@ -459,7 +610,7 @@ fn main() {
                 (
                     (
                         combat::gather_input,
-                        combat::combat_demo,
+                        combat::combat_demo.run_if(combat_demo_env_only),
                         combat::player_combat,
                         combat::husk_ai,
                         combat::husk_telegraph,
@@ -481,12 +632,25 @@ fn main() {
     app.run();
 }
 
+/// The env-var combat demo (`VOXELFORGE_COMBAT_DEMO=1`) drives `CombatIntent`
+/// directly inside `combat::combat_demo` — no scene, no campsite, no respawn loop.
+/// When `--combat-demo` (the CLI flag) is used instead, `cfg.play` is also true, the
+/// full scene boots, and `scene::combat_proof` handles the proof. This condition keeps
+/// the two proof systems from overwriting each other.
+fn combat_demo_env_only(cfg: Res<Cfg>) -> bool {
+    cfg.combat_demo && !cfg.play
+}
+
 /// The combat systems are gated to `AppState::Play`, so the scripted headless combat
 /// proof (`VOXELFORGE_COMBAT_DEMO`) must run *in Play*. Flip straight to Play at boot
 /// when that demo is on; the edit / walk / map-save demos stay in the default Editor
 /// state where the build loop and ungated physics carry them.
+///
+/// `--play` takes the same door for the same reason, but as a product decision rather
+/// than a test one: "No menu. No loading screen text. Player wakes up directly in the
+/// world" (`docs/first-playable-loop.md`, Act 0) — no Enter press through the editor.
 fn boot_state(cfg: Res<Cfg>, mut next: ResMut<NextState<AppState>>) {
-    if cfg.combat_demo {
+    if cfg.combat_demo || cfg.play {
         next.set(AppState::Play);
     }
 }
@@ -988,7 +1152,7 @@ fn reload_world(
 /// Fill an inclusive box of voxels with one block, re-meshing each touched chunk
 /// once. The brush/fill tool and the scripted map-author demo both build through it.
 /// Returns the number of voxels actually written.
-fn box_fill(
+pub(crate) fn box_fill(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     world: &mut World,
@@ -1023,7 +1187,7 @@ fn box_fill(
 
 /// Height of the topmost solid voxel in the column at world (wx, wz), or None if the
 /// column is all air. Used to verify a loaded map is walkable at its own surface.
-fn highest_solid(world: &World, wx: i32, wz: i32) -> Option<i32> {
+pub(crate) fn highest_solid(world: &World, wx: i32, wz: i32) -> Option<i32> {
     (0..CHUNK).rev().find(|&y| solid_at(world, wx, y, wz))
 }
 
@@ -1033,7 +1197,7 @@ fn highest_solid(world: &World, wx: i32, wz: i32) -> Option<i32> {
 /// surface_height); falls back to the centre column if nothing clear is found nearby.
 /// Queries the shared worldgen directly (deterministic once the seed is set), so it
 /// needs no `World` — the same height/feature source the chunks were meshed from.
-fn find_spawn(cx: i32, cz: i32) -> (i32, i32, i32) {
+pub(crate) fn find_spawn(cx: i32, cz: i32) -> (i32, i32, i32) {
     for r in 0i32..24 {
         for dz in -r..=r {
             for dx in -r..=r {
@@ -1242,7 +1406,7 @@ fn solid_at(world: &World, wx: i32, wy: i32, wz: i32) -> bool {
 /// The player capsule approximated as an axis-aligned box, in voxel units.
 pub(crate) const PLAYER_HALF_W: f32 = 0.3; // half of the 0.6-wide footprint
 const PLAYER_HEIGHT: f32 = 1.8; // feet → crown
-const EYE_HEIGHT: f32 = 1.62; // feet → camera (0.18 head clearance)
+pub(crate) const EYE_HEIGHT: f32 = 1.62; // feet → camera (0.18 head clearance)
 const GRAVITY: f32 = 28.0; // voxel/s²
 const JUMP_SPEED: f32 = 9.0; // ~1.4-block hop
 const TERMINAL: f32 = 55.0; // fall-speed clamp
@@ -1250,9 +1414,9 @@ const STEP_HEIGHT: f32 = 1.0; // auto-climb a single-block ledge while walking
 const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before stepping
 
 // ---- Third-person orbit camera (spring-arm / boom) ------------------------
-const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
+pub(crate) const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
 const BOOM_MARGIN: f32 = 0.35; // keep the camera this far off a wall it pulls up to
-const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
+pub(crate) const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
 const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
 const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
 const TURN_RATE: f32 = 12.0; // how fast the avatar turns to face its movement (rad/s)
@@ -2116,6 +2280,30 @@ fn walk_demo(
     } else {
         println!("STEP_DEMO ledge NONE-FOUND => SKIP");
     }
+}
+
+/// HUD for the `?hero` / VOXELFORGE_HERO branch — FPS + status only.
+///
+/// `hud` below cannot run here: it takes `Res<Editor>` and `Res<SelectedBlock>`,
+/// which only the editor branch inserts, so scheduling it on the hero app would
+/// panic on the first frame. Without SOMETHING writing `#fps` the web hero page
+/// left the HUD on "booting…" forever, and `scripts/web-verify.mjs` — which
+/// proves the wasm booted by waiting for a real FPS number — reported
+/// `rendered: false` on a page that was in fact rendering the scene fine
+/// (`frameDrawn: true`, 100% non-black). It also left the parity checklist's
+/// §4.4 open: "วัด FPS บนเฟรมนั้น — FPS จากฉาก editor ใช้เทียบ Lite target ไม่ได้
+/// (คนละ workload)". This closes both: the number now comes from the graded frame.
+fn hero_hud(
+    diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
+    world: Option<Res<World>>,
+) {
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(0.0);
+    let quads = world.as_ref().map(|w| w.total_quads).unwrap_or(0);
+    set_dom("fps", &format!("{fps:.0}"));
+    set_dom("status", &format!("FPS {fps:.0}  |  hero scene  |  quads {quads}"));
 }
 
 fn hud(

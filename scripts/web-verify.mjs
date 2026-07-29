@@ -118,7 +118,13 @@ const browser = await chromium.launch({
 });
 
 const consoleErrors = [];
-const consoleLines = [];
+// Seeded, not empty: `${SHOT}.console.txt` is the evidence file the look-parity
+// grader reads, and W0-C ("did the locked recipe actually reach the renderer?")
+// can only be proven from the URL the page was opened with — the wasm build takes
+// its whole recipe from the query string (client/src/main.rs, wasm read_cfg).
+// Without this line the dump proves the backend but not the recipe, and
+// scripts/grade_web_parity.py stops at NOT GRADEABLE.
+const consoleLines = [`[harness] VOXELFORGE_URL ${url}`];
 const httpErrors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -176,8 +182,32 @@ try {
 
   // The first frame with a nonzero FPS is not necessarily a frame with terrain
   // in it — chunks still mesh and upload for a while after. Let it settle so the
-  // screenshot shows the world rather than an empty clear colour.
-  await page.waitForTimeout(SETTLE_MS);
+  // screenshot shows the world rather than an empty clear colour. (Also the TAA
+  // settle: the native hero shot waits 3.2s before grabbing, so anything shorter
+  // here measures "TAA still converging" and blames the web for it.)
+  // Sample the HUD while it settles: one instantaneous FPS read is noise, and the
+  // number has to come from the frame we actually grade — an editor-sandbox FPS
+  // is a different workload and cannot be compared against the Lite target.
+  const fpsSamples = [];
+  const sampleEvery = 500;
+  for (let waited = 0; waited < SETTLE_MS; waited += sampleEvery) {
+    await page.waitForTimeout(Math.min(sampleEvery, SETTLE_MS - waited));
+    const f = Number.parseFloat(await page.evaluate(
+      () => document.getElementById('fps')?.textContent ?? '',
+    ));
+    if (Number.isFinite(f) && f > 0) fpsSamples.push(f);
+  }
+  // Ignore the first second of samples — chunk upload/pipeline compile drags the
+  // early frames down and that is boot cost, not steady-state render cost.
+  const steady = fpsSamples.slice(Math.min(2, fpsSamples.length - 1));
+  const fpsStats = steady.length
+    ? {
+        samples: steady.length,
+        min: Math.min(...steady),
+        max: Math.max(...steady),
+        mean: +(steady.reduce((a, b) => a + b, 0) / steady.length).toFixed(1),
+      }
+    : null;
 
   const hud = await page.evaluate(() => ({
     gpu: document.getElementById('gpu')?.textContent ?? '',
@@ -253,7 +283,31 @@ try {
   // The authoritative "is the frame black?" read: measure the bytes that were
   // actually captured. Decoding happens back inside the page (no image decoder
   // in node here) — it is the same PNG that lands on disk as evidence.
-  const shotBuffer = await page.screenshot({ path: SHOT });
+  // Grab the CANVAS ELEMENT, not the page. The HUD in index.html is a separate
+  // <div> layered over the canvas, and its crisp white text lands right in the
+  // graded zones: it drags p95, micro-contrast and warmth off the real render
+  // (that is what made frame v1 ungradeable). Fall back to the full page only if
+  // the canvas is missing, and say so in the output so nobody grades it blind.
+  //
+  // Clipping to the element is NOT enough on its own: playwright's element
+  // screenshot is a PAGE capture cropped to the element's box, so anything
+  // painted ON TOP still shows up — and #hud is `position: fixed` inside the
+  // canvas's own box, so it would land in the crop anyway. Hide it for the grab.
+  // Everything the HUD is read for (fps samples, status, adapter line) has
+  // already been collected above, so this only affects the pixels we grade.
+  const hudHidden = await page.evaluate(() => {
+    const h = document.getElementById('hud');
+    if (!h) return false;
+    h.style.display = 'none';
+    return true;
+  });
+  // Give the compositor a couple of frames to actually drop the HUD layer.
+  await page.waitForTimeout(200);
+  const bevyCanvas = page.locator('canvas#bevy');
+  const shotIsCanvasOnly = (await bevyCanvas.count()) > 0;
+  const shotBuffer = shotIsCanvasOnly
+    ? await bevyCanvas.screenshot({ path: SHOT })
+    : await page.screenshot({ path: SHOT });
   const framePixels = await page.evaluate(async ([b64, measureSrc]) => {
     const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
     const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
@@ -289,7 +343,8 @@ try {
     {
       url, rendered,
       bevyBackend, onWebGpu, bevyAdapterName, bevyDriverInfo,
-      adapter, hud, frameDrawn, nonBlackMin: NON_BLACK_MIN,
+      adapter, hud, fpsStats, settleMs: SETTLE_MS, shotIsCanvasOnly, hudHidden,
+      frameDrawn, nonBlackMin: NON_BLACK_MIN,
       framePixels, canvasReadback, wgslErrors,
       consoleErrors: realErrors, httpErrors,
       notFound, missingAssets, shot: SHOT, verdict: ok ? 'PASS' : 'FAIL',
