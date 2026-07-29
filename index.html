@@ -4,7 +4,27 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Voxelforge — Phase 0 (WebGPU)</title>
-  <link data-trunk rel="rust" data-cargo-features="webgpu" data-wasm-opt="z" />
+  <!-- The repo root is a virtual workspace (no [package]), so point trunk at the
+       client crate explicitly and name the bin — otherwise it picks up nothing.
+       `data-cargo-features="webgpu"` swaps Bevy's web backend from WebGL2 to WebGPU.
+       `data-cargo-no-default-features` DROPS `experimental_pbr_pcss` (the cargo
+       `default` in client/Cargo.toml) FOR THE WEB BUILD ONLY — that shader does
+       not compile under Tint/Chrome and leaves a black canvas. Native + hero-shot
+       builds still get PCSS via the cargo default; do NOT remove either attribute.
+       NOTE: trunk 0.21 requires the `data-cargo-` prefix on these — the bare
+       `data-features` / `data-no-default-features` names are SILENTLY IGNORED,
+       which is exactly how a PCSS-on (black-screen) wasm shipped unnoticed.
+       Always confirm via the voxelforge rustc cfg (feature="webgpu", NO pcss). -->
+  <!-- `data-wasm-opt` is deliberately left ABSENT: trunk runs wasm-opt at its
+       own default release level (using a copy of binaryen it fetches — wasm-opt
+       need not be on $PATH), and writes SRI integrity hashes for the optimized
+       bytes into dist/index.html. Do NOT strip / re-run wasm-opt on the .wasm
+       after trunk, or those hashes go stale and every browser refuses to load
+       the module. scripts/web-build.sh verifies this on every build. -->
+  <link data-trunk rel="rust" href="client/Cargo.toml" data-bin="voxelforge"
+        data-cargo-no-default-features data-cargo-features="webgpu" />
+  <!-- Bevy's AssetServer fetches `assets/...` over HTTP on web — ship the dir. -->
+  <link data-trunk rel="copy-dir" href="assets" />
   <style>
     html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: ui-monospace, monospace; }
     canvas { display: block; width: 100vw; height: 100vh; outline: none; }

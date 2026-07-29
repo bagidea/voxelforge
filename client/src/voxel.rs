@@ -11,10 +11,11 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
+use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::{ChunkData, CHUNK_SIZE};
 
-/// Number of tiles in the (horizontal) atlas.
-const N_TILES: usize = 4;
+/// Number of tiles in the (horizontal) atlas — one per BlockId (0-15).
+const N_TILES: usize = 16;
 const TILE_PX: usize = 16;
 
 /// Greedy-mesh a chunk into a single Bevy Mesh.
@@ -118,7 +119,7 @@ pub fn greedy_mesh_chunk(chunk: &ChunkData) -> (Mesh, usize) {
                         // across the merged quad — the standard greedy-mesh
                         // limitation; production fix = a texture array / custom
                         // material with per-voxel tile indices).
-                        let t = (block - 1) as f32;
+                        let t = block as f32;
                         let inset = 0.5 / (N_TILES * TILE_PX) as f32;
                         let u0 = t / N_TILES as f32 + inset;
                         let u1 = (t + 1.0) / N_TILES as f32 - inset;
@@ -170,12 +171,25 @@ pub fn build_atlas() -> Image {
     let h = TILE_PX;
     let mut data = vec![0u8; w * h * 4];
 
-    // base colour per tile: grass, dirt, stone, sand
+    // base colour per tile — sourced from BlockId so the atlas stays in sync
+    // with the sim palette automatically.  Tile index == block ID.
     let bases: [[u8; 3]; N_TILES] = [
-        [70, 160, 66],
-        [124, 88, 56],
-        [128, 128, 138],
-        [214, 202, 148],
+        BlockId::AIR.base_color(),
+        BlockId::GRASS.base_color(),
+        BlockId::DIRT.base_color(),
+        BlockId::STONE.base_color(),
+        BlockId::SAND.base_color(),
+        BlockId::WOOD.base_color(),
+        BlockId::LEAVES.base_color(),
+        BlockId::SNOW.base_color(),
+        BlockId::RED_SAND.base_color(),
+        BlockId::CLAY.base_color(),
+        BlockId::GRAVEL.base_color(),
+        BlockId::COBBLESTONE.base_color(),
+        BlockId::OBSIDIAN.base_color(),
+        BlockId::BRICK.base_color(),
+        BlockId::MOSS.base_color(),
+        BlockId::LIMESTONE.base_color(),
     ];
 
     for ty in 0..h {

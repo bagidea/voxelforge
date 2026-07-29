@@ -42,3 +42,17 @@ client/build_*.txt
 !/hero-golden-a.png
 !/hero-golden-b.png
 !/hero-golden-c.png
+
+# ── Browser console dumps (manual wasm smoke-test artifacts) ─
+# e.g. docs/assets/wasm-first-frame.png.console.txt — raw devtools
+# console dumps saved alongside a screenshot; contain local paths /
+# dev-server URLs and shouldn't be committed as source.
+*.console.txt
+
+# ── Godot prototype editor cache (unrelated to the Bevy client) ─
+# godot/project.godot, scenes/, scripts/*.gd ARE real source and stay
+# tracked — only the editor's own generated cache is junk.
+godot/.godot/
+
+# ── Editor runtime config (generated on first run, see editor_config.rs) ─
+/editor_config.json

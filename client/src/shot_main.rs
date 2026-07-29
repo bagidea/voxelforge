@@ -6,6 +6,12 @@
 //! + screenshot timer; `#[path]`-includes the live `hero.rs`. Separate `[[bin]]`
 //! (`voxelforge_shot`) → distinct exe, no clobber of `voxelforge.exe`.
 
+// NOTE: `editor_ui` used to be pulled into this isolated shot bin purely to
+// type-check it while main.rs was mid-edit. That verify-only hook is gone now —
+// editor_ui (and its deps crate::import, crate::FlyCam) are wired into the real
+// `voxelforge` binary via main.rs, so the main build is the type-check. This bin
+// stays self-contained: it renders `hero.rs` only.
+
 #[path = "hero.rs"]
 mod hero;
 

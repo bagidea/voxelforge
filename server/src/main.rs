@@ -34,6 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
+    // Seed the terrain generator from env or default before any chunks exist.
+    let seed: u64 = std::env::var("VOXELFORGE_SEED")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(42);
+    voxelforge_sim::worldgen::set_seed(seed);
+    tracing::info!(seed, "terrain seed set");
+
     let state = Arc::new(world::WorldState::new());
     state.warmup(WARMUP_RADIUS);
 

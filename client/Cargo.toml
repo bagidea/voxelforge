@@ -25,6 +25,9 @@ webgpu = ["bevy/webgpu"]
 [dependencies]
 voxelforge-sim = { path = "../sim" }
 bevy = "0.19"
+dot_vox = "5"
+# VERIFY-ONLY: added temporarily to compile-check editor_ui.rs; remove after Poppy wires.
+bevy_egui = "0.41"
 # Map files are plain JSON (see maps/FORMAT.md) — both already in the lock via bevy.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -32,3 +35,11 @@ serde_json = "1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "Location"] }
 wasm-bindgen = "0.2"
+
+# wasm32-unknown-unknown has no OS entropy source, so `getrandom` (pulled in
+# transitively by ahash → dot_vox / bevy_egui) refuses to build until you name a
+# backend. Two halves are needed and the crate errors if either is missing: the
+# `wasm_js` feature below, and `--cfg getrandom_backend="wasm_js"` in RUSTFLAGS
+# (scripts/web-build.sh sets it). Both major versions are in the graph.
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
