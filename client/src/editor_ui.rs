@@ -27,6 +27,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use voxelforge_sim::block::BlockId;
 
 use crate::import::{ModelCatalog, ModelKind, SpawnModel};
+use crate::editor::AppState;
 use crate::FlyCam;
 
 // ---------------------------------------------------------------------------
@@ -81,7 +82,8 @@ impl Plugin for EditorUiPlugin {
             .add_systems(
                 EguiPrimaryContextPass,
                 (toolbar_ui, block_palette_ui, model_browser_ui, entity_list_ui, inspector_ui)
-                    .chain(),
+                    .chain()
+                    .run_if(in_state(AppState::Editor)),
             );
     }
 }

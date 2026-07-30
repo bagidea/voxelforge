@@ -583,11 +583,10 @@ fn main() {
                     // walk/edit/map-save proofs need while sitting in the default
                     // Editor state — so it runs everywhere EXCEPT an interactive
                     // editor session, where the editor camera owns the view.
-                    (
-                        edit_voxels.run_if(in_state(AppState::Play)),
-                        fly_camera.run_if(editor::not_interactive_editor),
-                    )
-                        .chain(),
+                    // edit_voxels (L-click break / R-click place) is gated OFF
+                    // during Play — the player fights, not builds. EditorPlugin
+                    // owns the build loop in Editor state.
+                    fly_camera.run_if(editor::not_interactive_editor),
                     editor_controls,
                     highlight_target,
                     edit_demo,
