@@ -211,6 +211,7 @@ fn boot_scene(
     mut world: ResMut<World>,
     mut player_q: Query<(&mut Transform, &mut FlyCam), Without<OrbitCam>>,
     mut cam_q: Query<(&mut Transform, &mut OrbitCam)>,
+    mut enc: ResMut<crate::Encounter>,
 ) {
     let from_map = cfg.map_load.is_some();
     let side = world_side(&world);
@@ -249,6 +250,24 @@ fn boot_scene(
     spawn_death_plate(&mut commands);
     place_player(&mut player_q, &mut cam_q, &camp);
     commands.insert_resource(camp);
+
+    // ---- Edhari encounter: one Guard Husk 7 blocks from spawn on real terrain ----
+    if from_map {
+        // Player faces -Z (yaw=0); the combat proof walks W (south) until
+        // within melee range (gated on live distance, not a wall-clock guess),
+        // with a brief D-strafe on a short wall-clock window early in the walk
+        // (proves input drives the body, not just AI/physics drift) that nudges
+        // it a bit +X before it straightens out again. The husk patrols ±6 X
+        // from its origin, so placing it directly ahead ensures the patrol
+        // sweep meets the player's path regardless of the nudge.
+        let husk_x = sx as f32 + 0.0;
+        let husk_z = sz as f32 - 7.0;
+        let ground_y = (surface + 1) as f32; // same ground as the player
+        combat::spawn_guard_husk(&mut commands, &mut meshes, &mut materials, husk_x, husk_z, Some(ground_y));
+        combat::spawn_combat_hud(&mut commands);
+        enc.spawned = true;
+        println!("SPAWN_ENCOUNTER husk at ({husk_x:.1},_,{husk_z:.1}) on Edhari surface");
+    }
 
     // Ground invariant — the one check that catches "avatar falls through the world"
     // at its source instead of 3 s later in a screenshot. The spawn column MUST have
@@ -566,7 +585,29 @@ fn respawn_at_campfire(
     // Mid-point of the fade — the screen is fully black, so move everything now.
     if t >= FADE && !death.moved {
         death.moved = true;
-        place_player(&mut player_q, &mut cam_q, &camp);
+        // Wake up right at the fire.  Yaw=0 already faces -Z (into the fire).
+        let respawn_eye = Vec3::new(
+            camp.fire.x,
+            camp.fire.y + EYE_HEIGHT,
+            camp.fire.z,
+        );
+        let respawn_camp = Campsite {
+            eye: respawn_eye,
+            yaw: camp.yaw,
+            fire: camp.fire,
+        };
+        place_player(&mut player_q, &mut cam_q, &respawn_camp);
+        // Guard: if place_player silently failed (e.g. entity missing), the
+        // transform won't match and the log below would mislead.
+        if let Ok((tf, _)) = player_q.single() {
+            if (tf.translation - respawn_eye).length() > 1.0 {
+                println!(
+                    "RESPAWN GUARD: player at ({:.1},{:.1},{:.1}) != eye ({:.1},{:.1},{:.1}) — place_player may have failed",
+                    tf.translation.x, tf.translation.y, tf.translation.z,
+                    respawn_eye.x, respawn_eye.y, respawn_eye.z,
+                );
+            }
+        }
         if let Ok(e) = players.single() {
             // A fresh combat kit: full HP, full stamina, poise reset, state Idle.
             // Uses Kevin's own constructor, so the respawned player is exactly the
@@ -587,7 +628,7 @@ fn respawn_at_campfire(
         death.notice = NOTICE;
         println!(
             "RESPAWN at campfire ({:.1},{:.1},{:.1}) hp=full enemies_reset={reset}",
-            camp.eye.x, camp.eye.y, camp.eye.z
+            respawn_eye.x, respawn_eye.y, respawn_eye.z
         );
     }
 
