@@ -587,8 +587,9 @@ pub fn spawn_guard_husk(
     materials: &mut Assets<StandardMaterial>,
     wx: f32,
     wz: f32,
+    surface_y: Option<f32>,
 ) {
-    let surface = terrain_height(wx, wz) as f32 + 1.0; // top face of the ground voxel
+    let surface = surface_y.unwrap_or_else(|| terrain_height(wx, wz) as f32 + 1.0);
     let feet = Vec3::new(wx, surface, wz);
 
     let armor = materials.add(StandardMaterial {
@@ -742,8 +743,9 @@ pub fn gather_input(
     mouse: Res<ButtonInput<MouseButton>>,
     mut intent: ResMut<CombatIntent>,
 ) {
+    let light_pressed = mouse.just_pressed(MouseButton::Left) || keys.just_pressed(KeyCode::KeyX);
     *intent = CombatIntent {
-        light: mouse.just_pressed(MouseButton::Left) || keys.just_pressed(KeyCode::KeyX),
+        light: light_pressed,
         heavy_down: keys.pressed(KeyCode::KeyC),
         dodge: keys.just_pressed(KeyCode::Space),
         block: mouse.pressed(MouseButton::Right),
@@ -858,10 +860,11 @@ pub fn player_combat(
             }
             let to = etf.translation - origin;
             let dist = to.length();
+            let in_cone = in_cone(facing, to, MELEE_CONE);
             if dist > MELEE_RANGE + PLAYER_HALF_W + 0.6 {
                 continue;
             }
-            if !in_cone(facing, to, MELEE_CONE) {
+            if !in_cone {
                 continue;
             }
             // Stagger amplifies damage (§3.2); a fresh parry punish adds +25% (§2.5).

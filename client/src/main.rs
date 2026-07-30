@@ -681,6 +681,7 @@ fn spawn_encounter(
         &mut materials,
         tf.translation.x,
         tf.translation.z - dist,
+        None,
     );
     combat::spawn_combat_hud(&mut commands);
     println!("SPAWN_ENCOUNTER husk {dist} blocks in front of the player");
