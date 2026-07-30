@@ -28,7 +28,7 @@ use crate::combat;
 use crate::editor::AppState;
 use crate::{
     box_fill, find_spawn, highest_solid, Cfg, FlyCam, OrbitCam, World, BOOM_DIST, EYE_HEIGHT,
-    PIVOT_UP,
+    PIVOT_UP, PLAYER_HALF_W,
 };
 
 /// The hand-built Village of Edhari (`docs/first-playable-loop.md` Act 0). Shiba owns
@@ -904,9 +904,18 @@ fn combat_proof(
             return;
         }
 
-        // Walk forward until we close the gap.  MELEE_RANGE (2.0) + player
-        // half-width + fudge ≈ 3.0 is the actual reach in player_combat.
-        const ATTACK_DIST: f32 = 3.0;
+        // Walk forward until we close the gap. Stop well *inside* the real melee
+        // reach, not just under it: the player's own swing lands within
+        // `MELEE_RANGE + PLAYER_HALF_W + 0.6` (combat.rs:864 → 2.9 blocks), while
+        // the Husk's swing back at the player uses the narrower
+        // `MELEE_RANGE + PLAYER_HALF_W + 0.4` (combat.rs:1054 → 2.7 blocks).
+        // Derive the stop distance from the narrower of the two real combat
+        // gates, minus a real safety margin. Previously this was a hardcoded
+        // 3.0 — just 0.1 blocks *outside* the 2.9 reach — so a single frame of
+        // drift between "stop walking" and "swing resolves" could push the
+        // hit out of range and flake the proof.
+        const NARROWEST_MELEE_GATE: f32 = combat::MELEE_RANGE + PLAYER_HALF_W + 0.4; // 2.7 (combat.rs:1054)
+        const ATTACK_DIST: f32 = NARROWEST_MELEE_GATE - 0.2; // 2.5 — solid margin, not a hair-trigger
         if husk_dist > ATTACK_DIST && husk_dist > 0.0 {
             keys.press(KeyCode::KeyW);
 

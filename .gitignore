@@ -60,7 +60,9 @@ godot/.godot/
 # ── Side-lane build dirs & throwaway probes ──────────────────
 # `target-combat/` is a 3.2 GB CARGO_TARGET_DIR used by the combat lane so
 # it never fights the main build's lock; `**/target/` above misses the name.
+# `target-review/` is the same pattern for the review lane's own CARGO_TARGET_DIR.
 /target-combat/
+/target-review/
 **/__pycache__/
 # One-off rustc/cl.exe toolchain probes from the Windows link-error hunt.
 /_check_rustc_cl.ps1
