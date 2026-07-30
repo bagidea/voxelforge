@@ -19,6 +19,36 @@
 
 ---
 
+## 🔒 เฟรมอ้างอิง 2 ตัว — อ่านก่อนหยิบตัวเลขไปใช้ (อัปเดต 2026-07-29)
+
+CEO ไฟเขียว **framing แบบ TILT-DOWN** แล้ว → เฟรมจริงที่ทีมส่งกันตั้งแต่นี้ไปเป็นมุมนั้น
+ซึ่ง **ไม่ใช่มุมเดียวกับ golden ref ที่ใช้ calibrate ตัวเลขในเอกสารนี้**. สองไฟล์นี้คนละหน้าที่ ห้ามสลับ:
+
+| | ไฟล์ | ใช้ทำอะไร | ห้ามใช้ทำอะไร |
+|---|---|---|---|
+| 📐 **calibration ref** | `docs/assets/golden-beauty-shot-ref.png` (1024×1024, กล้องเกือบระดับ, tight, ชามเต็มเฟรม) | เป็น **ที่มาของเลข target** ทั้งชุดใน `grade_axes.TARGETS` + G3/G5/G6 · ใช้ "วางข้างกัน" ตัดสินลุคด้วยตา | **ห้ามเอา target มาทาบเฟรม tilt-down 16:9 ตรงๆ** แล้วบอกว่าตก |
+| 🎯 **framing baseline** | `docs/assets/wide-hero-final.png` (1280×720, **TILT-DOWN**, CEO-approved) | **เฟรมฐานที่เฟรมใหม่ทุกตัวต้องเทียบด้วย** (native control, web parity, regression) · recipe: `scripts/render_wide_hero.sh` | ไม่ใช่ที่มาของ target — ตัวมันเองก็ตก DOF axis โดยตั้งใจ |
+
+**ค่าที่ baseline วัดได้จริง** (`grade_axes.py`, วัดสด 2026-07-29 · เรนเดอร์ซ้ำจาก source ปัจจุบันได้ค่าเดิม ±0.15):
+
+| warmth R−B | blue B | sat | micro | p95 | DOF fg:bg | penumbra |
+|---|---|---|---|---|---|---|
+| 128.88 | 5.19 | 94.48 | 5.92 | 177.36 | **0.17** (ตก — intrinsic to wide) | 4.83 px |
+
+> **กติกาการเลือกโหมดเกรด:**
+> - เฟรม **framing เดียวกับ ref** (tight hero) → เกรด **absolute** ตามตาราง P0 ข้างล่างได้เลย
+> - เฟรม **framing อื่น** (tilt-down wide, web parity, ฯลฯ) → เกรด **differential เทียบ baseline**
+>   ด้วย `scripts/grade_web_parity.py` ซึ่งมีด่าน **W0-D** บังคับว่า control ต้องเป็น baseline จริง
+>   (fingerprint 5 แกน) — เพราะ `grade_axes` วัดบน resample 1024×1024 + กล่อง fg/bg ตำแหน่งตายตัว
+>   **ขยับกล้อง = ตัวเลขขยับทั้งชุด** ไม่ได้แปลว่าลุคเสีย
+>
+> ⚠️ **DOF fg:bg คือกับดักที่ชัดที่สุด** — baseline ที่ CEO อนุมัติวัดได้ 0.17 ส่วน target คือ ≥3.0.
+> ไม่ใช่ regression: กล่อง fg/bg ของ grader ตั้งไว้สำหรับ tight hero (ชามคม/หลังละลาย) ส่วน wide
+> เป็น deep-focus โดยดีไซน์ (`VOXELFORGE_DOF=8,10` เพื่อให้พื้นคมตาม G1). บันทึกไว้แล้วใน
+> `golden-beauty-shot.md` §GOLDEN เป็น tradeoff ที่รับ ไม่ใช่ข้อบกพร่อง
+
+---
+
 ## P0 Axis Targets — machine-graded (`scripts/grade_axes.py`)
 
 > **แกนตัวเลขที่เครื่องเกรดเองได้ ไม่ต้องพึ่งตา.** ใช้เป็นด่านคัดก่อนคนไล่ GATE — รันแล้วได้ PASS/FAIL รายแกน + verdict รวม + exit code (0=ผ่านหมด).

@@ -8,9 +8,20 @@
 //! Chunk data and world-gen live in `voxelforge_sim` (shared with the server).
 //! The greedy mesher and atlas live in `voxel` (Bevy-coupled, client-only).
 
+mod combat;
+mod editor;
+mod editor_camera;
+mod editor_config;
+mod editor_ui;
+mod gizmo;
 mod hero;
+mod import;
 mod mapfile;
+mod scene;
 mod voxel;
+// NOTE: no top-level `mod input_map;` — input_map.rs is already pulled in as a
+// submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
+// Declaring it here too would compile the file twice into two distinct type sets.
 
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::ecs::message::{MessageReader, MessageWriter};
@@ -18,23 +29,31 @@ use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use bevy::text::FontSize;
-use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow};
+use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, Window};
 use std::collections::HashMap;
 
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::{ChunkData, ChunkPos, CHUNK_SIZE as CHUNK};
-use voxelforge_sim::worldgen::terrain_height;
+use voxelforge_sim::worldgen::{self, terrain_block, terrain_height};
 use voxel::{build_atlas, greedy_mesh_chunk};
+
+use editor::AppState;
 
 // ---------------------------------------------------------------------------
 // Config (env vars on native, ?query params on web)
 // ---------------------------------------------------------------------------
 
 #[derive(Resource, Clone)]
-struct Cfg {
+pub(crate) struct Cfg {
     bench: bool,
     grid: usize,
-    shot: Option<String>,
+    pub(crate) shot: Option<String>,
+    /// `--play`: skip the editor entirely and boot straight into the playable scene
+    /// (`scene::ScenePlugin` — map/campfire/spawn) in [`AppState::Play`].
+    pub(crate) play: bool,
+    /// `--play-demo`: the scripted headless proof of that scene (walk + respawn).
+    /// Implies `--play`.
+    pub(crate) play_demo: bool,
     /// Phase 1 hero look-shot scene instead of terrain.
     hero: bool,
     /// Force a present mode (root-causing the FPS cliff): one of
@@ -46,8 +65,13 @@ struct Cfg {
     edit_demo: bool,
     /// Scripted walk-physics demo (headless proof of gravity + voxel collision).
     walk_demo: bool,
+    /// Scripted combat demo (headless proof of attack→hit→stamina→dodge i-frames).
+    combat_demo: bool,
+    /// Scripted editor proof (headless proof that a click places/breaks a voxel
+    /// through the same `paint_at_cursor` path the interactive editor uses).
+    editor_demo: bool,
     /// Load a saved map file at startup (world = file contents, no procedural terrain).
-    map_load: Option<String>,
+    pub(crate) map_load: Option<String>,
     /// Author-a-tiny-map demo: start blank, build a scene, save it here, then shoot.
     map_save: Option<String>,
     // Hero-shot tunables (env-driven so the shot re-frames without a recompile).
@@ -63,6 +87,21 @@ struct Cfg {
     emissive: Option<f32>, // scale on the window pane emissive
     dfog: Option<f32>,     // DistanceFog density
     soft: Option<f32>,     // PCSS soft_shadow_size (sun apparent size; wider = softer)
+    seed: u64,            // world-gen seed (VOXELFORGE_SEED, default 42)
+    // ── Hero LOOK knobs ──────────────────────────────────────────────────────
+    // These used to be read with `std::env::var` directly inside hero.rs, which
+    // silently disabled the ENTIRE locked recipe on wasm (env::var is always Err
+    // there): the web build rendered "hero, narrow, every default" no matter what
+    // the URL said. They travel through Cfg now like every other knob — env on
+    // native, query string on web — so one recipe drives both.
+    wide: bool,            // WIDE establishing framing (VOXELFORGE_WIDE / ?wide)
+    fg_apron: bool,        // foreground counter apron (VOXELFORGE_FGAPRON / ?fgapron)
+    dust: Option<f32>,     // dust-mote density scale (0 = off)
+    bluescale: Option<f32>, // sun/ambient blue-leg scale
+    bounce: Option<f32>,   // GI card 1 (floor bounce) intensity scale
+    bounce2: Option<f32>,  // GI card 2 (dark lifter) intensity scale
+    shoulder: Option<f32>, // WIDE highlight roll-off gain (1.0 = no shoulder)
+    ambcolor: Option<[f32; 3]>, // warm-bounce fill colour r,g,b
 }
 
 /// Parse "a,b,c" env into a fixed float array (all-or-nothing).
@@ -79,8 +118,22 @@ fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
     }
 }
 
+/// True when the binary was launched with `flag` on the command line. The play
+/// switches are real CLI flags (`cargo run --bin voxelforge -- --play`) rather than
+/// env vars, because "start the game" is something a person types, not a recipe a
+/// script exports — the `VOXELFORGE_*` twins below keep the scripted lanes working.
+#[cfg(not(target_arch = "wasm32"))]
+fn has_arg(flag: &str) -> bool {
+    std::env::args().skip(1).any(|a| a == flag)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn read_cfg() -> Cfg {
+    // --play-demo is the scripted proof *of* --play, so it turns --play on too.
+    let play_demo = has_arg("--play-demo") || std::env::var("VOXELFORGE_PLAY_DEMO").is_ok();
+    // --combat-demo is the combat-loop proof (hit→kill→die→respawn). It also
+    // turns --play on — needs the full scene (campsite, player, husk encounter).
+    let combat_demo = has_arg("--combat-demo") || std::env::var("VOXELFORGE_COMBAT_DEMO").is_ok();
     Cfg {
         bench: std::env::var("VOXELFORGE_BENCH").is_ok(),
         grid: std::env::var("VOXELFORGE_GRID")
@@ -88,6 +141,8 @@ fn read_cfg() -> Cfg {
             .and_then(|v| v.parse().ok())
             .unwrap_or(6),
         shot: std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty()),
+        play: play_demo || combat_demo || has_arg("--play") || std::env::var("VOXELFORGE_PLAY").is_ok(),
+        play_demo,
         hero: std::env::var("VOXELFORGE_HERO").is_ok(),
         present: std::env::var("VOXELFORGE_PRESENT").ok().filter(|s| !s.is_empty()),
         start_side: std::env::var("VOXELFORGE_START_SIDE")
@@ -97,6 +152,8 @@ fn read_cfg() -> Cfg {
             .max(1),
         edit_demo: std::env::var("VOXELFORGE_EDIT_DEMO").is_ok(),
         walk_demo: std::env::var("VOXELFORGE_WALK_DEMO").is_ok(),
+        combat_demo,
+        editor_demo: std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok(),
         map_load: std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty()),
         map_save: std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty()),
         cam: env_floats("VOXELFORGE_CAM"),
@@ -109,6 +166,94 @@ fn read_cfg() -> Cfg {
         emissive: std::env::var("VOXELFORGE_EMISSIVE").ok().and_then(|v| v.parse().ok()),
         dfog: std::env::var("VOXELFORGE_DFOG").ok().and_then(|v| v.parse().ok()),
         soft: std::env::var("VOXELFORGE_SOFT").ok().and_then(|v| v.parse().ok()),
+        seed: std::env::var("VOXELFORGE_SEED")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(42),
+        wide: std::env::var("VOXELFORGE_WIDE").is_ok(),
+        fg_apron: std::env::var("VOXELFORGE_FGAPRON").is_ok(),
+        dust: std::env::var("VOXELFORGE_DUST").ok().and_then(|v| v.parse().ok()),
+        bluescale: std::env::var("VOXELFORGE_BLUESCALE").ok().and_then(|v| v.parse().ok()),
+        bounce: std::env::var("VOXELFORGE_BOUNCE").ok().and_then(|v| v.parse().ok()),
+        bounce2: std::env::var("VOXELFORGE_BOUNCE2").ok().and_then(|v| v.parse().ok()),
+        shoulder: std::env::var("VOXELFORGE_SHOULDER").ok().and_then(|v| v.parse().ok()),
+        ambcolor: env_floats("VOXELFORGE_AMBCOLOR"),
+    }
+}
+
+// ── Query-string parsing (web) ───────────────────────────────────────────────
+// The web build's ONLY way to pass a recipe in — it is the exact counterpart of
+// the env vars above, so `?hero&wide&sun=20,195,12000` on web == the same
+// VOXELFORGE_* set on native. Matching is per-key (not `search.contains(..)`,
+// which fired on any substring — `?nowide` used to switch WIDE *on*).
+
+/// `%2C` → `,` and `+` → space. Only ASCII escapes appear in these knobs (numbers
+/// and commas), so a byte-wise decode is enough — no UTF-8 continuation handling.
+#[cfg(target_arch = "wasm32")]
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 3 <= b.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                Ok(c) => {
+                    out.push(c as char);
+                    i += 3;
+                }
+                Err(_) => {
+                    out.push('%');
+                    i += 1;
+                }
+            },
+            b'+' => {
+                out.push(' ');
+                i += 1;
+            }
+            c => {
+                out.push(c as char);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// `?a=1&b=2` → the decoded value of `key`, or None when absent/valueless.
+#[cfg(target_arch = "wasm32")]
+fn qs_raw(search: &str, key: &str) -> Option<String> {
+    search.trim_start_matches('?').split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        (k == key).then(|| pct_decode(v))
+    })
+}
+
+/// Bare presence flag: `?hero` and `?hero=1` both count, `?nothero` does not.
+#[cfg(target_arch = "wasm32")]
+fn qs_flag(search: &str, key: &str) -> bool {
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .any(|kv| kv.split('=').next() == Some(key))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn qs_num<T: std::str::FromStr>(search: &str, key: &str) -> Option<T> {
+    qs_raw(search, key)?.trim().parse().ok()
+}
+
+/// Same all-or-nothing contract as `env_floats`: `?cam=a,b,c` with the wrong
+/// arity is ignored rather than half-applied.
+#[cfg(target_arch = "wasm32")]
+fn qs_floats<const N: usize>(search: &str, key: &str) -> Option<[f32; N]> {
+    let raw = qs_raw(search, key)?;
+    let parts: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    if parts.len() == N {
+        let mut out = [0.0; N];
+        out.copy_from_slice(&parts);
+        Some(out)
+    } else {
+        None
     }
 }
 
@@ -117,32 +262,45 @@ fn read_cfg() -> Cfg {
     let search = web_sys::window()
         .and_then(|w| w.location().search().ok())
         .unwrap_or_default();
-    let bench = search.contains("bench");
-    let grid = search
-        .split(['?', '&'])
-        .find_map(|kv| kv.strip_prefix("grid=").and_then(|v| v.parse().ok()))
-        .unwrap_or(6);
     Cfg {
-        bench,
-        grid,
+        bench: qs_flag(&search, "bench"),
+        grid: qs_num(&search, "grid").unwrap_or(6),
+        // No filesystem in the browser: screenshots/map IO stay native-only.
         shot: None,
-        hero: search.contains("hero"),
+        // `?play` is the web twin of `--play` (the scene falls back to procedural
+        // terrain there — `scene::play_map` can't stat a file in a browser).
+        play: qs_flag(&search, "play") || qs_flag(&search, "playdemo"),
+        play_demo: qs_flag(&search, "playdemo"),
+        hero: qs_flag(&search, "hero"),
         present: None,
-        start_side: 1,
-        edit_demo: search.contains("editdemo"),
-        walk_demo: search.contains("walkdemo"),
+        start_side: qs_num(&search, "startside").unwrap_or(1).max(1),
+        edit_demo: qs_flag(&search, "editdemo"),
+        walk_demo: qs_flag(&search, "walkdemo"),
+        combat_demo: qs_flag(&search, "combatdemo"),
+        editor_demo: qs_flag(&search, "paintdemo"),
         map_load: None,
         map_save: None,
-        cam: None,
-        sun: None,
-        dof: None,
-        fog: None,
-        exposure: None,
-        grade: None,
-        ambient: None,
-        emissive: None,
-        dfog: None,
-        soft: None,
+        cam: qs_floats(&search, "cam"),
+        sun: qs_floats(&search, "sun"),
+        dof: qs_floats(&search, "dof"),
+        fog: qs_num(&search, "fog"),
+        exposure: qs_num(&search, "exposure"),
+        grade: qs_floats(&search, "grade"),
+        ambient: qs_num(&search, "ambient"),
+        emissive: qs_num(&search, "emissive"),
+        dfog: qs_num(&search, "dfog"),
+        // Read for parity even though the web build drops PCSS (see hero.rs) —
+        // the field is cfg'd out at the use site, not here.
+        soft: qs_num(&search, "soft"),
+        seed: qs_num(&search, "seed").unwrap_or(42),
+        wide: qs_flag(&search, "wide"),
+        fg_apron: qs_flag(&search, "fgapron"),
+        dust: qs_num(&search, "dust"),
+        bluescale: qs_num(&search, "bluescale"),
+        bounce: qs_num(&search, "bounce"),
+        bounce2: qs_num(&search, "bounce2"),
+        shoulder: qs_num(&search, "shoulder"),
+        ambcolor: qs_floats(&search, "ambcolor"),
     }
 }
 
@@ -171,10 +329,10 @@ struct ChunkSlot {
 }
 
 #[derive(Resource)]
-struct World {
+pub(crate) struct World {
     material: Handle<StandardMaterial>,
     /// Keyed by (chunk_x, chunk_z) — only the y=0 layer is spawned in Phase 0.
-    chunks: HashMap<(i32, i32), ChunkSlot>,
+    pub(crate) chunks: HashMap<(i32, i32), ChunkSlot>,
     total_quads: usize,
 }
 
@@ -208,6 +366,20 @@ struct MapSaveDemo {
     done: bool,
 }
 
+/// Guards the first combat encounter so the Guard Husk + HUD spawn exactly once
+/// per Play session (and are despawned again in `despawn_encounter` when the
+/// editor sandbox is restored).
+#[derive(Resource)]
+struct Encounter {
+    spawned: bool,
+}
+
+/// Fires the scripted "editor click places/breaks voxels" proof once (headless).
+#[derive(Resource)]
+struct EditorPaintDemo {
+    done: bool,
+}
+
 /// Fires the scripted place/break demo exactly once (headless verify path).
 #[derive(Resource)]
 struct EditDemo {
@@ -220,17 +392,32 @@ struct WalkDemo {
     done: bool,
 }
 
+/// The player avatar (third-person). Its `Transform.translation` is the *eye*
+/// position (feet + EYE_HEIGHT) — the same convention `move_body` has always used,
+/// so all the walk physics is reused unchanged. The visible body mesh rides along
+/// as a child, and the transform's Y-rotation is the avatar's facing (`face_yaw`).
 #[derive(Component)]
-struct FlyCam {
-    yaw: f32,
-    pitch: f32,
+pub(crate) struct FlyCam {
+    /// The direction the avatar is currently turned to face (smoothed toward the
+    /// movement direction each frame). Drives the body mesh's rotation.
+    pub(crate) face_yaw: f32,
     /// Vertical (+residual) velocity used by walk mode's gravity/jump; unused in fly.
-    vel: Vec3,
+    pub(crate) vel: Vec3,
     /// true = grounded walking body (gravity + AABB voxel collision); false =
-    /// free noclip fly camera. Toggled live with F.
-    walking: bool,
+    /// free noclip fly (EDIT mode building). Toggled live with F.
+    pub(crate) walking: bool,
     /// Set the frame the body rests on a solid voxel below — gates the jump.
-    grounded: bool,
+    pub(crate) grounded: bool,
+}
+
+/// The orbit camera — rides a spring-arm/boom behind + above the avatar (Roblox
+/// style). Mouse drives `yaw`/`pitch`; `dist` is the boom length, pulled in by
+/// `camera_boom` when a wall would otherwise clip between camera and avatar.
+#[derive(Component)]
+pub(crate) struct OrbitCam {
+    pub(crate) yaw: f32,
+    pub(crate) pitch: f32,
+    pub(crate) dist: f32,
 }
 
 #[derive(Component)]
@@ -256,7 +443,15 @@ const PHASE: f32 = 2.0;
 const MAX_SIDE: i32 = 32; // up to 1024 chunks (ramp stops early once FPS dips <55)
 
 fn main() {
-    let cfg = read_cfg();
+    let mut cfg = read_cfg();
+
+    // `--play` boots the game, so the scene — not the caller — decides which world
+    // that is: Shiba's hand-built village once `maps/edhari.json` lands, procedural
+    // terrain until then. An explicit VOXELFORGE_MAP_LOAD still wins.
+    if cfg.play && cfg.map_load.is_none() {
+        cfg.map_load = scene::play_map();
+    }
+    let cfg = cfg;
 
     let present_mode = match cfg.present.as_deref() {
         Some("vsync") => PresentMode::AutoVsync,
@@ -305,9 +500,48 @@ fn main() {
         app.insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 })
             .insert_resource(cfg)
             .add_systems(Startup, hero::setup_hero)
-            .add_systems(Update, (fly_camera, screenshot_once));
+            .add_systems(Update, (fly_camera, screenshot_once, hero_hud));
     } else {
-        app.insert_resource(cfg)
+        // ---- Editor shell ---------------------------------------------------
+        // EditorPlugin owns AppState{Editor, Play} + the SelectedBlock resource +
+        // the interactive build loop (raycast break/place in Editor). Round-2
+        // assembly plugs the team's editor crates that have LANDED ON DISK in
+        // beside it. Wired now (files present): editor_ui (Yamamoto), import
+        // (Kevin), editor_config/InputConfigPlugin (Sun), and `scene` — the
+        // playable world `--play` boots into (map load → spawn + campfire →
+        // death/respawn loop). ScenePlugin is added unconditionally; every system
+        // in it gates on `cfg.play`, so the editor/bench/shot lanes are untouched.
+        // Interactive editor camera + transform gizmo are OUT of scope this round
+        // (Director handed them to another owner) — no camera sub-plugin is wired
+        // yet. In an interactive Editor session `fly_camera` is still gated off (see
+        // `Scripted` + `not_interactive_editor` below), so the next owner just adds
+        // their camera plugin against the Selection/SnapGrid contract in editor.rs.
+        let scripted = cfg.bench
+            || cfg.shot.is_some()
+            || cfg.edit_demo
+            || cfg.walk_demo
+            || cfg.combat_demo
+            || cfg.editor_demo
+            || cfg.map_save.is_some()
+            || cfg.play_demo
+            // A --play session is a human at the controls, so it is NOT scripted —
+            // but it never sits in AppState::Editor either, so the editor camera
+            // still keeps its hands off (see `in_interactive_editor`).
+            || (cfg.map_load.is_some() && !cfg.play);
+        app.add_plugins((
+            editor::EditorPlugin,
+            editor_ui::EditorUiPlugin,
+            import::ImportPlugin,
+            editor_config::InputConfigPlugin,
+            scene::ScenePlugin,
+            // Editor camera (orbit/pan/zoom on the middle button) + transform
+            // gizmo. Both gate on `in_interactive_editor` so scripted/headless
+            // runs keep using the play-mode `fly_camera` for their screenshots.
+            editor_camera::EditorCameraPlugin,
+            gizmo::GizmoPlugin,
+        ))
+            .insert_resource(editor::Scripted(scripted))
+            .insert_resource(cfg)
             .insert_resource(Editor {
                 selected: BlockId::STONE,
                 reach: 200.0,
@@ -319,26 +553,164 @@ fn main() {
             .insert_resource(EditDemo { done: false })
             .insert_resource(WalkDemo { done: false })
             .insert_resource(MapSaveDemo { done: false })
-            .add_systems(Startup, setup)
+            .insert_resource(EditorPaintDemo { done: false })
+            .insert_resource(Encounter { spawned: false })
+            // Combat layer (docs/combat-design.md §8) — all client-side gameplay.
+            .insert_resource(combat::CombatIntent::default())
+            .insert_resource(combat::LockOn::default())
+            .insert_resource(combat::Shake::default())
+            .insert_resource(combat::CombatDemo::default())
+            // `player_combat` takes a `MessageWriter<PlayerDied>`, so the message
+            // type MUST be registered or the very first Play frame panics on the
+            // missing `Messages<PlayerDied>` resource. `scene::on_player_death` is
+            // the reader — the death→campfire seam Kevin left for this side.
+            .add_message::<combat::PlayerDied>()
+            .add_systems(Startup, (setup, boot_state))
+            // Sandbox↔Play encounter lifecycle: the default Editor state spawns no
+            // husk; the Guard Husk + HUD come in on entering Play (once) and are
+            // torn down on returning to the editor.
+            .add_systems(OnEnter(AppState::Play), spawn_encounter)
+            .add_systems(OnEnter(AppState::Editor), despawn_encounter)
             // edit_voxels runs before fly_camera so the click that grabs the
             // cursor is not also read as a break; edits happen from click #2 on.
+            // In Editor state the equivalent build loop lives in EditorPlugin
+            // (reads SelectedBlock); this play-mode path stays gated to Play so the
+            // two never double-fire on one click.
             .add_systems(
                 Update,
                 (
-                    (edit_voxels, fly_camera).chain(),
+                    // fly_camera also carries walk-physics, which the headless
+                    // walk/edit/map-save proofs need while sitting in the default
+                    // Editor state — so it runs everywhere EXCEPT an interactive
+                    // editor session, where the editor camera owns the view.
+                    // edit_voxels (L-click break / R-click place) is gated OFF
+                    // during Play — the player fights, not builds. EditorPlugin
+                    // owns the build loop in Editor state.
+                    fly_camera.run_if(editor::not_interactive_editor),
                     editor_controls,
                     highlight_target,
                     edit_demo,
                     walk_demo,
                     map_save_demo,
+                    editor_paint_demo,
+                    egui_save_load,
                     hud,
                     bench_ramp,
                     screenshot_once,
+                ),
+            )
+            // Combat systems. gather_input → player_combat → husk AI run before the
+            // camera; lock-on + screen-shake run AFTER fly_camera so they override
+            // the final camera transform. combat_demo scripts the headless proof.
+            // The whole layer is gated to AppState::Play — the Editor builds the
+            // scene with the fight held off; Enter drops you into Play and it wakes.
+            .add_systems(
+                Update,
+                (
+                    (
+                        combat::gather_input,
+                        combat::combat_demo.run_if(combat_demo_env_only),
+                        combat::player_combat,
+                        combat::husk_ai,
+                        combat::husk_telegraph,
+                        combat::hud_bars,
+                    )
+                        .chain()
+                        .before(fly_camera)
+                        .run_if(in_state(AppState::Play)),
+                    combat::lock_on_camera
+                        .after(fly_camera)
+                        .run_if(in_state(AppState::Play)),
+                    combat::apply_shake
+                        .after(combat::lock_on_camera)
+                        .run_if(in_state(AppState::Play)),
                 ),
             );
     }
 
     app.run();
+}
+
+/// The env-var combat demo (`VOXELFORGE_COMBAT_DEMO=1`) drives `CombatIntent`
+/// directly inside `combat::combat_demo` — no scene, no campsite, no respawn loop.
+/// When `--combat-demo` (the CLI flag) is used instead, `cfg.play` is also true, the
+/// full scene boots, and `scene::combat_proof` handles the proof. This condition keeps
+/// the two proof systems from overwriting each other.
+fn combat_demo_env_only(cfg: Res<Cfg>) -> bool {
+    cfg.combat_demo && !cfg.play
+}
+
+/// The combat systems are gated to `AppState::Play`, so the scripted headless combat
+/// proof (`VOXELFORGE_COMBAT_DEMO`) must run *in Play*. Flip straight to Play at boot
+/// when that demo is on; the edit / walk / map-save demos stay in the default Editor
+/// state where the build loop and ungated physics carry them.
+///
+/// `--play` takes the same door for the same reason, but as a product decision rather
+/// than a test one: "No menu. No loading screen text. Player wakes up directly in the
+/// world" (`docs/first-playable-loop.md`, Act 0) — no Enter press through the editor.
+fn boot_state(cfg: Res<Cfg>, mut next: ResMut<NextState<AppState>>) {
+    if cfg.combat_demo || cfg.play {
+        next.set(AppState::Play);
+    }
+}
+
+/// First entry into Play spawns the Guard Husk + combat HUD once (and not on a
+/// loaded map, which describes its own scene). `combat_demo` boots straight to
+/// Play, so it reaches this hook and gets its husk too — the headless combat
+/// proof is unchanged.
+fn spawn_encounter(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    cfg: Res<Cfg>,
+    mut enc: ResMut<Encounter>,
+    player: Query<&Transform, With<FlyCam>>,
+) {
+    if enc.spawned || cfg.map_load.is_some() {
+        return;
+    }
+    let Ok(tf) = player.single() else {
+        return;
+    };
+    enc.spawned = true;
+    let dist = if cfg.combat_demo { 2.2 } else { 5.0 };
+    combat::spawn_guard_husk(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        tf.translation.x,
+        tf.translation.z - dist,
+        None,
+    );
+    combat::spawn_combat_hud(&mut commands);
+    println!("SPAWN_ENCOUNTER husk {dist} blocks in front of the player");
+}
+
+/// Returning to the editor tears down the encounter (husk + HUD bars + lock
+/// reticle) and re-arms the spawn so the next Play session is a fresh fight. The
+/// default Editor state fires this at boot with nothing to clear — a clean sandbox.
+fn despawn_encounter(
+    mut commands: Commands,
+    mut enc: ResMut<Encounter>,
+    enemies: Query<Entity, With<combat::Enemy>>,
+    hbars: Query<Entity, With<combat::HealthBar>>,
+    sbars: Query<Entity, With<combat::StaminaBar>>,
+    reticles: Query<Entity, With<combat::LockReticle>>,
+) {
+    let mut n = 0;
+    for e in enemies
+        .iter()
+        .chain(hbars.iter())
+        .chain(sbars.iter())
+        .chain(reticles.iter())
+    {
+        commands.entity(e).despawn();
+        n += 1;
+    }
+    enc.spawned = false;
+    if n > 0 {
+        println!("DESPAWN_ENCOUNTER cleared {n} combat entities (sandbox restored)");
+    }
 }
 
 fn setup(
@@ -349,6 +721,9 @@ fn setup(
     cfg: Res<Cfg>,
     mut bench: ResMut<Bench>,
 ) {
+    // Seed the terrain generator before any chunk queries happen.
+    worldgen::set_seed(cfg.seed);
+
     let atlas = images.add(build_atlas());
     let material = materials.add(StandardMaterial {
         base_color_texture: Some(atlas),
@@ -418,32 +793,92 @@ fn setup(
         Transform::from_xyz(60.0, 120.0, 40.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    // Camera — a free fly cam by default; the walk-demo instead drops a grounded
-    // player above the grid centre so gravity settles them onto the ground in view
-    // of the screenshot (works for both terrain and a loaded map's floor).
+    // Player avatar + orbit camera (third-person). The walk-demo drops a grounded
+    // body high over the grid centre so gravity settles it onto the ground in the
+    // screenshot; otherwise the avatar starts near the surface as a free-fly body
+    // (EDIT building) you can drop into walk with F. The avatar's Transform is the
+    // *eye* position — the same convention move_body uses — with a visible body mesh
+    // riding along as a child, and a separate camera trailing on the boom.
     let c = side as f32 * CHUNK as f32 * 0.5;
-    let (cam_tf, fly) = if cfg.walk_demo {
-        // On a loaded map the surface is whatever the file put down, so drop from a
-        // fixed safe height instead of the procedural terrain height.
-        let drop_ref = if loaded_map.is_some() { 8 } else { terrain_height(c, c) };
-        let eye = Vec3::new(c, drop_ref as f32 + EYE_HEIGHT + 12.0, c);
-        // Face diagonally into the ground with a slight downward pitch so what the
-        // player lands on fills the first-person frame.
-        let yaw = -std::f32::consts::FRAC_PI_4;
-        let pitch = -0.3;
-        let tf = Transform::from_translation(eye).with_rotation(
-            Quat::from_axis_angle(Vec3::Y, yaw) * Quat::from_axis_angle(Vec3::X, pitch),
-        );
-        (tf, FlyCam { yaw, pitch, vel: Vec3::ZERO, walking: true, grounded: false })
+    // On a loaded map the surface is whatever the file put down, so use a fixed safe
+    // height instead of the procedural terrain height.
+    let ground = if loaded_map.is_some() { 8 } else { terrain_height(c, c) };
+    let (eye, face_yaw, walking) = if cfg.walk_demo {
+        (
+            Vec3::new(c, ground as f32 + EYE_HEIGHT + 12.0, c),
+            -std::f32::consts::FRAC_PI_4,
+            true,
+        )
+    } else if loaded_map.is_some() {
+        // Loaded map: hover a beat above its own floor (no procedural surface to stand on).
+        (Vec3::new(c, ground as f32 + EYE_HEIGHT + 1.0, c), 0.0, false)
     } else {
-        let tf = Transform::from_xyz(-CHUNK as f32 * 0.7, CHUNK as f32 * 1.6, -CHUNK as f32 * 0.7)
-            .looking_at(Vec3::new(c, 8.0, c), Vec3::Y);
-        (tf, FlyCam { yaw: 0.0, pitch: 0.0, vel: Vec3::ZERO, walking: false, grounded: false })
+        // Default: stand the avatar flush on Kevin's real generated surface. Pick a
+        // column near the grid centre that is clear of trees/boulders so the body
+        // spawns in open air, feet on the top face of the surface voxel (h+1), and
+        // start it grounded-WALKing so gravity keeps it planted — never floating.
+        let (sx, sz, h) = find_spawn(c.floor() as i32, c.floor() as i32);
+        (
+            Vec3::new(sx as f32 + 0.5, (h + 1) as f32 + EYE_HEIGHT, sz as f32 + 0.5),
+            0.0,
+            true,
+        )
     };
+    let orbit_yaw = face_yaw;
+    let orbit_pitch = -0.25;
+
+    // The visible body: a capsule the size of the collision box, plus a small dark
+    // "face" block on its front (local -Z) so its heading is legible when it turns.
+    let body_mesh = meshes.add(Capsule3d::new(PLAYER_HALF_W, PLAYER_HEIGHT - 2.0 * PLAYER_HALF_W));
+    let body_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.92, 0.38, 0.16),
+        perceptual_roughness: 0.7,
+        ..default()
+    });
+    let face_mesh = meshes.add(Cuboid::new(0.34, 0.18, 0.12));
+    let face_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.10, 0.10, 0.13),
+        perceptual_roughness: 0.6,
+        ..default()
+    });
+    // Capsule centre sits at the body's mid-height: feet + PLAYER_HEIGHT/2, i.e.
+    // EYE_HEIGHT - PLAYER_HEIGHT/2 below the eye (the avatar's own origin).
+    let body_dy = -(EYE_HEIGHT - PLAYER_HEIGHT * 0.5);
+    commands
+        .spawn((
+            Transform::from_translation(eye)
+                .with_rotation(Quat::from_axis_angle(Vec3::Y, face_yaw)),
+            Visibility::default(),
+            FlyCam {
+                face_yaw,
+                vel: Vec3::ZERO,
+                walking,
+                grounded: false,
+            },
+            // Combat kit (§8.1–3, §3): state machine, stamina, HP, poise.
+            combat::player_bundle(),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Mesh3d(body_mesh),
+                MeshMaterial3d(body_mat),
+                Transform::from_xyz(0.0, body_dy, 0.0),
+            ));
+            parent.spawn((
+                Mesh3d(face_mesh),
+                MeshMaterial3d(face_mat),
+                Transform::from_xyz(0.0, body_dy + 0.55, -0.34),
+            ));
+        });
+
     commands.spawn((
         Camera3d::default(),
-        cam_tf,
-        fly,
+        Transform::from_translation(eye + Vec3::new(0.0, PIVOT_UP, BOOM_DIST)),
+        OrbitCam {
+            yaw: orbit_yaw,
+            pitch: orbit_pitch,
+            dist: BOOM_DIST,
+        },
         AmbientLight {
             brightness: 380.0,
             ..default()
@@ -487,6 +922,12 @@ fn setup(
             ..default()
         },
     ));
+
+    // The first combat encounter (§4.1) is NO LONGER spawned here — the default
+    // AppState::Editor is now a husk-free sandbox. `spawn_encounter` brings the
+    // Guard Husk + combat HUD in on entering Play (so combat_demo, which boots to
+    // Play, still gets it), and `despawn_encounter` clears them on returning to
+    // the editor. See the OnEnter hooks registered in `main`.
 
     commands.insert_resource(world);
     bench.phase_start = 0.0;
@@ -682,10 +1123,36 @@ fn load_map_file(_path: &str) -> Result<mapfile::MapFile, String> {
     Err("loading maps is not supported on web".into())
 }
 
+/// Despawn every live chunk and rebuild the world from a map file — the shared
+/// body of the F9 quick-load and the egui Load button. Returns the block count
+/// the file listed.
+fn reload_world(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    world: &mut World,
+    path: &str,
+) -> Result<usize, String> {
+    let map = load_map_file(path)?;
+    for slot in world.chunks.values() {
+        commands.entity(slot.entity).despawn();
+    }
+    world.chunks.clear();
+    world.total_quads = 0;
+    let nx = map.size.chunks_x.max(1);
+    let nz = map.size.chunks_z.max(1);
+    for z in 0..nz {
+        for x in 0..nx {
+            spawn_empty_chunk(commands, meshes, world, x, z);
+        }
+    }
+    apply_map_blocks(commands, meshes, world, &map);
+    Ok(map.blocks.len())
+}
+
 /// Fill an inclusive box of voxels with one block, re-meshing each touched chunk
 /// once. The brush/fill tool and the scripted map-author demo both build through it.
 /// Returns the number of voxels actually written.
-fn box_fill(
+pub(crate) fn box_fill(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     world: &mut World,
@@ -720,20 +1187,71 @@ fn box_fill(
 
 /// Height of the topmost solid voxel in the column at world (wx, wz), or None if the
 /// column is all air. Used to verify a loaded map is walkable at its own surface.
-fn highest_solid(world: &World, wx: i32, wz: i32) -> Option<i32> {
+pub(crate) fn highest_solid(world: &World, wx: i32, wz: i32) -> Option<i32> {
     (0..CHUNK).rev().find(|&y| solid_at(world, wx, y, wz))
 }
 
-fn fly_camera(
+/// Pick a spawn column near (cx,cz) whose surface is clear of features (trees,
+/// boulders) so the avatar stands flush on real terrain instead of inside a trunk.
+/// Spirals outward ring by ring (centre first) and returns (world_x, world_z,
+/// surface_height); falls back to the centre column if nothing clear is found nearby.
+/// Queries the shared worldgen directly (deterministic once the seed is set), so it
+/// needs no `World` — the same height/feature source the chunks were meshed from.
+pub(crate) fn find_spawn(cx: i32, cz: i32) -> (i32, i32, i32) {
+    for r in 0i32..24 {
+        for dz in -r..=r {
+            for dx in -r..=r {
+                if r > 0 && dx.abs() != r && dz.abs() != r {
+                    continue; // only the outer ring at radius r (inner rings already tried)
+                }
+                let (wx, wz) = (cx + dx, cz + dz);
+                let h = terrain_height(wx as f32, wz as f32);
+                if h + 3 >= CHUNK {
+                    continue; // keep the whole body + head-room inside the y=0 chunk
+                }
+                // The two voxels above the surface (feet + head) must both be empty air.
+                let clear = (1..=2)
+                    .all(|dy| !terrain_block(wx as f32, wz as f32, h + dy, h).is_opaque());
+                if clear {
+                    return (wx, wz, h);
+                }
+            }
+        }
+    }
+    (cx, cz, terrain_height(cx as f32, cz as f32))
+}
+
+/// Rotate an angle toward a target by at most `max_step` radians, taking the
+/// short way round the circle (used to swing the avatar's facing to its heading).
+fn turn_toward(cur: f32, target: f32, max_step: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let mut d = (target - cur).rem_euclid(TAU);
+    if d > PI {
+        d -= TAU;
+    }
+    cur + d.clamp(-max_step, max_step)
+}
+
+/// Third-person controller (Roblox style): the mouse orbits the camera on a boom
+/// behind + above the avatar; WASD moves the avatar relative to where the camera
+/// looks; the avatar turns to face its heading. Grounded walk reuses `move_body`
+/// (gravity + AABB voxel collision + step-up) exactly; EDIT mode is a free noclip
+/// fly. The camera follows every frame, pulling in against walls via `camera_boom`.
+pub(crate) fn fly_camera(
     time: Res<Time>,
+    cfg: Res<Cfg>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse_btn: Res<ButtonInput<MouseButton>>,
     mut motion: MessageReader<MouseMotion>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
-    mut cam: Query<(&mut Transform, &mut FlyCam)>,
+    mut player_q: Query<(&mut Transform, &mut FlyCam), Without<OrbitCam>>,
+    mut cam_q: Query<(&mut Transform, &mut OrbitCam)>,
     world: Option<Res<World>>,
 ) {
-    let Ok((mut tf, mut fly)) = cam.single_mut() else {
+    let Ok((mut ptf, mut fly)) = player_q.single_mut() else {
+        return;
+    };
+    let Ok((mut ctf, mut orbit)) = cam_q.single_mut() else {
         return;
     };
     let Ok(mut cursor) = cursors.single_mut() else {
@@ -748,100 +1266,107 @@ fn fly_camera(
         cursor.grab_mode = CursorGrabMode::None;
         cursor.visible = true;
     }
-    // F switches between grounded walk (gravity + collision) and free fly.
+    // F switches between grounded walk (gravity + collision) and free noclip fly.
     if keys.just_pressed(KeyCode::KeyF) {
         fly.walking = !fly.walking;
         fly.vel = Vec3::ZERO;
     }
 
-    // Mouse look — shared by both modes.
+    // Mouse orbits the camera (yaw around, pitch clamped so it never rolls over).
     if cursor.grab_mode == CursorGrabMode::Locked {
         let mut delta = Vec2::ZERO;
         for ev in motion.read() {
             delta += ev.delta;
         }
-        fly.yaw -= delta.x * 0.0025;
-        fly.pitch = (fly.pitch - delta.y * 0.0025).clamp(-1.54, 1.54);
-        tf.rotation = Quat::from_axis_angle(Vec3::Y, fly.yaw)
-            * Quat::from_axis_angle(Vec3::X, fly.pitch);
+        orbit.yaw -= delta.x * 0.0025;
+        orbit.pitch = (orbit.pitch - delta.y * 0.0025).clamp(PITCH_MIN, PITCH_MAX);
     } else {
         motion.clear();
     }
 
     let dt = time.delta_secs();
 
-    // ---- WALK: grounded body, horizontal from yaw only, gravity does the rest.
-    if fly.walking {
-        let Some(world) = world.as_deref() else {
-            return;
-        };
-        let fwd = tf.forward();
-        let flat_fwd = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero();
-        let rt = tf.right();
-        let flat_right = Vec3::new(rt.x, 0.0, rt.z).normalize_or_zero();
-        let mut wish = Vec3::ZERO;
-        if keys.pressed(KeyCode::KeyW) {
-            wish += flat_fwd;
-        }
-        if keys.pressed(KeyCode::KeyS) {
-            wish -= flat_fwd;
-        }
-        if keys.pressed(KeyCode::KeyD) {
-            wish += flat_right;
-        }
-        if keys.pressed(KeyCode::KeyA) {
-            wish -= flat_right;
-        }
-        let speed = if keys.pressed(KeyCode::ControlLeft) { 10.0 } else { 6.0 };
-        let horiz = wish.normalize_or_zero() * speed * dt;
+    // Camera orientation → the horizontal basis WASD moves along (camera-relative).
+    let cam_rot =
+        Quat::from_axis_angle(Vec3::Y, orbit.yaw) * Quat::from_axis_angle(Vec3::X, orbit.pitch);
+    let fwd = cam_rot * Vec3::NEG_Z;
+    let flat_fwd = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero();
+    let flat_right = Vec3::new(-flat_fwd.z, 0.0, flat_fwd.x);
 
-        fly.vel.y = (fly.vel.y - GRAVITY * dt).max(-TERMINAL);
-        if fly.grounded && keys.just_pressed(KeyCode::Space) {
-            fly.vel.y = JUMP_SPEED;
-        }
-        let delta = Vec3::new(horiz.x, fly.vel.y * dt, horiz.z);
-        // Auto-step only when on the ground and not shooting upward (mid-jump you
-        // clear ledges by arcing over them, not by teleporting up their face).
-        let can_step = fly.grounded && fly.vel.y <= 0.0;
-        let (np, grounded) = move_body(world, tf.translation, delta, can_step);
-        tf.translation = np;
-        fly.grounded = grounded;
-        if grounded && fly.vel.y < 0.0 {
-            fly.vel.y = 0.0;
-        }
-        return;
-    }
-
-    // ---- FLY: free noclip camera (WASD + vertical, sprint on Ctrl).
-    let mut dir = Vec3::ZERO;
-    let f = tf.forward();
-    let r = tf.right();
+    let mut wish = Vec3::ZERO;
     if keys.pressed(KeyCode::KeyW) {
-        dir += *f;
+        wish += flat_fwd;
     }
     if keys.pressed(KeyCode::KeyS) {
-        dir -= *f;
+        wish -= flat_fwd;
     }
     if keys.pressed(KeyCode::KeyD) {
-        dir += *r;
+        wish += flat_right;
     }
     if keys.pressed(KeyCode::KeyA) {
-        dir -= *r;
+        wish -= flat_right;
     }
-    if keys.pressed(KeyCode::Space) {
-        dir += Vec3::Y;
+    // Headless proof: once grounded, auto-walk forward for a beat so the screenshot
+    // catches the avatar mid-stride with the camera trailing behind it.
+    if cfg.walk_demo && fly.walking && fly.grounded {
+        let t = time.elapsed_secs();
+        if (2.0..3.1).contains(&t) {
+            wish += flat_fwd;
+        }
     }
-    if keys.pressed(KeyCode::ShiftLeft) {
-        dir -= Vec3::Y;
-    }
-    let speed = if keys.pressed(KeyCode::ControlLeft) {
-        90.0
+    let wish = wish.normalize_or_zero();
+
+    if fly.walking {
+        // ---- WALK: grounded body — reuse move_body's gravity/collision/step-up.
+        if let Some(world) = world.as_deref() {
+            let speed = if keys.pressed(KeyCode::ControlLeft) { 10.0 } else { 6.0 };
+            let horiz = wish * speed * dt;
+            fly.vel.y = (fly.vel.y - GRAVITY * dt).max(-TERMINAL);
+            if fly.grounded && keys.just_pressed(KeyCode::Space) {
+                fly.vel.y = JUMP_SPEED;
+            }
+            let delta = Vec3::new(horiz.x, fly.vel.y * dt, horiz.z);
+            let can_step = fly.grounded && fly.vel.y <= 0.0;
+            let (np, grounded) = move_body(world, ptf.translation, delta, can_step);
+            ptf.translation = np;
+            fly.grounded = grounded;
+            if grounded && fly.vel.y < 0.0 {
+                fly.vel.y = 0.0;
+            }
+        }
     } else {
-        28.0
-    };
-    if dir != Vec3::ZERO {
-        tf.translation += dir.normalize() * speed * dt;
+        // ---- FLY: free noclip (EDIT building) — full 3D move, sprint on Ctrl.
+        let mut dir = wish;
+        if keys.pressed(KeyCode::Space) {
+            dir += Vec3::Y;
+        }
+        if keys.pressed(KeyCode::ShiftLeft) {
+            dir -= Vec3::Y;
+        }
+        let speed = if keys.pressed(KeyCode::ControlLeft) { 90.0 } else { 28.0 };
+        if dir != Vec3::ZERO {
+            ptf.translation += dir.normalize() * speed * dt;
+        }
     }
+
+    // Turn the avatar to face its heading (its body mesh's forward is local -Z).
+    if wish != Vec3::ZERO {
+        let target = (-wish.x).atan2(-wish.z);
+        fly.face_yaw = turn_toward(fly.face_yaw, target, TURN_RATE * dt);
+    }
+    ptf.rotation = Quat::from_axis_angle(Vec3::Y, fly.face_yaw);
+
+    // ---- Camera follow: ride the boom behind + above the avatar, pulled in when
+    // a wall would come between the camera and the avatar (so it never clips).
+    let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
+    let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
+    let dist = match world.as_deref() {
+        Some(world) => camera_boom(world, pivot, back, BOOM_DIST),
+        None => BOOM_DIST,
+    };
+    orbit.dist = dist;
+    ctf.translation = pivot + back * dist;
+    ctf.rotation = cam_rot;
 }
 
 // ---------------------------------------------------------------------------
@@ -879,14 +1404,22 @@ fn solid_at(world: &World, wx: i32, wy: i32, wz: i32) -> bool {
 // ---------------------------------------------------------------------------
 
 /// The player capsule approximated as an axis-aligned box, in voxel units.
-const PLAYER_HALF_W: f32 = 0.3; // half of the 0.6-wide footprint
+pub(crate) const PLAYER_HALF_W: f32 = 0.3; // half of the 0.6-wide footprint
 const PLAYER_HEIGHT: f32 = 1.8; // feet → crown
-const EYE_HEIGHT: f32 = 1.62; // feet → camera (0.18 head clearance)
+pub(crate) const EYE_HEIGHT: f32 = 1.62; // feet → camera (0.18 head clearance)
 const GRAVITY: f32 = 28.0; // voxel/s²
 const JUMP_SPEED: f32 = 9.0; // ~1.4-block hop
 const TERMINAL: f32 = 55.0; // fall-speed clamp
 const STEP_HEIGHT: f32 = 1.0; // auto-climb a single-block ledge while walking
 const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before stepping
+
+// ---- Third-person orbit camera (spring-arm / boom) ------------------------
+pub(crate) const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
+const BOOM_MARGIN: f32 = 0.35; // keep the camera this far off a wall it pulls up to
+pub(crate) const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
+const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
+const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
+const TURN_RATE: f32 = 12.0; // how fast the avatar turns to face its movement (rad/s)
 
 /// Does the player body — camera (eye) at `eye` — overlap any solid voxel? A tiny
 /// epsilon inset stops a body that merely *touches* a block face from sticking.
@@ -986,16 +1519,34 @@ fn move_body(world: &World, eye: Vec3, delta: Vec3, can_step: bool) -> (Vec3, bo
     (p, grounded)
 }
 
+/// How far back along `dir` (a unit boom vector pointing from the pivot toward the
+/// camera) the camera can sit before a solid voxel would come between it and the
+/// avatar. Marches out from the pivot with the same `solid_at` grid test the edit
+/// raycast uses, stopping `BOOM_MARGIN` short of the first block it meets — so the
+/// camera slides in against walls instead of clipping through them.
+fn camera_boom(world: &World, pivot: Vec3, dir: Vec3, want: f32) -> f32 {
+    const STEP: f32 = 0.1;
+    let mut d = 0.0;
+    while d < want {
+        let p = pivot + dir * (d + BOOM_MARGIN);
+        if solid_at(world, p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32) {
+            return d;
+        }
+        d += STEP;
+    }
+    want
+}
+
 /// One raycast hit: the solid voxel struck and the empty cell just before it
 /// (where a placed block lands).
-struct RayHit {
-    voxel: IVec3,
-    prev: IVec3,
+pub(crate) struct RayHit {
+    pub(crate) voxel: IVec3,
+    pub(crate) prev: IVec3,
 }
 
 /// Amanatides & Woo voxel DDA: walk the grid from `origin` along `dir` until a
 /// solid voxel is hit or `max_dist` is exceeded.
-fn raycast_voxel(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<RayHit> {
+pub(crate) fn raycast_voxel(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<RayHit> {
     let dir = dir.normalize_or_zero();
     if dir == Vec3::ZERO {
         return None;
@@ -1073,7 +1624,7 @@ fn raycast_voxel(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Optio
 
 /// Write a block at a world voxel and re-mesh only the chunk that owns it.
 /// Returns true if a chunk was actually touched.
-fn set_world_voxel(
+pub(crate) fn set_world_voxel(
     world: &mut World,
     voxel: IVec3,
     block: BlockId,
@@ -1102,11 +1653,43 @@ fn set_world_voxel(
     true
 }
 
+/// Which side of an editor click: stamp a block, or carve air.
+pub(crate) enum PaintOp {
+    Place,
+    Break,
+}
+
+/// The core of an editor click: cast a world ray from the camera through the
+/// screen-space `cursor`, hit the voxel grid, then **place** (the empty cell in
+/// front of the struck face) or **break** (the struck voxel). This is the exact
+/// path the interactive `editor::editor_edit` and the headless `editor_paint_demo`
+/// proof both drive, so a click and the proof edit the world through one function.
+/// Returns the voxel cell it wrote to (`None` on a sky miss / off-grid).
+pub(crate) fn paint_at_cursor(
+    world: &mut World,
+    meshes: &mut Assets<Mesh>,
+    commands: &mut Commands,
+    cam: &Camera,
+    cam_gt: &GlobalTransform,
+    cursor: Vec2,
+    op: PaintOp,
+    block: BlockId,
+) -> Option<IVec3> {
+    let ray = cam.viewport_to_world(cam_gt, cursor).ok()?;
+    let hit = raycast_voxel(world, ray.origin, ray.direction.as_vec3(), editor::EDIT_REACH)?;
+    let (target, written) = match op {
+        PaintOp::Break => (hit.voxel, BlockId::AIR),
+        PaintOp::Place => (hit.prev, block),
+    };
+    set_world_voxel(world, target, written, meshes, commands);
+    Some(target)
+}
+
 /// Draw a wireframe box around the voxel the camera is aimed at, so breaking and
 /// placing have a clear target (the same raycast the edits fire from). Drawn every
 /// frame with gizmos — no entity churn — and only when the ray actually hits.
 fn highlight_target(
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
     world: Res<World>,
     editor: Res<Editor>,
     mut gizmos: Gizmos,
@@ -1132,7 +1715,7 @@ fn edit_voxels(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     cursors: Query<&CursorOptions, With<PrimaryWindow>>,
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<World>,
@@ -1187,13 +1770,33 @@ fn edit_voxels(
 fn editor_controls(
     keys: Res<ButtonInput<KeyCode>>,
     cursors: Query<&CursorOptions, With<PrimaryWindow>>,
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<World>,
     mut editor: ResMut<Editor>,
+    mut selected_block: ResMut<editor::SelectedBlock>,
     mut fly_q: Query<&mut FlyCam>,
 ) {
+    // 1-4 pick the held block, writing BOTH the legacy play-mode selector and the
+    // shared SelectedBlock the editor palette / Editor-mode click read.
+    if keys.just_pressed(KeyCode::Digit1) {
+        editor.selected = BlockId::GRASS;
+        selected_block.0 = BlockId::GRASS;
+    }
+    if keys.just_pressed(KeyCode::Digit2) {
+        editor.selected = BlockId::DIRT;
+        selected_block.0 = BlockId::DIRT;
+    }
+    if keys.just_pressed(KeyCode::Digit3) {
+        editor.selected = BlockId::STONE;
+        selected_block.0 = BlockId::STONE;
+    }
+    if keys.just_pressed(KeyCode::Digit4) {
+        editor.selected = BlockId::SAND;
+        selected_block.0 = BlockId::SAND;
+    }
+
     // Tab: toggle mode. Entering EDIT forces free-fly so you move through the build.
     if keys.just_pressed(KeyCode::Tab) {
         editor.mode = match editor.mode {
@@ -1258,23 +1861,10 @@ fn editor_controls(
     // F9: reload the quick-save slot — despawn the world and rebuild from the file.
     if keys.just_pressed(KeyCode::F9) {
         let path = editor.map_path.clone();
-        match load_map_file(&path) {
-            Ok(map) => {
-                for slot in world.chunks.values() {
-                    commands.entity(slot.entity).despawn();
-                }
-                world.chunks.clear();
-                world.total_quads = 0;
-                let nx = map.size.chunks_x.max(1);
-                let nz = map.size.chunks_z.max(1);
-                for z in 0..nz {
-                    for x in 0..nx {
-                        spawn_empty_chunk(&mut commands, &mut meshes, &mut world, x, z);
-                    }
-                }
-                apply_map_blocks(&mut commands, &mut meshes, &mut world, &map);
-                println!("MAP_LOAD(F9) ok blocks={} path={path}", map.blocks.len());
-                editor.status = format!("loaded {} blocks ← {path}", map.blocks.len());
+        match reload_world(&mut commands, &mut meshes, &mut world, &path) {
+            Ok(n) => {
+                println!("MAP_LOAD(F9) ok blocks={n} path={path}");
+                editor.status = format!("loaded {n} blocks ← {path}");
             }
             Err(e) => {
                 eprintln!("MAP_LOAD FAIL {e}");
@@ -1313,6 +1903,153 @@ fn map_save_demo(
     }
 }
 
+/// egui toolbar Save/Load → the same disk path F5/F9 use. Reads the messages
+/// `editor_ui`'s toolbar emits and writes/reads `Editor.map_path`, so the on-screen
+/// buttons are no longer dead — they round-trip a real map file.
+fn egui_save_load(
+    mut save_ev: MessageReader<editor_ui::SaveRequest>,
+    mut load_ev: MessageReader<editor_ui::LoadRequest>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut world: ResMut<World>,
+    mut editor: ResMut<Editor>,
+) {
+    for _ in save_ev.read() {
+        let path = editor.map_path.clone();
+        match save_world_to(&world, &path) {
+            Ok(n) => {
+                println!("MAP_SAVE(egui) ok blocks={n} path={path}");
+                editor.status = format!("saved {n} blocks → {path}");
+            }
+            Err(e) => {
+                eprintln!("MAP_SAVE(egui) FAIL {e}");
+                editor.status = format!("save FAILED: {e}");
+            }
+        }
+    }
+    for _ in load_ev.read() {
+        let path = editor.map_path.clone();
+        match reload_world(&mut commands, &mut meshes, &mut world, &path) {
+            Ok(n) => {
+                println!("MAP_LOAD(egui) ok blocks={n} path={path}");
+                editor.status = format!("loaded {n} blocks ← {path}");
+            }
+            Err(e) => {
+                eprintln!("MAP_LOAD(egui) FAIL {e}");
+                editor.status = format!("load FAILED: {e}");
+            }
+        }
+    }
+}
+
+/// Headless proof that the editor builds voxels by clicking: drives the SAME
+/// `paint_at_cursor` (screen→world raycast → `set_world_voxel`) the interactive
+/// `editor::editor_edit` uses, in the default Editor state. Proves (a) the
+/// sandbox holds no enemy husk, (b) a "click" places a voxel, (c) a "click"
+/// removes one — then leaves a small brick pillar for the screenshot run.
+fn editor_paint_demo(
+    time: Res<Time>,
+    cfg: Res<Cfg>,
+    mut demo: ResMut<EditorPaintDemo>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cam_q: Query<(&Camera, &GlobalTransform), With<OrbitCam>>,
+    enemies: Query<Entity, With<combat::Enemy>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut world: ResMut<World>,
+    mut editor: ResMut<Editor>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if !cfg.editor_demo || demo.done {
+        return;
+    }
+    // Let the camera GlobalTransform + window size settle before raycasting.
+    if time.elapsed_secs() < 1.0 {
+        return;
+    }
+    demo.done = true;
+
+    // (a) The default Editor state is a husk-free sandbox.
+    let husk_count = enemies.iter().count();
+
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let (w, h) = (window.width(), window.height());
+    let Ok((cam, cam_gt)) = cam_q.single() else {
+        return;
+    };
+    let center = Vec2::new(w * 0.5, h * 0.5);
+
+    // (b) PLACE via the screen→world paint path a click uses.
+    let quads_before = world.total_quads;
+    let placed = paint_at_cursor(
+        &mut world,
+        &mut meshes,
+        &mut commands,
+        cam,
+        cam_gt,
+        center,
+        PaintOp::Place,
+        BlockId::STONE,
+    );
+    let quads_after_place = world.total_quads;
+    let place_ok = placed.is_some() && quads_after_place > quads_before;
+
+    // (c) BREAK that same voxel through the same path: re-project it to screen
+    // and "click" it, proving a click removes a block.
+    let mut break_ok = false;
+    let mut quads_after_break = quads_after_place;
+    if let Some(v) = placed {
+        let p = v.as_vec3() + Vec3::splat(0.5);
+        if let Some(screen) = cam.world_to_viewport(cam_gt, p).ok() {
+            let removed = paint_at_cursor(
+                &mut world,
+                &mut meshes,
+                &mut commands,
+                cam,
+                cam_gt,
+                screen,
+                PaintOp::Break,
+                BlockId::STONE,
+            );
+            quads_after_break = world.total_quads;
+            break_ok = removed.is_some() && quads_after_break < quads_after_place;
+        }
+    }
+
+    // Visible marker for the screenshot run: a 4-tall brick pillar where the
+    // camera is looking, built through the same `set_world_voxel` path.
+    if let Some(base) = placed {
+        for dy in 0..4 {
+            let y = (base.y + dy).clamp(0, CHUNK as i32 - 1);
+            set_world_voxel(
+                &mut world,
+                IVec3::new(base.x, y, base.z),
+                BlockId::BRICK,
+                &mut meshes,
+                &mut commands,
+            );
+        }
+    }
+
+    editor.status = format!("editor demo: place={} break={}", place_ok, break_ok);
+    let sandbox_ok = husk_count == 0;
+    println!(
+        "EDITOR_DEMO husk_in_sandbox={} screen_place quads {quads_before}->{quads_after_place} ({}) \
+         break ->{quads_after_break} ({}) => {}",
+        husk_count,
+        if place_ok { "PASS" } else { "FAIL" },
+        if break_ok { "PASS" } else { "FAIL" },
+        if sandbox_ok && place_ok && break_ok { "PASS" } else { "FAIL" }
+    );
+
+    // Exit now for a pure headless proof; defer to the screenshot path otherwise.
+    if cfg.shot.is_none() {
+        exit.write(AppExit::Success);
+    }
+}
+
 /// A small, unmistakable build for the save demo (easy to eyeball in a screenshot):
 /// a grass floor, a stone tower, a climbable dirt staircase, and a sand marker — so
 /// all four block types land in the saved file.
@@ -1341,7 +2078,7 @@ fn edit_demo(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<World>,
-    cam: Query<&Transform, With<FlyCam>>,
+    cam: Query<&Transform, With<OrbitCam>>,
 ) {
     if !cfg.edit_demo || demo.done || time.elapsed_secs() < 1.2 {
         return;
@@ -1461,6 +2198,16 @@ fn walk_demo(
         if land_ok && buried && !sky { "PASS" } else { "FAIL" }
     );
 
+    // Camera-boom collision: the spring-arm must pull in toward a wall (solid ground
+    // below) yet extend fully into open air (empty sky above) — the same solid_at
+    // grid test the aim raycast uses, so a wall can never come between cam & avatar.
+    let boom_down = camera_boom(world, eye, Vec3::NEG_Y, BOOM_DIST);
+    let boom_up = camera_boom(world, eye, Vec3::Y, BOOM_DIST);
+    println!(
+        "CAM_BOOM into_ground={boom_down:.2} into_sky={boom_up:.2} => {}",
+        if boom_down < BOOM_DIST - 0.5 && boom_up >= BOOM_DIST { "PASS" } else { "FAIL" }
+    );
+
     // The step-up proof below scans procedural terrain for a 1-block ledge; on a
     // loaded map there is no generator height to scan. Instead prove the map's *walls*
     // stop the body: find the nearest solid wall east of the player and drive move_body
@@ -1535,11 +2282,36 @@ fn walk_demo(
     }
 }
 
+/// HUD for the `?hero` / VOXELFORGE_HERO branch — FPS + status only.
+///
+/// `hud` below cannot run here: it takes `Res<Editor>` and `Res<SelectedBlock>`,
+/// which only the editor branch inserts, so scheduling it on the hero app would
+/// panic on the first frame. Without SOMETHING writing `#fps` the web hero page
+/// left the HUD on "booting…" forever, and `scripts/web-verify.mjs` — which
+/// proves the wasm booted by waiting for a real FPS number — reported
+/// `rendered: false` on a page that was in fact rendering the scene fine
+/// (`frameDrawn: true`, 100% non-black). It also left the parity checklist's
+/// §4.4 open: "วัด FPS บนเฟรมนั้น — FPS จากฉาก editor ใช้เทียบ Lite target ไม่ได้
+/// (คนละ workload)". This closes both: the number now comes from the graded frame.
+fn hero_hud(
+    diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
+    world: Option<Res<World>>,
+) {
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(0.0);
+    let quads = world.as_ref().map(|w| w.total_quads).unwrap_or(0);
+    set_dom("fps", &format!("{fps:.0}"));
+    set_dom("status", &format!("FPS {fps:.0}  |  hero scene  |  quads {quads}"));
+}
+
 fn hud(
     diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
     world: Option<Res<World>>,
     bench: Res<Bench>,
     editor: Res<Editor>,
+    selected_block: Res<editor::SelectedBlock>,
     fly: Query<&FlyCam>,
     mut q: Query<&mut Text, With<HudText>>,
 ) {
@@ -1569,14 +2341,22 @@ fn hud(
             EditorMode::Edit => "EDIT",
             EditorMode::Play => "PLAY",
         };
+        // The block an Editor-mode click stamps: the egui palette (and 1-4 keys)
+        // write the shared SelectedBlock, so show that.
+        let held = block_name(selected_block.0);
+        let ctrls = match editor.mode {
+            EditorMode::Edit => format!(
+                "L=place[{held}] R=break | MMB=orbit Shift+MMB=pan Wheel=zoom F=fly"
+            ),
+            EditorMode::Play => format!("L=break R=place[{held}] (cursor: click to lock)"),
+        };
         let status = if editor.status.is_empty() {
             String::new()
         } else {
             format!("  |  {}", editor.status)
         };
         format!(
-            "FPS {fps:.0}  |  chunks {chunks}  |  quads {quads}  |  [{editmode}/{movemode}] Tab=mode F=fly/walk  |  L=break R=place[{}] 1-4=pick G=fill F5=save F9=load{status}",
-            block_name(editor.selected)
+            "FPS {fps:.0}  |  chunks {chunks}  |  quads {quads}  |  [{editmode}/{movemode}] {ctrls}  |  Tab=mode G=fill F5=save F9=load{status}"
         )
     };
     if let Ok(mut text) = q.single_mut() {

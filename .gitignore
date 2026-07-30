@@ -42,3 +42,38 @@ client/build_*.txt
 !/hero-golden-a.png
 !/hero-golden-b.png
 !/hero-golden-c.png
+
+# ── Browser console dumps (manual wasm smoke-test artifacts) ─
+# e.g. docs/assets/wasm-first-frame.png.console.txt — raw devtools
+# console dumps saved alongside a screenshot; contain local paths /
+# dev-server URLs and shouldn't be committed as source.
+*.console.txt
+
+# ── Godot prototype editor cache (unrelated to the Bevy client) ─
+# godot/project.godot, scenes/, scripts/*.gd ARE real source and stay
+# tracked — only the editor's own generated cache is junk.
+godot/.godot/
+
+# ── Editor runtime config (generated on first run, see editor_config.rs) ─
+/editor_config.json
+
+# ── Side-lane build dirs & throwaway probes ──────────────────
+# `target-combat/` is a 3.2 GB CARGO_TARGET_DIR used by the combat lane so
+# it never fights the main build's lock; `**/target/` above misses the name.
+# `target-review/` is the same pattern for the review lane's own CARGO_TARGET_DIR.
+/target-combat/
+/target-review/
+**/__pycache__/
+# One-off rustc/cl.exe toolchain probes from the Windows link-error hunt.
+/_check_rustc_cl.ps1
+/_parse_cl.ps1
+# editor_config.json is generated on first run — the root rule missed the
+# copy the client writes next to its own crate.
+client/editor_config.json
+
+# ── Combat-lane proof evidence ───────────────────────────────
+# `_combat_proof/` holds the team's build/run logs for prove_combat.sh. The
+# logs themselves already match `*.log`, but the folder also collects one-off
+# .patch snapshots — ignore the whole directory rather than deleting the
+# evidence. Keep the files on disk; just don't track them.
+/_combat_proof/

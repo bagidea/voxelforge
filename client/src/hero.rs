@@ -96,6 +96,111 @@ pub fn setup_hero(
     let ceramic_sh = mats.add(matte(Color::srgb(0.74, 0.68, 0.56), 0.55));
     let accent = mats.add(matte(pal::ACCENT, 0.7));
     let book = mats.add(matte(pal::BOOK, 0.6));
+
+    // ---- WIDE geometry-pass materials (CEO sign-off 2026-07-26) ---------
+    // Only used when VOXELFORGE_WIDE is set, so the locked narrow hero stays
+    // byte-identical. Closes the ref look-gap the env-only pass parked:
+    //   • floor: the 2-tone (x+z) CHECKER read as an orange/black chessboard.
+    //     A PLANK palette (4 warm walnut/honey tones, LOW albedo spread, all
+    //     R>G>B) laid as 1-wide boards running in Z (no cross-axis alternation)
+    //     reads as continuous parquet like the ref — not a checkerboard.
+    //   • tabletop: the light `counter` honey went flat-YELLOW filling frame
+    //     centre; a slightly deeper planked wood pair reads as a real table so
+    //     the cream bowl pops off it.
+    //   • accent: the ref's cool note is a TEAL GLASS tumbler, not the muted
+    //     moss block. Saturated teal, low roughness + a faint emissive glow so
+    //     it reads as lit glass beside the bowl.
+    // GEOMETRY PASS (Flamingo, 2026-07-27) — the de-checkered parquet was reading
+    // as a FLAT red-orange sheet (albedo too red-dominant + tones too close under
+    // the amber grade), not the ref's warm honey-walnut boards. Lifted the G/B legs
+    // toward honey so the floor reads amber WOOD not plastic-red, and widened the
+    // board-to-board spread a touch so individual planks separate at distance. Seam
+    // lifted off near-black so joints read as grooves, not black gaps. All stay
+    // R>G>B (G3 warm) and the lifted darks raise the shadow-floor p05-L margin.
+    // Round 2: pushed the G leg up decisively (R-G gap ~0.13 → ~0.10) so the floor
+    // reads honey-AMBER wood, not plastic-RED — the red-dominant albedo was fighting
+    // the amber ambient into a flat orange sheet. Board-to-board tone spread widened
+    // so individual planks separate at establishing distance.
+    let plank_h = mats.add(matte(Color::srgb(0.55, 0.44, 0.29), 0.9)); // honey oak
+    let plank_m = mats.add(matte(Color::srgb(0.48, 0.37, 0.24), 0.9)); // walnut
+    let plank_d = mats.add(matte(Color::srgb(0.42, 0.32, 0.21), 0.9)); // dark walnut
+    let plank_seam = mats.add(matte(Color::srgb(0.36, 0.28, 0.18), 0.92)); // board joint
+    // GEOMETRY PASS (Flamingo, 2026-07-27): deepened the wide tabletop boards a
+    // touch (was 0.50/0.44 R) so the bright flat-yellow slab becomes a warm mid
+    // wood — the cream hero bowl now separates off the table instead of melting
+    // into one blobby yellow mass. Still R>G>B, still below the cream bowl albedo.
+    // Board pair kept a clear 2-tone (~0.11 spread): the foreground table fills the
+    // near-camera, in-focus lower frame, so its plank-to-plank tone step is where the
+    // ref carries most of its foreground voxel-grain. A crisp table seam grid restores
+    // the micro-contrast the smooth walls gave up WITHOUT crushing any shadow (both
+    // tones stay warm mid-wood, well above the G3 floor).
+    let table_h = mats.add(matte(Color::srgb(0.49, 0.37, 0.24), 0.72)); // lit table board
+    let table_d = mats.add(matte(Color::srgb(0.38, 0.28, 0.18), 0.72)); // table board pair
+    // GEOMETRY PASS (Flamingo, 2026-07-27) — de-checker the walls for the WIDE
+    // establishing frame. The shipped wall_a/wall_b pair (0.06 albedo spread)
+    // read as a LOUD orange/yellow chessboard under the saturated key-lit grade —
+    // the #1 "Minecraft-with-no-shader" tell vs the ref's smooth honey plaster.
+    // A near-tone honey pair (~0.02 spread) keeps a whisper of voxel block-grid
+    // (still reads as blocks up close) but resolves to a calm continuous wall at
+    // establishing distance, like the ref. WIDE-only: narrow hero uses the
+    // original pair unchanged (byte-identical lock preserved).
+    // Pair kept ALMOST identical (~0.006 spread): a 0.02 spread still resolved to a
+    // visible chessboard once the grazing key light + post contrast/saturation
+    // amplified it on the brightly-lit walls. This close, blocks still read via
+    // per-face lighting + AO (the voxel silhouette survives) while the wall reads
+    // as smooth honey plaster at establishing distance, like the ref.
+    let wall_a_w = mats.add(matte(Color::srgb(0.620, 0.520, 0.410), 0.97)); // honey plaster
+    let wall_b_w = mats.add(matte(Color::srgb(0.614, 0.514, 0.404), 0.97)); // whisper-grid pair
+    let glass_teal = mats.add(StandardMaterial {
+        base_color: Color::srgb(0.10, 0.44, 0.42),
+        emissive: LinearRgba::rgb(0.03, 0.24, 0.22),
+        perceptual_roughness: 0.32,
+        metallic: 0.0,
+        reflectance: 0.5,
+        ..default()
+    });
+    // Parquet plank picker: tone varies per-BOARD (constant x) via a cheap
+    // deterministic hash so neighbours differ without an A/B/A/B checker, with a
+    // staggered board-joint seam every ~6 tiles down each plank (real flooring
+    // offsets its joints per row). Returns the material for floor tile (x,z).
+    let plank_at = |x: i32, z: i32| -> &Handle<StandardMaterial> {
+        // staggered joint: seam every 6 down the board, offset by the board index
+        if (z + x * 2).rem_euclid(6) == 0 {
+            return &plank_seam;
+        }
+        // Interleave tones so EACH board differs from its neighbour (was 0|1→h,
+        // which clustered honey boards into flat runs). Even spread h/m/d/m gives a
+        // board-edge tone step at almost every plank seam → the floor reads as
+        // separated planks at distance AND the extra edges restore the voxel-grain
+        // (micro-contrast) the de-checkered walls gave up.
+        match ((x.wrapping_mul(1103515245).wrapping_add(12345) >> 4) & 3) {
+            0 => &plank_h,
+            1 => &plank_m,
+            2 => &plank_d,
+            _ => &plank_m,
+        }
+    };
+    // Table plank picker: boards run in Z too, 2-tone low-contrast wood.
+    let table_at = |x: i32| -> &Handle<StandardMaterial> {
+        if ((x.wrapping_mul(2654435761u32 as i32).wrapping_add(7) >> 3) & 1) == 0 {
+            &table_h
+        } else {
+            &table_d
+        }
+    };
+    // Every look knob below comes from `Cfg` — never `std::env::var` directly.
+    // env::var returns Err on wasm32, so a direct read silently rendered the web
+    // build with all-defaults while native honoured the recipe. Cfg is filled
+    // from env on native and from the query string on web (see main.rs).
+    let wide = cfg.wide;
+    // Wall pair selector: the WIDE establishing frame gets the de-checkered honey
+    // plaster (smooth at distance); the locked narrow hero keeps the shipped pair
+    // exactly, so its signed frame stays byte-identical.
+    let (wa, wb) = if wide {
+        (&wall_a_w, &wall_b_w)
+    } else {
+        (&wall_a, &wall_b)
+    };
     // Fridge: dielectric but smooth + reflective => a real specular streak from
     // the sun (true metallic would render black without an env-map).
     let steel = mats.add(StandardMaterial {
@@ -151,21 +256,25 @@ pub fn setup_hero(
     //   window on the +X wall (screen-left, the key light), fridge on the -X
     //   wall (screen-right), hero island front-centre, cabinets on the far +Z wall.
     // Floor: checkerboard wood (this is what reads as "voxel" in the ref).
-    for x in 0..16 {
-        for z in 0..16 {
-            let m = if (x + z) % 2 == 0 { &wood_a } else { &wood_b };
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(m.clone()),
-                Transform::from_xyz(x as f32 + 0.5, 0.5, z as f32 + 0.5),
-            ));
+    // Narrow hero only — the WIDE path lays a de-checkered parquet plank floor
+    // across the full deepened footprint (z -14..16) in the VOXELFORGE_WIDE block.
+    if !wide {
+        for x in 0..16 {
+            for z in 0..16 {
+                let m = if (x + z) % 2 == 0 { &wood_a } else { &wood_b };
+                commands.spawn((
+                    Mesh3d(cube.clone()),
+                    MeshMaterial3d(m.clone()),
+                    Transform::from_xyz(x as f32 + 0.5, 0.5, z as f32 + 0.5),
+                ));
+            }
         }
     }
     // Far wall (+Z) — carries the upper cabinets. Faint 2-tone block grid so
     // flat walls still read blocky.
     for x in 0..16 {
         for y in 1..9 {
-            let m = if (x + y) % 2 == 0 { &wall_a } else { &wall_b };
+            let m = if (x + y) % 2 == 0 { wa } else { wb };
             commands.spawn((
                 Mesh3d(cube.clone()),
                 MeshMaterial3d(m.clone()),
@@ -176,7 +285,7 @@ pub fn setup_hero(
     // Right-screen wall (-X, x=0) — solid, behind the fridge.
     for z in 0..16 {
         for y in 1..9 {
-            let m = if (z + y) % 2 == 0 { &wall_a } else { &wall_b };
+            let m = if (z + y) % 2 == 0 { wa } else { wb };
             commands.spawn((
                 Mesh3d(cube.clone()),
                 MeshMaterial3d(m.clone()),
@@ -191,7 +300,7 @@ pub fn setup_hero(
             if is_window {
                 continue;
             }
-            let m = if (z + y) % 2 == 0 { &wall_a } else { &wall_b };
+            let m = if (z + y) % 2 == 0 { wa } else { wb };
             commands.spawn((
                 Mesh3d(cube.clone()),
                 MeshMaterial3d(m.clone()),
@@ -236,14 +345,18 @@ pub fn setup_hero(
     // Tabletop top surface (y=2..3): planked wood instead of one flat plate. Per-block
     // checker of counter/counter_dk lays a seam grid on the exact tiles the grader's
     // fg zone samples — the one in-scope lever for the fg/bg hi-freq axis.
-    for x in 4..11 {
-        for z in 2..6 {
-            let m = if (x + z) % 2 == 0 { &counter } else { &counter_dk };
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(m.clone()),
-                Transform::from_xyz(x as f32 + 0.5, 2.5, z as f32 + 0.5),
-            ));
+    // Narrow only — the WIDE path re-lays the tabletop (z -10..6) in warm table-wood
+    // boards so it reads as a table, not a flat-yellow slab, in the establishing frame.
+    if !wide {
+        for x in 4..11 {
+            for z in 2..6 {
+                let m = if (x + z) % 2 == 0 { &counter } else { &counter_dk };
+                commands.spawn((
+                    Mesh3d(cube.clone()),
+                    MeshMaterial3d(m.clone()),
+                    Transform::from_xyz(x as f32 + 0.5, 2.5, z as f32 + 0.5),
+                ));
+            }
         }
     }
     // PROPOSAL PROBE (Poppy, env-gated — default OFF, signed frame untouched):
@@ -254,7 +367,7 @@ pub fn setup_hero(
     // can't clear the axis. This extends the lit planked tabletop FORWARD (z -1..2) so
     // the bright counter/counter_dk checker (22-pt albedo gap) fills the fg zone
     // instead of the dark floor. VOXELFORGE_FGAPRON=1 to enable; bake only on sign-off.
-    if std::env::var("VOXELFORGE_FGAPRON").is_ok() {
+    if cfg.fg_apron {
         fill(&mut commands, &cabinet, 4, 11, 0, 2, -1, 2); // support under the apron
         for x in 4..11 {
             for z in -1..2 {
@@ -278,7 +391,11 @@ pub fn setup_hero(
     // One small moss-green block beside the bowl — the single cool note that
     // makes the warm room sing (bible §4). Kept SMALL (~1% of frame like the
     // ref); a big saturated block walls off the cozy mood.
-    fill(&mut commands, &accent, 9, 10, 3, 5, 4, 6); // 1×2×2 standing accent
+    // Narrow only — the WIDE path swaps this for a proper TEAL GLASS tumbler
+    // beside the hero bowl (matches the ref's teal accent), placed in the block below.
+    if !wide {
+        fill(&mut commands, &accent, 9, 10, 3, 5, 4, 6); // 1×2×2 standing accent
+    }
 
     // ---- WIDE establishing dressing (env-gated · default OFF) ----------
     // The shipped/locked converged frame renders WITHOUT this flag, so it stays
@@ -302,12 +419,15 @@ pub fn setup_hero(
     //   • The checker floor + the planked island top RUN FORWARD to z=-14/-10
     //     so the near foreground is one continuous warm tabletop/floor.
     // Bake as the default framing ONLY on Flamingo + CEO sign-off.
-    if std::env::var("VOXELFORGE_WIDE").is_ok() {
-        // 1) Deep foreground floor — run the checker wood forward to z=-14 so the
-        //    near corners beside the island always rest on wood, never void.
+    if wide {
+        // 1) DE-CHECKERED parquet floor across the FULL deepened footprint
+        //    (z -14..16 — the base checker floor is skipped when wide). Boards
+        //    run in Z (recede toward the window like the ref); tone varies per
+        //    board via `plank_at`, staggered joints break the board lengths.
+        //    Reads as continuous warm parquet, not an orange/black chessboard.
         for x in 0..16 {
-            for z in -14..0 {
-                let m = if (x + z) % 2 == 0 { &wood_a } else { &wood_b };
+            for z in -14..16 {
+                let m = plank_at(x, z);
                 commands.spawn((
                     Mesh3d(cube.clone()),
                     MeshMaterial3d(m.clone()),
@@ -319,7 +439,7 @@ pub fn setup_hero(
         //    bright ceiling: the top of a tilt-down frame lands here, on wall.
         for x in 0..16 {
             for y in 9..14 {
-                let m = if (x + y) % 2 == 0 { &wall_a } else { &wall_b };
+                let m = if (x + y) % 2 == 0 { wa } else { wb };
                 commands.spawn((
                     Mesh3d(cube.clone()),
                     MeshMaterial3d(m.clone()),
@@ -330,7 +450,7 @@ pub fn setup_hero(
         // Side walls: raise to y=14 across the full deepened footprint (z -14..16)…
         for z in -14..16 {
             for y in 9..14 {
-                let m = if (z + y) % 2 == 0 { &wall_a } else { &wall_b };
+                let m = if (z + y) % 2 == 0 { wa } else { wb };
                 commands.spawn((
                     Mesh3d(cube.clone()),
                     MeshMaterial3d(m.clone()),
@@ -348,7 +468,7 @@ pub fn setup_hero(
         //    are solid here — the window opening stays back at its shipped z 4..10.
         for z in -14..0 {
             for y in 1..9 {
-                let m = if (z + y) % 2 == 0 { &wall_a } else { &wall_b };
+                let m = if (z + y) % 2 == 0 { wa } else { wb };
                 commands.spawn((
                     Mesh3d(cube.clone()),
                     MeshMaterial3d(m.clone()),
@@ -361,17 +481,89 @@ pub fn setup_hero(
                 ));
             }
         }
-        // 3) Run the hero island body + its planked top FORWARD (z −10..2) so the
-        //    bowl rests on a long warm tabletop that fills the foreground like the
-        //    ref. Supersedes the older VOXELFORGE_FGAPRON probe (z −1..2).
+        // 3) Run the hero island body + its WOOD-PLANK top across the full length
+        //    (z −10..6 — base tabletop skipped when wide) so the bowl rests on a
+        //    long warm TABLE that fills the foreground like the ref, reading as
+        //    wood boards instead of a flat-yellow slab.
         fill(&mut commands, &cabinet, 4, 11, 0, 2, -10, 2);
         for x in 4..11 {
-            for z in -10..2 {
-                let m = if (x + z) % 2 == 0 { &counter } else { &counter_dk };
+            for z in -10..6 {
+                let m = table_at(x);
                 commands.spawn((
                     Mesh3d(cube.clone()),
                     MeshMaterial3d(m.clone()),
                     Transform::from_xyz(x as f32 + 0.5, 2.5, z as f32 + 0.5),
+                ));
+            }
+        }
+        // 4) TEAL GLASS tumbler beside the hero bowl (bowl sits at x7,z4). Placed
+        //    screen-right + forward of the bowl (lower x, nearer z) to mirror the
+        //    ref's bowl-left / teal-right foreground pairing. A 2×2 vessel, 2 tall,
+        //    with a hollowed top and a 1-block handle nub so it reads as a mug/glass,
+        //    not a plain cube. Sits on the tabletop top (y=3).
+        {
+            let (gx, gz) = (4, 2); // screen-right of the bowl, one row forward
+            // solid 2×2 base course (y=3)
+            fill(&mut commands, &glass_teal, gx, gx + 2, 3, 4, gz, gz + 2);
+            // upper course (y=4): open one back-inner corner so the top reads hollow
+            for x in gx..gx + 2 {
+                for z in gz..gz + 2 {
+                    if x == gx + 1 && z == gz + 1 {
+                        continue; // hollow notch
+                    }
+                    commands.spawn((
+                        Mesh3d(cube.clone()),
+                        MeshMaterial3d(glass_teal.clone()),
+                        Transform::from_xyz(x as f32 + 0.5, 4.5, z as f32 + 0.5),
+                    ));
+                }
+            }
+            // handle nub on the screen-left face (+x side), mid height
+            commands.spawn((
+                Mesh3d(cube.clone()),
+                MeshMaterial3d(glass_teal.clone()),
+                Transform::from_xyz(gx as f32 + 2.0 + 0.5, 3.5, gz as f32 + 0.5),
+            ));
+        }
+
+        // 5) Pin 3 (LOOK): DUST MOTES in the god-ray. The volumetric shaft reads
+        //    as a clean gradient with nothing IN it; real golden-hour light is
+        //    full of lit dust. A field of tiny warm-emissive specks scattered
+        //    through the window-beam corridor catches the key light → floating
+        //    motes that give the shaft texture + a little hi-frequency sparkle
+        //    (micro-contrast) the flat air lacks. Deterministic positions (frozen
+        //    frame, so TAA doesn't smear them). env VOXELFORGE_DUST scales density
+        //    (0 = off). Specks are sub-pixel-small so they can't move p95, but the
+        //    hi-pass grain they add nudges micro-contrast up.
+        let dust: f32 = cfg.dust.unwrap_or(1.0);
+        if dust > 0.0 {
+            // hash(i, salt) -> [0,1): a cheap integer mix so motes scatter in 3D
+            // instead of falling on a lattice (three different salts per mote).
+            let hash = |i: i32, s: u32| -> f32 {
+                let mut v = (i as u32).wrapping_mul(0x9E3779B1).wrapping_add(s);
+                v ^= v >> 15;
+                v = v.wrapping_mul(0x85EBCA77);
+                v ^= v >> 13;
+                (v & 0xFFFF) as f32 / 65535.0
+            };
+            let mote_mat = mats.add(StandardMaterial {
+                base_color: Color::srgb(1.0, 0.92, 0.72),
+                emissive: LinearRgba::rgb(2.4, 1.85, 1.0),
+                perceptual_roughness: 1.0,
+                ..default()
+            });
+            let mote_mesh = meshes.add(Cuboid::new(0.06, 0.06, 0.06));
+            let n = (70.0 * dust) as i32;
+            for i in 0..n {
+                // Corridor between the +X window (x≈15) and the room centre, at
+                // beam height, spanning the window's z-opening — where the shaft is.
+                let x = 4.0 + hash(i, 0x1111) * 11.0; // 4..15
+                let y = 2.2 + hash(i, 0x2222) * 5.0; // 2.2..7.2
+                let z = 3.0 + hash(i, 0x3333) * 8.0; // 3..11
+                commands.spawn((
+                    Mesh3d(mote_mesh.clone()),
+                    MeshMaterial3d(mote_mat.clone()),
+                    Transform::from_xyz(x, y, z),
                 ));
             }
         }
@@ -384,10 +576,7 @@ pub fn setup_hero(
     // (env `VOXELFORGE_BLUESCALE`, default 1.0 = prior look). Lowering blue (not
     // adding red) raises R-B and saturation at the same time — the brief's
     // "ลดฟ้า ไม่ใช่ดันแดงกลบ". Baked to 0.55 once the sweep landed.
-    let bscale: f32 = std::env::var("VOXELFORGE_BLUESCALE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.50);
+    let bscale: f32 = cfg.bluescale.unwrap_or(0.50);
     let (elev, azim, illum) = cfg.sun.unwrap_or([20.0, 195.0, 12000.0]).into_tuple3();
     let dir = sun_dir(elev, azim);
     // Position the light off the room and aim it in; direction is what matters.
@@ -406,6 +595,12 @@ pub fn setup_hero(
             // with occluder distance (measured flat from soft=0.02 to 400). So bible
             // pass-4c (distance-proportional penumbra) is NOT achieved here; the gate's
             // uniform-soft-edge requirement IS. env `VOXELFORGE_SOFT` kept for tuning.
+            // The field itself only EXISTS behind `experimental_pbr_pcss`, and the web
+            // build drops it (index.html passes --no-default-features --features webgpu
+            // because the PCSS shader does not compile under Tint) — so it has to be
+            // cfg'd out or wasm32 fails with E0560 on this line. Native/hero-shot builds
+            // keep the cargo default and still get PCSS.
+            #[cfg(feature = "experimental_pbr_pcss")]
             soft_shadow_size: Some(cfg.soft.unwrap_or(3.0)),
             // Wider penumbra needs more depth-bias headroom or the soft edge
             // self-shadows into acne on the flat wood; normal-bias keeps block
@@ -417,6 +612,56 @@ pub fn setup_hero(
         Transform::from_translation(sun_pos).looking_at(Vec3::new(8.0, 4.0, 7.0), Vec3::Y),
         VolumetricLight, // <- makes this light visible as god rays in the fog
     ));
+
+    // ---- Pin 1 (LOOK): one-bounce directional GI fill (WIDE-A) ----------
+    // The uniform AmbientLight below is a FLAT hemisphere wash — every face of
+    // every block gets the same fill, so the establishing frame collapses into
+    // one monochrome orange sheet (the #1 AAA-killer + what pins micro-contrast
+    // at the 4.9 near-miss). Real GI here is faked the way it is before you have
+    // lightmaps/DDGI: two SHADOWLESS directional "bounce cards" stand in for the
+    // dominant indirect paths, so the shade carries a DIRECTION (window-side warm
+    // & bright → far side deep amber) instead of being flat. WIDE-only so the
+    // separately-locked narrow hero stays byte-identical; `VOXELFORGE_BOUNCE`
+    // scales both cards (0 = old flat look) and pairs with a cut to AMBIENT so
+    // total exposure is held while the fill gains directionality.
+    if wide {
+        // Two bounce cards, independently scaled so the tuning can push the
+        // dark-lifter (card 2) hard for G3's p05 WITHOUT the broad floor bounce
+        // (card 1) inflating the p95 highlight band — they pull opposite axes.
+        let b1: f32 = cfg.bounce.unwrap_or(1.0);
+        let b2: f32 = cfg.bounce2.unwrap_or(1.0);
+        // 1) FLOOR BOUNCE — the sunlit honey parquet throws warm light UP and
+        //    across toward the shaded -X wall. Lights undersides (counter lip,
+        //    bowl foot, table edge) + the far shade wall with indirect amber that
+        //    the top-down sun never reaches. Travels up + toward -X/+Z. Broad
+        //    coverage → the main p95 contributor of the two, so kept modest.
+        commands.spawn((
+            DirectionalLight {
+                color: Color::srgb(1.0, 0.63, 0.28),
+                illuminance: 3040.0 * b1,
+                shadow_maps_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(8.0, 0.5, 8.0))
+                .looking_at(Vec3::new(3.0, 6.5, 12.0), Vec3::Y),
+        ));
+        // 2) BACK-WALL RAKE — the sunlit near floor also bounces DEEP into the
+        //    room toward the far wall, lighting the camera-facing (-Z) cabinet
+        //    fronts the top-down sun + window key never reach. Those deep-shade
+        //    cabinet faces are the darkest 5% of the frame (they pin G3's p05),
+        //    so a warm fill travelling +Z lifts THEM specifically instead of
+        //    washing the whole frame flat — p05 up, micro-contrast preserved.
+        commands.spawn((
+            DirectionalLight {
+                color: Color::srgb(1.0, 0.75, 0.42),
+                illuminance: 1200.0 * b2,
+                shadow_maps_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(8.0, 6.5, -9.0))
+                .looking_at(Vec3::new(7.0, 5.0, 15.0), Vec3::Y),
+        ));
+    }
 
     // (warm bounce / GI fill is attached to the camera below — AmbientLight is a
     // per-view Component in 0.19, not a resource; honey tint keeps shadows off
@@ -482,18 +727,27 @@ pub fn setup_hero(
     // Env `VOXELFORGE_GRADE=temp,sat,contrast` overrides for no-recompile sweeps.
     let (g_temp, g_sat, g_contrast) = cfg.grade.unwrap_or([0.10, 1.02, 1.30]).into_tuple3();
 
+    // Pin 3 (LOOK): filmic highlight SHOULDER for the WIDE frame — the "LUT" half
+    // of the grade. Pin 1's bounce fill lifts the shade (G3 p05) but, because the
+    // baseline p95 already sat near the top of the 150..185 band, added fill pushes
+    // the highlight band over too — and lighting alone can't lift shadows AND pull
+    // highlights (both are just "more light", they move together). A per-section
+    // highlight roll-off (gain < 1) is the right tool: it compresses ONLY the
+    // brightest surfaces (sunlit wedge + window) back into band while leaving the
+    // bounce-lit shade + midtones untouched — the range compression a flat AcesFitted
+    // curve can't do. WIDE-only so the narrow hero's grade is byte-identical.
+    // env VOXELFORGE_SHOULDER (1.0 = no shoulder).
+    let shoulder: f32 = cfg.shoulder.unwrap_or(0.86);
+    let (hi_contrast, hi_gain) = if wide { (1.0, shoulder) } else { (g_contrast, 1.0) };
+
     // Warm-bounce fill COLOUR. Default is the shipped honey tint (byte-identical
     // when the env is unset), but the WIDE establishing shot fills huge floor/wall
     // areas that are ambient-DOMINATED — under this honey the frame collapses to
     // FIRE-RED (the ref is AMBER: its G leg is higher). `VOXELFORGE_AMBCOLOR=r,g,b`
     // lets the wide render lift the G leg toward amber without touching the locked
     // shipped default. B is bscale-scaled only in the default path.
-    let amb_col = std::env::var("VOXELFORGE_AMBCOLOR")
-        .ok()
-        .and_then(|s| {
-            let v: Vec<f32> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-            if v.len() == 3 { Some([v[0], v[1], v[2]]) } else { None }
-        })
+    let amb_col = cfg
+        .ambcolor
         .unwrap_or([0.784, 0.541, 0.180 * bscale]);
 
     commands.spawn((
@@ -553,7 +807,9 @@ pub fn setup_hero(
             },
             shadows: ColorGradingSection { contrast: 1.0, ..default() },
             midtones: ColorGradingSection { contrast: g_contrast, ..default() },
-            highlights: ColorGradingSection { contrast: g_contrast, ..default() },
+            // WIDE highlights roll off via `hi_gain` (Pin 3 shoulder); the narrow
+            // hero keeps the shipped `g_contrast` highlight (hi_gain = 1.0).
+            highlights: ColorGradingSection { contrast: hi_contrast, gain: hi_gain, ..default() },
         },
         // Temporal shadow filter + TAA: PCSS soft shadows and Ultra SSAO both use
         // stochastic samples that are noisy for a single frame; TAA accumulates

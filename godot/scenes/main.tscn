@@ -1,0 +1,60 @@
+[gd_scene load_steps=6 format=3 uid="uid://bv0xq8kcqyglk"]
+
+[ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+
+[sub_resource type="BoxMesh" id="boxmesh_hl"]
+size = Vector3(1.02, 1.02, 1.02)
+
+[sub_resource type="StandardMaterial3D" id="mat_hl"]
+albedo_color = Color(0.2, 0.2, 0.2, 0.35)
+shading_mode = 0
+transparency = 1
+cull_mode = 2
+
+[sub_resource type="CapsuleShape3D" id="capsule"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="LabelSettings" id="lbl_settings"]
+font_size = 18
+font_color = Color(1, 1, 1, 1)
+outline_size = 2
+outline_color = Color(0, 0, 0, 0.8)
+
+[node name="Main" type="Node3D"]
+
+[node name="World" type="Node3D" parent="."]
+script = ExtResource("1_world")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.7, -0.7, 0.1, 0.6, 0.7, 0.4, -0.3, 0.2, 0.9, 0, 40, 0)
+shadow_enabled = true
+
+[node name="Player" type="CharacterBody3D" parent="."]
+script = ExtResource("1_player")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7, 0)
+fov = 75.0
+near = 0.05
+far = 4000.0
+
+[node name="HighlightCube" type="MeshInstance3D" parent="Player/Camera3D"]
+visible = false
+mesh = SubResource("boxmesh_hl")
+surface_material_override/0 = SubResource("mat_hl")
+cast_shadow = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
+shape = SubResource("capsule")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Label" type="Label" parent="UI"]
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 500.0
+offset_bottom = 40.0
+text = "Loading..."

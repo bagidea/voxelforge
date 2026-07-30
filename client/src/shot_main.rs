@@ -6,6 +6,12 @@
 //! + screenshot timer; `#[path]`-includes the live `hero.rs`. Separate `[[bin]]`
 //! (`voxelforge_shot`) → distinct exe, no clobber of `voxelforge.exe`.
 
+// NOTE: `editor_ui` used to be pulled into this isolated shot bin purely to
+// type-check it while main.rs was mid-edit. That verify-only hook is gone now —
+// editor_ui (and its deps crate::import, crate::FlyCam) are wired into the real
+// `voxelforge` binary via main.rs, so the main build is the type-check. This bin
+// stays self-contained: it renders `hero.rs` only.
+
 #[path = "hero.rs"]
 mod hero;
 
@@ -28,6 +34,17 @@ pub struct Cfg {
     pub emissive: Option<f32>, // scale on the window pane emissive
     pub dfog: Option<f32>,     // DistanceFog density
     pub soft: Option<f32>,     // PCSS soft_shadow_size
+    // Look knobs hero.rs used to read from env itself; they live on Cfg now so
+    // native and web go through ONE path (main.rs fills them from the query
+    // string on wasm). Mirror main.rs::Cfg or hero.rs stops compiling here.
+    pub wide: bool,
+    pub fg_apron: bool,
+    pub dust: Option<f32>,
+    pub bluescale: Option<f32>,
+    pub bounce: Option<f32>,
+    pub bounce2: Option<f32>,
+    pub shoulder: Option<f32>,
+    pub ambcolor: Option<[f32; 3]>,
 }
 
 fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
@@ -55,6 +72,14 @@ fn read_cfg() -> Cfg {
         emissive: std::env::var("VOXELFORGE_EMISSIVE").ok().and_then(|v| v.parse().ok()),
         dfog: std::env::var("VOXELFORGE_DFOG").ok().and_then(|v| v.parse().ok()),
         soft: std::env::var("VOXELFORGE_SOFT").ok().and_then(|v| v.parse().ok()),
+        wide: std::env::var("VOXELFORGE_WIDE").is_ok(),
+        fg_apron: std::env::var("VOXELFORGE_FGAPRON").is_ok(),
+        dust: std::env::var("VOXELFORGE_DUST").ok().and_then(|v| v.parse().ok()),
+        bluescale: std::env::var("VOXELFORGE_BLUESCALE").ok().and_then(|v| v.parse().ok()),
+        bounce: std::env::var("VOXELFORGE_BOUNCE").ok().and_then(|v| v.parse().ok()),
+        bounce2: std::env::var("VOXELFORGE_BOUNCE2").ok().and_then(|v| v.parse().ok()),
+        shoulder: std::env::var("VOXELFORGE_SHOULDER").ok().and_then(|v| v.parse().ok()),
+        ambcolor: env_floats("VOXELFORGE_AMBCOLOR"),
     }
 }
 

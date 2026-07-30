@@ -4,7 +4,7 @@
 //! a `ChunkData`; the server owns `ChunkData` directly in its world state.
 
 use crate::block::BlockId;
-use crate::worldgen::terrain_height;
+use crate::worldgen::{terrain_block, terrain_height};
 
 /// Chunk edge length in voxels (cube: CHUNK_SIZE^3 blocks per chunk).
 pub const CHUNK_SIZE: i32 = 32;
@@ -59,22 +59,31 @@ impl ChunkData {
             // Below ground: fully packed stone.
             blocks.fill(BlockId::STONE);
         } else if pos.y == 0 {
-            // Ground-level slab: terrain fill up to height.
+            // Ground-level slab: delegate column fill to worldgen for biome-aware
+            // surface materials, subsurface variety, and scattered features.
             for z in 0..CHUNK_SIZE {
                 for x in 0..CHUNK_SIZE {
                     let wx = (ox + x) as f32;
                     let wz = (oz + z) as f32;
                     let h = terrain_height(wx, wz);
-                    for y in 0..=h.min(CHUNK_SIZE - 1) {
+
+                    // Fill from y=0 up to the surface, inclusive.
+                    let fill_to = h.min(CHUNK_SIZE - 1);
+                    for y in 0..=fill_to {
                         let world_y = oy + y;
-                        let b = if y == h {
-                            if world_y < 11 { BlockId::SAND } else { BlockId::GRASS }
-                        } else if y > h - 4 {
-                            BlockId::DIRT
-                        } else {
-                            BlockId::STONE
-                        };
+                        let b = terrain_block(wx, wz, world_y, h);
                         blocks[Self::idx(x, y, z)] = b;
+                    }
+
+                    // Features above the surface (trees, boulders) — scan up to
+                    // 7 blocks above terrain so canopies and tall features land.
+                    let above_end = (h + 7).min(CHUNK_SIZE - 1);
+                    for y in (fill_to + 1)..=above_end {
+                        let world_y = oy + y;
+                        let b = terrain_block(wx, wz, world_y, h);
+                        if b.is_opaque() {
+                            blocks[Self::idx(x, y, z)] = b;
+                        }
                     }
                 }
             }
