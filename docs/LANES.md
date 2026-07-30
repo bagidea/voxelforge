@@ -27,8 +27,11 @@ the other agent a build.
 | Look / beauty shots | `client/src/hero.rs`, `client/src/shot_main.rs`, `docs/golden-beauty-shot.md`, `docs/look-acceptance-rubric.md` | **pixel** | `hero.rs` is a beauty-shot scene only — it holds no controller code. |
 | Levels / map data | `maps/`, `scripts/gen_edhari.py` | **shiba** | Authored levels and the generators behind them. |
 | Web / wasm parity | `scripts/web-verify.mjs`, `scripts/grade_web_parity.py`, `docs/web-parity-checklist.md` | **rose** | |
+| Editor UI panels | `client/src/editor_ui.rs` | **kevin** | egui panels + state gate. |
 | Editor camera | `client/src/editor_camera.rs` | **yamamoto** | |
 | Proof scripts | `scripts/prove_*.sh` | **shino (Director)** | These are the office's grading rules. Propose a gate; don't loosen one. |
+| Independent cross-checks | `scripts/_shino_*.py` | **shino (Director)** | Re-implementations written from the Rust source, *not* from another checker — they exist to be able to disagree with it. Don't delete one because another checker "already covers it". |
+| Map verification | `scripts/verify_edhari_village.py` | **shiba** | Grades `maps/edhari.json` against the loader schema, so it moves with the map lane above. |
 
 Anything not listed: ask the Director before the first edit.
 

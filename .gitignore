@@ -68,3 +68,10 @@ godot/.godot/
 # editor_config.json is generated on first run — the root rule missed the
 # copy the client writes next to its own crate.
 client/editor_config.json
+
+# ── Combat-lane proof evidence ───────────────────────────────
+# `_combat_proof/` holds the team's build/run logs for prove_combat.sh. The
+# logs themselves already match `*.log`, but the folder also collects one-off
+# .patch snapshots — ignore the whole directory rather than deleting the
+# evidence. Keep the files on disk; just don't track them.
+/_combat_proof/
