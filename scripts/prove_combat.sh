@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Proof that `--combat-demo` runs the full combat loop end-to-end:
-#   1. Walk to the husk
+#   1. Walk to the husk, strafing on the way (COMBAT_STRAFE)
 #   2. Hit it → HP drops (COMBAT_HIT)
-#   3. Kill it with repeated attacks (COMBAT_KILL)
-#   4. Player dies → PlayerDied event fires (COMBAT_DEATH)
-#   5. Player respawns at the campfire with full HP (COMBAT_RESPAWN)
+#   3. Land a charged heavy → bigger HP drop + stamina cost (COMBAT_HEAVY)
+#   4. Kill it with repeated attacks (COMBAT_KILL)
+#   5. Player dies → PlayerDied event fires (COMBAT_DEATH)
+#   6. Player respawns at the campfire with full HP (COMBAT_RESPAWN)
 #
 # The binary drives real ButtonInput<KeyCode> through the same paths a human
 # would use — gather_input → player_combat → husk_ai → hud_bars — so the
@@ -41,7 +42,7 @@ echo "=== run --combat-demo ==="
 rc=$?
 
 # Print the key lines so the log is self-documenting.
-grep -E 'SCENE_READY|SPAWN_ENCOUNTER|COMBAT_HIT|COMBAT_KILL|COMBAT_DEATH|COMBAT_RESPAWN|PLAYER_DIED|RESPAWN' "$log" || true
+grep -E 'SCENE_READY|SPAWN_ENCOUNTER|COMBAT_STRAFE|COMBAT_HIT|COMBAT_HEAVY|COMBAT_KILL|COMBAT_DEATH|COMBAT_RESPAWN|PLAYER_DIED|RESPAWN|CHASE_DIST|COMBAT_WALK_DONE|COMBAT_FATAL' "$log" || true
 
 echo "exit=$rc"
 
@@ -52,7 +53,7 @@ grep -qE 'panicked|B0001|thread .* panicked' "$log" && bad="$bad PANIC"
 grep -q 'SCENE_READY' "$log" || bad="$bad no-SCENE_READY"
 
 # Every self-grading line must end in PASS.
-for line in COMBAT_HIT COMBAT_KILL COMBAT_DEATH COMBAT_RESPAWN; do
+for line in COMBAT_STRAFE COMBAT_HIT COMBAT_HEAVY COMBAT_KILL COMBAT_DEATH COMBAT_RESPAWN; do
   if ! grep -q "$line" "$log"; then
     bad="$bad missing-$line"
   elif grep "$line" "$log" | grep -q '=> FAIL'; then
