@@ -141,6 +141,29 @@ struct CombatProof {
     died: bool,
     /// true once the respawn has completed.
     respawned: bool,
+    /// Timestamp of the last periodic distance log (husk AI proof).
+    last_log: f32,
+    /// Timestamp when the walk-to-husk phase began (for timeout guard).
+    walk_start: Option<f32>,
+    /// Generic per-phase relative-time stamp, reset to `None` on every phase
+    /// transition. Timed phases measure "seconds since I started" off this
+    /// instead of an absolute `t` threshold, so inserting/removing a phase
+    /// never desyncs the phases after it (the trap the old hard-coded
+    /// `t >= 4.2` / `t >= 5.0` … chain was one insertion away from hitting).
+    stamp: Option<f32>,
+    /// Player X position sampled when the walk-phase D-strafe test began.
+    strafe_x0: Option<f32>,
+    /// true once the D-strafe displacement has been graded (`COMBAT_STRAFE`).
+    strafe_checked: bool,
+    /// Husk HP sampled right before the heavy attack is queued.
+    husk_hp_pre_heavy: Option<f32>,
+    /// Player stamina sampled right before the heavy hold begins.
+    stam_pre_heavy: Option<f32>,
+    /// Player stamina sampled the instant the heavy attack commits (before
+    /// regen has a chance to run), for a clean `-COST_HEAVY` comparison.
+    stam_post_heavy: Option<f32>,
+    /// true once the heavy attack has been graded (`COMBAT_HEAVY`).
+    heavy_hit: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +191,13 @@ impl Plugin for ScenePlugin {
                     // resource, so it must land before the controller reads it.
                     play_proof.before(crate::fly_camera).run_if(play_demo),
                     // --combat-demo: the full combat-loop proof (hit→kill→die→respawn).
-                    combat_proof.before(crate::fly_camera).run_if(combat_demo_run),
+                    // Must run before fly_camera (to inject keys before the
+                    // controller reads them) AND before gather_input (so
+                    // key presses land in the same frame's intent poll).
+                    combat_proof
+                        .before(crate::fly_camera)
+                        .before(combat::gather_input)
+                        .run_if(combat_demo_run),
                     // Kevin's combat layer only ever drives Health to 0 and fires
                     // PlayerDied; the whole respawn loop hangs off that one message.
                     on_player_death.run_if(in_state(AppState::Play)),
@@ -792,54 +821,152 @@ fn combat_proof(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut proof: ResMut<CombatProof>,
     camp: Option<Res<Campsite>>,
-    mut player_q: Query<(&Transform, &FlyCam, &mut combat::Health)>,
+    mut player_q: Query<(&Transform, &FlyCam, &mut combat::Health, &combat::Stamina)>,
     enemies: Query<(&combat::Enemy, &combat::Health), (With<combat::Enemy>, Without<FlyCam>)>,
+    enemy_tf: Query<&Transform, (With<combat::Enemy>, Without<FlyCam>)>,
     mut exit: bevy::ecs::message::MessageWriter<AppExit>,
 ) {
     let t = time.elapsed_secs();
-    let Ok((tf, _fly, mut hp)) = player_q.single_mut() else {
+    let Ok((tf, _fly, mut hp, stam)) = player_q.single_mut() else {
         return;
     };
     let husk = enemies.iter().next();
     let husk_hp = husk.map(|(_, h)| h.cur).unwrap_or(-1.0);
     let husk_alive = husk.map(|(_, h)| !h.dead()).unwrap_or(false);
+    let husk_tf = || enemy_tf.iter().next().map(|t| t.translation);
 
     // ---- settle frames: let the scene boot ----------------------------------
     if t < 1.5 {
         return;
     }
 
+    // ---- live 3D distance to the nearest husk (0 = none in the scene) ---------
+    let husk_dist = husk_tf().map(|ht| {
+        tf.translation.distance(ht)
+    }).unwrap_or(0.0);
+
+    // ---- periodic log: husk AI proof — distance every 0.5 s -----------------
+    if t - proof.last_log >= 0.5 {
+        proof.last_log = t;
+        if husk_dist > 0.0 {
+            if let Some(ht) = husk_tf() {
+                println!(
+                    "CHASE_DIST t={t:.2} player=({:.1},{:.1},{:.1}) husk=({:.1},{:.1},{:.1}) dist={husk_dist:.2}",
+                    tf.translation.x, tf.translation.y, tf.translation.z,
+                    ht.x, ht.y, ht.z
+                );
+            }
+        }
+    }
+
+    // Every timed phase below measures its own "seconds since I started" off
+    // this, instead of an absolute `t` threshold — see the `stamp` field doc.
+    // `enter()` both switches phase and clears the stamp for the next one.
+    macro_rules! enter {
+        ($phase:expr) => {{
+            proof.phase = $phase;
+            proof.stamp = None;
+        }};
+    }
+
     // ---- phase 0: snapshot initial state ------------------------------------
     if proof.phase == 0 {
         proof.player_hp0 = Some(hp.cur);
         proof.husk_hp0 = Some(husk_hp);
-        proof.phase = 1;
+        enter!(1);
         return;
     }
 
-    // ---- phase 1: walk toward the husk (~2 s of W) --------------------------
+    // ---- phase 1: walk toward the husk until within melee range --------------
+    // Includes a brief D-strafe early in the walk: proves the body moves
+    // because of real input, not just AI chase / physics drift.
     if proof.phase == 1 {
-        if t < 3.5 {
+        // First frame of this phase — stamp the start time for the timeout guard.
+        if proof.walk_start.is_none() {
+            proof.walk_start = Some(t);
+        }
+        let walk_t = t - proof.walk_start.unwrap_or(t);
+
+        // Guard: if we never reach the husk, fail with a clear message instead
+        // of hanging forever (the proof has no natural exit otherwise).
+        const WALK_TIMEOUT: f32 = 20.0;
+        if walk_t > WALK_TIMEOUT {
+            println!(
+                "COMBAT_HIT timeout after {walk_t:.1}s — husk unreachable \
+                 player=({:.1},{:.1}) husk_dist={husk_dist:.2} => FAIL",
+                tf.translation.x, tf.translation.z
+            );
+            if !proof.strafe_checked {
+                proof.strafe_checked = true;
+                println!("COMBAT_STRAFE dx=0.00 => FAIL (husk unreachable, strafe never ran)");
+            }
+            proof.phase = 99; // sentinel: terminal failure
+            return;
+        }
+
+        // Walk forward until we close the gap.  MELEE_RANGE (2.0) + player
+        // half-width + fudge ≈ 3.0 is the actual reach in player_combat.
+        const ATTACK_DIST: f32 = 3.0;
+        if husk_dist > ATTACK_DIST && husk_dist > 0.0 {
             keys.press(KeyCode::KeyW);
-            // Press D briefly to strafe a little — proves the body is moving
-            // under input, not just falling forward.
-            if (2.2..2.8).contains(&t) {
+
+            // ---- brief D-strafe window early in the walk (0.3s-0.5s in) ---------
+            const STRAFE_START: f32 = 0.3;
+            const STRAFE_END: f32 = 0.5;
+            if (STRAFE_START..STRAFE_END).contains(&walk_t) {
+                if proof.strafe_x0.is_none() {
+                    proof.strafe_x0 = Some(tf.translation.x);
+                }
                 keys.press(KeyCode::KeyD);
+            } else if walk_t >= STRAFE_END {
+                keys.reset(KeyCode::KeyD);
+                if !proof.strafe_checked {
+                    proof.strafe_checked = true;
+                    let dx = proof.strafe_x0.map(|x0| tf.translation.x - x0).unwrap_or(0.0);
+                    let ok = dx.abs() > 0.3;
+                    println!(
+                        "COMBAT_STRAFE dx={dx:.2} => {}",
+                        if ok { "PASS" } else { "FAIL" }
+                    );
+                }
             }
             return;
         }
-        proof.phase = 2;
+
+        // In range — stop walking and attack.
+        keys.reset(KeyCode::KeyW);
+        keys.reset(KeyCode::KeyD);
+        // Safety net: the husk closed the gap before the strafe window ever
+        // ran (shouldn't happen at 7 blocks out, but a silent-missing gate
+        // is worse than a loud FAIL — see docs/LANES.md "never weaken a gate").
+        if !proof.strafe_checked {
+            proof.strafe_checked = true;
+            println!("COMBAT_STRAFE dx=0.00 => FAIL (husk reached before strafe window elapsed)");
+        }
+        println!(
+            "COMBAT_WALK_DONE player=({:.1},{:.1}) husk_dist={husk_dist:.2} \
+             walk_t={walk_t:.1}s — in melee range, attacking",
+            tf.translation.x, tf.translation.z
+        );
+        enter!(2);
         return;
     }
 
-    // ---- phase 2: first light attack (t ≈ 3.5) ------------------------------
+    // ---- phase 2: first light attack -----------------------------------------
     if proof.phase == 2 {
+        keys.reset(KeyCode::KeyX);
         keys.press(KeyCode::KeyX); // light attack
-        proof.phase = 3;
+        enter!(3);
         return;
     }
-    // ---- phase 3: check husk HP a beat later (t ≈ 4.2) ----------------------
-    if proof.phase == 3 && t >= 4.2 {
+    // ---- phase 3: check husk HP a beat later ---------------------------------
+    if proof.phase == 3 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if t - proof.stamp.unwrap() < 0.7 {
+            return;
+        }
         let delta = proof.husk_hp0.unwrap_or(80.0) - husk_hp;
         proof.husk_hit = delta > 0.5;
         proof.husk_hp1 = Some(husk_hp);
@@ -849,78 +976,177 @@ fn combat_proof(
                 proof.husk_hp0.unwrap_or(80.0), husk_hp
             );
         } else {
+            let (hx, hy, hz) = husk_tf().map(|ht| (ht.x, ht.y, ht.z)).unwrap_or((0.0, 0.0, 0.0));
             println!(
-                "COMBAT_HIT husk_hp {:.0}->{:.0} (delta={delta:.1}) => FAIL",
-                proof.husk_hp0.unwrap_or(80.0), husk_hp
+                "COMBAT_HIT husk_hp {:.0}->{:.0} (delta={delta:.1}) => FAIL  \
+                 player=({:.1},{:.1},{:.1}) husk=({hx:.1},{hz:.1}) dist={:.2}",
+                proof.husk_hp0.unwrap_or(80.0), husk_hp,
+                tf.translation.x, tf.translation.y, tf.translation.z,
+                tf.translation.distance(husk_tf().unwrap_or(tf.translation))
             );
         }
         if husk_alive {
-            proof.phase = 4; // keep attacking to kill it
+            enter!(4); // heavy-attack proof next
         } else {
-            proof.husk_dead = true; // already dead
-            proof.phase = 9; // skip to player death
+            proof.husk_dead = true; // already dead off one light — skip straight to death
+            if !proof.heavy_hit {
+                println!("COMBAT_HEAVY skipped — husk already dead after the first light hit");
+            }
+            enter!(10);
         }
         return;
     }
 
-    // ---- phase 4-8: keep attacking until husk dies ---------------------------
+    // ---- phase 4: queue a heavy attack ---------------------------------------
+    // Hold KeyC (heavy_down reads via `.pressed()`, not `.just_pressed()`) for
+    // less than CHARGE_HOLD so it commits as Heavy, not Charged, on release.
     if proof.phase == 4 {
-        keys.press(KeyCode::KeyX); // light attack
-        proof.phase = 5;
+        proof.husk_hp_pre_heavy = Some(husk_hp);
+        proof.stam_pre_heavy = Some(stam.cur);
+        keys.press(KeyCode::KeyC);
+        enter!(5);
         return;
     }
-    if proof.phase == 5 && t >= 5.0 {
-        keys.press(KeyCode::KeyX); // light attack
-        proof.phase = 6;
+    // ---- phase 5: hold the heavy charge, then release to commit it ----------
+    if proof.phase == 5 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        const HOLD: f32 = 0.3; // < combat::CHARGE_HOLD (0.6s) => commits Heavy
+        if t - proof.stamp.unwrap() < HOLD {
+            keys.press(KeyCode::KeyC); // keep holding
+            return;
+        }
+        keys.reset(KeyCode::KeyC); // release -> player_combat commits Heavy this frame
+        enter!(6);
         return;
     }
-    if proof.phase == 6 && t >= 5.7 {
-        keys.press(KeyCode::KeyC); // heavy attack (45 dmg — husk should die)
-        proof.phase = 7;
+    // ---- phase 6: grade the heavy attack (damage + stamina cost) -------------
+    if proof.phase == 6 {
+        // One-shot: the very first tick of this phase is the frame right after
+        // the heavy commits, before stamina regen has run — the clean moment
+        // to read `-COST_HEAVY`.
+        if proof.stam_post_heavy.is_none() {
+            proof.stam_post_heavy = Some(stam.cur);
+        }
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if t - proof.stamp.unwrap() < 1.0 {
+            return; // let the swing's active window (HEAVY_ACTIVE) resolve
+        }
+        let dmg = proof.husk_hp_pre_heavy.unwrap_or(husk_hp) - husk_hp;
+        let stam_cost = proof.stam_pre_heavy.unwrap_or(0.0) - proof.stam_post_heavy.unwrap_or(0.0);
+        // Heavy must land clearly harder than a light hit (COMBAT_HIT proved
+        // ~20 dmg above) and pull stamina by roughly COST_HEAVY (35), not the
+        // light-attack figure (15) — that would mean it silently fell back
+        // to a light swing instead of actually committing Heavy.
+        let dmg_ok = dmg > 30.0;
+        let stam_ok = (stam_cost - 35.0).abs() < 5.0;
+        proof.heavy_hit = dmg_ok && stam_ok;
+        println!(
+            "COMBAT_HEAVY husk_hp {:.0}->{:.0} (delta={dmg:.1}) stamina -{stam_cost:.1} => {}",
+            proof.husk_hp_pre_heavy.unwrap_or(husk_hp), husk_hp,
+            if proof.heavy_hit { "PASS" } else { "FAIL" }
+        );
+        if husk_alive {
+            enter!(7); // finish it off with a couple of insurance lights
+        } else {
+            proof.husk_dead = true;
+            enter!(10);
+        }
         return;
     }
-    if proof.phase == 7 && t >= 6.0 {
-        // One more light to finish it if the heavy didn't.
+
+    // ---- phase 7-9: finish the husk with a couple of insurance lights -------
+    // (80 hp - ~20 from COMBAT_HIT - ~45 from COMBAT_HEAVY leaves ~15; one
+    // more light kills it outright, the second is margin against a miss.)
+    if proof.phase == 7 {
+        keys.reset(KeyCode::KeyX);
         keys.press(KeyCode::KeyX);
-        proof.phase = 8;
+        enter!(8);
         return;
     }
-    if proof.phase == 8 && t >= 6.8 {
-        proof.husk_dead = husk_alive;
+    if proof.phase == 8 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if t - proof.stamp.unwrap() < 0.6 {
+            return;
+        }
+        keys.reset(KeyCode::KeyX);
+        keys.press(KeyCode::KeyX);
+        enter!(9);
+        return;
+    }
+    if proof.phase == 9 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if t - proof.stamp.unwrap() < 0.8 {
+            return;
+        }
+        proof.husk_dead = !husk_alive;
         let final_hp = husk_hp;
         println!(
             "COMBAT_KILL husk_hp={:.0} dead={} => {}",
             final_hp, proof.husk_dead,
             if proof.husk_dead { "PASS" } else { "FAIL" }
         );
-        proof.phase = 9;
+        enter!(10);
         return;
     }
 
-    // ---- phase 9: kill the player → trigger respawn loop ---------------------
-    if proof.phase == 9 && t >= 7.2 {
+    // ---- phase 10: kill the player → trigger respawn loop --------------------
+    if proof.phase == 10 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if t - proof.stamp.unwrap() < 0.4 {
+            return;
+        }
         if !proof.died {
             let max = hp.max;
             hp.damage(max); // force HP to 0 → PlayerDied fires next frame
             proof.died = true;
-            println!("COMBAT_DEATH hp forced to 0");
+            // Verify the kill took — cur must be 0 after forcing it.
+            let ok = hp.dead();
+            println!(
+                "COMBAT_DEATH hp={:.0}/{:.0} dead={} => {}",
+                hp.cur, hp.max, hp.dead(),
+                if ok { "PASS" } else { "FAIL" }
+            );
+            // Reset any lingering keys from earlier phases so the
+            // respawned player does not walk away from the campfire.
+            keys.reset(KeyCode::KeyW);
+            keys.reset(KeyCode::KeyD);
+            keys.reset(KeyCode::KeyA);
+            keys.reset(KeyCode::KeyS);
+            keys.reset(KeyCode::KeyC);
+            keys.reset(KeyCode::KeyX);
             return;
         }
         // PlayerDied → Respawn in flight. The death is gated at a 0.5 s fade.
-        proof.phase = 10;
+        enter!(11);
         return;
     }
 
-    // ---- phase 10: wait for respawn to complete (fade = 0.5+0.5 = 1.0 s) ----
-    if proof.phase == 10 {
-        if t < 8.5 {
+    // ---- phase 11: wait for respawn to complete (fade = 0.5+0.5 = 1.0 s) ----
+    if proof.phase == 11 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if t - proof.stamp.unwrap() < 1.3 {
             return; // still fading / respawning
         }
         if !proof.respawned {
             proof.respawned = true;
             let at = tf.translation;
             let (home, dist) = match camp.as_deref() {
-                Some(c) => (c.eye, at.distance(c.eye)),
+                Some(c) => {
+                    let dxz = (at.x - c.fire.x).hypot(at.z - c.fire.z);
+                    (c.fire, dxz)
+                }
                 None => (Vec3::ZERO, f32::INFINITY),
             };
             let hp_ok = (hp.cur - hp.max).abs() < 1.0; // within 1 HP of full
@@ -942,5 +1168,11 @@ fn combat_proof(
             }
             exit.write(AppExit::Success);
         }
+    }
+
+    // ---- terminal failure — timeout or unrecoverable error -------------------
+    if proof.phase == 99 {
+        println!("COMBAT_FATAL phase=99 — combat proof could not complete");
+        exit.write(AppExit::from_code(1)); // nonzero: this path is a failure, not a clean exit
     }
 }
