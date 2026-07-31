@@ -36,18 +36,11 @@ use crate::{
 /// terrain until then — so a missing map is a *plainer* game, never a broken one.
 pub const PLAY_MAP: &str = "maps/edhari.json";
 
-/// The map `--play` should boot, or `None` to use procedural terrain. Native only:
-/// the browser has no filesystem, so the web build always takes the fallback.
-#[cfg(not(target_arch = "wasm32"))]
+/// The map `--play` should boot, or `None` to use procedural terrain.
 pub fn play_map() -> Option<String> {
     std::path::Path::new(PLAY_MAP)
         .exists()
         .then(|| PLAY_MAP.to_string())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn play_map() -> Option<String> {
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +113,8 @@ struct PlayProof {
     walk_logged: bool,
     killed: bool,
     respawn_logged: bool,
+    /// true once the LookPlugin runtime check has printed its PASS/FAIL line.
+    look_checked: bool,
 }
 
 /// Bookkeeping for the scripted `--combat-demo` proof of the full combat loop:
@@ -700,6 +695,7 @@ fn play_proof(
     camp: Option<Res<Campsite>>,
     mut player_q: Query<(&Transform, &FlyCam, &mut combat::Health)>,
     orbit_q: Query<&OrbitCam>,
+    look_q: Query<&crate::look::LookApplied, With<Camera3d>>,
     mut exit: bevy::ecs::message::MessageWriter<AppExit>,
 ) {
     let t = time.elapsed_secs();
@@ -762,6 +758,22 @@ fn play_proof(
             fly.grounded,
             if moved > 1.0 && fly.grounded { "PASS" } else { "FAIL" }
         );
+        // Proves LookPlugin actually ran against the real play camera, not just
+        // that it compiled — `look_enabled` gates its Update systems on
+        // `cfg.play`, and a `Startup`-vs-`Update` race could leave the query
+        // empty forever with no error (see look.rs's module doc). By this point
+        // several Update frames have run since the camera spawned, so the
+        // component must be present if the plugin actually applied its stack.
+        if !proof.look_checked {
+            proof.look_checked = true;
+            match look_q.single() {
+                Ok(applied) => println!("LOOK_APPLIED quality={:?} => PASS", applied.0),
+                Err(_) => println!(
+                    "LOOK_APPLIED => FAIL (no LookApplied component on the play camera \
+                     — LookPlugin never ran against it)"
+                ),
+            }
+        }
         // A screenshot run stops here: `screenshot_once` owns the shot and the exit,
         // and a fade-to-black death would black out the frame it is about to take.
         if cfg.shot.is_some() {
