@@ -169,6 +169,9 @@ pub struct Rig {
     /// Guard/parry latch (see [`GUARD_LATCH`]).
     guard: f32,
     parry: f32,
+    /// Progress through the parry action, 0 → 1, held across the latch tail so
+    /// the recovery pose does not snap back to "window open" as the beat fades.
+    parry_t: f32,
     /// Death progress, 0 → 1. Reset when the actor comes back alive.
     death: f32,
 }
@@ -546,6 +549,7 @@ fn build_rig(
         prev_fall: 0.0,
         guard: 0.0,
         parry: 0.0,
+        parry_t: 0.0,
         death: 0.0,
     };
     (root, rig)
@@ -791,6 +795,7 @@ fn animate_rigs(
             (rig.guard - dt).max(0.0)
         };
         rig.parry = if beat.action == Action::Parry {
+            rig.parry_t = beat.t;
             GUARD_LATCH
         } else {
             (rig.parry - dt).max(0.0)
@@ -842,7 +847,7 @@ fn animate_rigs(
                 root_extra = Quat::from_axis_angle(Vec3::X, lean);
             }
             Action::Guard => apply_key(&mut pose, GUARD_KEY),
-            Action::Parry => apply_key(&mut pose, PARRY_KEY),
+            Action::Parry => apply_key(&mut pose, parry_key(rig.parry_t)),
             Action::Stagger => stagger(&mut pose, elapsed),
             Action::Dodge => {
                 // A forward roll: the whole rig tumbles about its own X axis while
@@ -1526,6 +1531,54 @@ const PARRY_KEY: Key = Key {
     weight: 1.0,
 };
 
+/// Where the 12-frame receive window ends, as a fraction of the whole parry
+/// action. Everything after this point is the part of the parry that can only
+/// hurt you.
+const PARRY_WINDOW_FRAC: f32 = combat::PARRY_WINDOW / crate::dodge_parry::PARRY_STATE_LEN;
+
+/// Blade dropping out of the parry — arms down, guard open, weight forward onto
+/// the wrong foot. This is what "you committed and the window has shut" looks
+/// like from across the arena.
+const PARRY_SPENT_KEY: Key = Key {
+    sh_pitch: -0.20,
+    sh_yaw: 0.30,
+    sh_roll: -0.10,
+    elbow: 0.25,
+    grip_pitch: 0.35,
+    grip_roll: 0.20,
+    off_pitch: -0.15,
+    off_roll: 0.10,
+    off_elbow: 0.35,
+    torso_yaw: -0.10,
+    torso_pitch: 0.14,
+    hips_yaw: -0.06,
+    head_yaw: 0.04,
+    head_pitch: 0.10,
+    lunge: 0.16,
+    crouch: 0.02,
+    stance: 0.30,
+    weight: 0.85,
+};
+
+/// The parry, posed across its own timeline rather than as one frozen shape.
+///
+/// The window is a *frame count* now (`dodge_parry::PARRY_WINDOW_FRAMES`), and a
+/// mechanic the player cannot see the edge of is a mechanic they cannot learn.
+/// So the blade snaps out over the first fraction of the window, holds while the
+/// window is live, and then visibly falls out of guard the instant it shuts —
+/// the same information the log line carries, drawn on the body.
+fn parry_key(t: f32) -> Key {
+    let t = t.clamp(0.0, 1.0);
+    if t <= PARRY_WINDOW_FRAC {
+        // Snap out fast (the flick is the read), then hold the live pose.
+        let snap = (t / (PARRY_WINDOW_FRAC * 0.35)).min(1.0);
+        mix(&GUARD_KEY, &PARRY_KEY, ease_io(snap))
+    } else {
+        let spent = ((t - PARRY_WINDOW_FRAC) / (1.0 - PARRY_WINDOW_FRAC)).clamp(0.0, 1.0);
+        mix(&PARRY_KEY, &PARRY_SPENT_KEY, ease_io(spent))
+    }
+}
+
 /// Mid-roll tuck — limbs pulled in, tightest at the apex.
 fn tuck_key(t: f32) -> Key {
     let w = (t * std::f32::consts::PI).sin();
@@ -1613,9 +1666,14 @@ fn player_beat(pc: &PlayerCombat) -> Beat {
             action: Action::Guard,
             ..Beat::none()
         },
+        // The parry now runs on a real clock — a 12-frame receive window inside a
+        // 0.70 s commitment (`dodge_parry::PARRY_STATE_LEN`) — so the pose gets
+        // the timeline instead of a single frozen shape.
         CombatState::Parry => Beat {
             action: Action::Parry,
-            ..Beat::none()
+            t: (pc.timer / crate::dodge_parry::PARRY_STATE_LEN).clamp(0.0, 1.0),
+            active: (0.0, PARRY_WINDOW_FRAC),
+            combo: 0,
         },
         CombatState::Stagger => Beat {
             action: Action::Stagger,
