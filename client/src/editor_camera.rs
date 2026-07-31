@@ -239,12 +239,9 @@ fn spawn_gizmo_demo(
         return;
     }
     spawned.0 = true;
-    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("VOXELFORGE_GIZMO_DEMO").is_err() {
         return;
     }
-    #[cfg(target_arch = "wasm32")]
-    return;
 
     let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
     let mat = materials.add(StandardMaterial {

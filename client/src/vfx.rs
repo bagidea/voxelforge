@@ -46,7 +46,7 @@
 //! ## No RNG dependency
 //!
 //! Particle spread uses a small xorshift in [`VfxRng`] rather than the `rand` crate:
-//! one less dependency in the wasm graph (see `Cargo.toml`'s getrandom notes), and a
+//! one less dependency in the graph, and a
 //! fixed seed means two renders of the same shot are byte-comparable, which the
 //! grading scripts in `scripts/` rely on.
 

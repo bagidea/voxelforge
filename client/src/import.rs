@@ -1,17 +1,8 @@
 //! Import pipeline: MagicaVoxel .vox → world blocks, glTF .glb/.gltf → entity
 //! spawn, `ModelCatalog` asset browser, and `SpawnModel` message for the editor.
 //!
-//! # Platform support
-//!
-//! | Feature              | native          | WASM               |
-//! |----------------------|-----------------|--------------------|
-//! | `.vox` → blocks      | ✅ AssetServer   | ✅ AssetServer      |
-//! | `.glb`/`.gltf` spawn | ✅ AssetServer   | ✅ AssetServer      |
-//! | `scan_catalog`       | ✅ `std::fs`     | empty (no filesystem) |
-//!
-//! The whole asset pipeline goes through Bevy's `AssetServer`, which uses
-//! `fetch()` on the web and the filesystem on native — one code path, two
-//! platforms.
+//! The whole asset pipeline goes through Bevy's `AssetServer` reading from the
+//! filesystem — the client is native-only (Steam).
 //!
 //! ## Wiring (add to main.rs)
 //!
@@ -62,8 +53,8 @@ impl Plugin for ImportPlugin {
 
 /// Raw bytes from a `.vox` file, loaded through Bevy's `AssetServer`.
 ///
-/// On native the server reads from disk; on WASM it uses `fetch()`. Both paths
-/// are transparent — callers just get `&[u8]` to feed into [`parse_vox_bytes`].
+/// The server reads from disk; callers just get `&[u8]` to feed into
+/// [`parse_vox_bytes`].
 #[derive(Asset, TypePath, Clone)]
 pub(crate) struct VoxAsset(Vec<u8>);
 
@@ -152,44 +143,37 @@ pub enum ModelKind {
 // ---------------------------------------------------------------------------
 
 /// Populates [`ModelCatalog`] by scanning `assets/models/` on the filesystem.
-/// Native-only — on WASM the catalog stays empty (no `std::fs` available).
 fn scan_catalog(mut catalog: ResMut<ModelCatalog>) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let dir = Path::new("assets/models");
-        if !dir.is_dir() {
-            return;
-        }
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-                continue;
-            };
-            let kind = match ext.to_ascii_lowercase().as_str() {
-                "vox" => ModelKind::Voxel,
-                "glb" | "gltf" => ModelKind::Gltf,
-                _ => continue,
-            };
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unnamed")
-                .to_string();
-            let rel = path
-                .strip_prefix("assets/")
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .into_owned();
-            catalog.entries.push(ModelEntry { name, path: rel, kind });
-        }
-        catalog.entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let dir = Path::new("assets/models");
+    if !dir.is_dir() {
+        return;
     }
-    // On WASM the catalog stays empty; the editor ships a static manifest.
-    #[allow(unused_variables)]
-    let _ = catalog;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        let kind = match ext.to_ascii_lowercase().as_str() {
+            "vox" => ModelKind::Voxel,
+            "glb" | "gltf" => ModelKind::Gltf,
+            _ => continue,
+        };
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed")
+            .to_string();
+        let rel = path
+            .strip_prefix("assets/")
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .into_owned();
+        catalog.entries.push(ModelEntry { name, path: rel, kind });
+    }
+    catalog.entries.sort_by(|a, b| a.name.cmp(&b.name));
 }
 
 // ---------------------------------------------------------------------------
@@ -214,8 +198,7 @@ fn apply_spawn_model(
         let ext = extension(&ev.path);
         match ext {
             "vox" => {
-                // Start loading through AssetServer — works on both native
-                // (filesystem) and WASM (HTTP fetch).
+                // Start loading through AssetServer (filesystem).
                 let handle = asset_server.load::<VoxAsset>(&ev.path);
                 commands.spawn((
                     ev.transform,
