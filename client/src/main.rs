@@ -20,6 +20,7 @@ mod editor_ui;
 mod gizmo;
 mod hero;
 mod import;
+mod look;
 mod mapfile;
 mod quest;
 mod scene;
@@ -578,6 +579,7 @@ fn main() {
             // weight layer's ImpactWeight table. Self-wiring; this line is all.
             dodge_parry::DodgeParryPlugin,
         ))
+            .add_plugins(look::LookPlugin)
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
             .insert_resource(Editor {
