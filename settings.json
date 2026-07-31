@@ -1,0 +1,36 @@
+{
+  "graphics": "High",
+  "display": {
+    "mode": "Windowed",
+    "resolution": [
+      1280,
+      720
+    ]
+  },
+  "audio": {
+    "master": 0.8,
+    "sfx": 1.0,
+    "ambient": 0.6,
+    "ui": 1.0
+  },
+  "keybindings": {
+    "map": {
+      "SelectBlock3": "Digit3",
+      "CamOrbit": "MouseLeft",
+      "SelectBlock2": "Digit2",
+      "Undo": "KeyZ",
+      "Place": "MouseRight",
+      "PlayStop": "Tab",
+      "SelectBlock4": "Digit4",
+      "Break": "MouseLeft",
+      "Save": "F5",
+      "SelectBlock1": "Digit1",
+      "ToggleFly": "KeyF",
+      "Redo": "KeyY",
+      "Load": "F9",
+      "ToggleGrid": "KeyG",
+      "ReleaseCursor": "Escape",
+      "BoxFill": "KeyG"
+    }
+  }
+}
