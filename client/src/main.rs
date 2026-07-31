@@ -1,7 +1,7 @@
 //! Voxelforge client — Phase 0 go/no-go spike (Rust + Bevy 0.19 + wgpu).
 //!
 //! Proves: chunk gen → greedy mesh → texture-atlas StandardMaterial → fly
-//! camera, on both native (wgpu/DX12/Vulkan) and web (WebGPU). Ships a built-in
+//! camera, native only (wgpu/DX12/Vulkan) — Steam is the target. Ships a built-in
 //! ramp benchmark that spawns more chunks every couple seconds and reports the
 //! largest chunk count that still holds >= 60 FPS.
 //!
@@ -24,6 +24,7 @@ mod look;
 mod mapfile;
 mod quest;
 mod scene;
+mod settings_menu;
 mod vfx;
 mod vfx_bridge;
 mod voxel;
@@ -99,12 +100,10 @@ pub(crate) struct Cfg {
     soft: Option<f32>,     // PCSS soft_shadow_size (sun apparent size; wider = softer)
     seed: u64,            // world-gen seed (VOXELFORGE_SEED, default 42)
     // ── Hero LOOK knobs ──────────────────────────────────────────────────────
-    // These used to be read with `std::env::var` directly inside hero.rs, which
-    // silently disabled the ENTIRE locked recipe on wasm (env::var is always Err
-    // there): the web build rendered "hero, narrow, every default" no matter what
-    // the URL said. They travel through Cfg now like every other knob — env on
-    // native, query string on web — so one recipe drives both.
-    wide: bool,            // WIDE establishing framing (VOXELFORGE_WIDE / ?wide)
+    // These used to be read with `std::env::var` directly inside hero.rs; they
+    // travel through Cfg now like every other knob, so one recipe drives the
+    // whole locked look.
+    wide: bool,            // WIDE establishing framing (VOXELFORGE_WIDE)
     fg_apron: bool,        // foreground counter apron (VOXELFORGE_FGAPRON / ?fgapron)
     dust: Option<f32>,     // dust-mote density scale (0 = off)
     bluescale: Option<f32>, // sun/ambient blue-leg scale
@@ -115,7 +114,6 @@ pub(crate) struct Cfg {
 }
 
 /// Parse "a,b,c" env into a fixed float array (all-or-nothing).
-#[cfg(not(target_arch = "wasm32"))]
 fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
     let raw = std::env::var(key).ok()?;
     let parts: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
@@ -132,12 +130,10 @@ fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
 /// switches are real CLI flags (`cargo run --bin voxelforge -- --play`) rather than
 /// env vars, because "start the game" is something a person types, not a recipe a
 /// script exports — the `VOXELFORGE_*` twins below keep the scripted lanes working.
-#[cfg(not(target_arch = "wasm32"))]
 fn has_arg(flag: &str) -> bool {
     std::env::args().skip(1).any(|a| a == flag)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn read_cfg() -> Cfg {
     // --play-demo is the scripted proof *of* --play, so it turns --play on too.
     let play_demo = has_arg("--play-demo") || std::env::var("VOXELFORGE_PLAY_DEMO").is_ok();
@@ -194,143 +190,6 @@ fn read_cfg() -> Cfg {
         ambcolor: env_floats("VOXELFORGE_AMBCOLOR"),
     }
 }
-
-// ── Query-string parsing (web) ───────────────────────────────────────────────
-// The web build's ONLY way to pass a recipe in — it is the exact counterpart of
-// the env vars above, so `?hero&wide&sun=20,195,12000` on web == the same
-// VOXELFORGE_* set on native. Matching is per-key (not `search.contains(..)`,
-// which fired on any substring — `?nowide` used to switch WIDE *on*).
-
-/// `%2C` → `,` and `+` → space. Only ASCII escapes appear in these knobs (numbers
-/// and commas), so a byte-wise decode is enough — no UTF-8 continuation handling.
-#[cfg(target_arch = "wasm32")]
-fn pct_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = String::with_capacity(s.len());
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'%' if i + 3 <= b.len() => match u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                Ok(c) => {
-                    out.push(c as char);
-                    i += 3;
-                }
-                Err(_) => {
-                    out.push('%');
-                    i += 1;
-                }
-            },
-            b'+' => {
-                out.push(' ');
-                i += 1;
-            }
-            c => {
-                out.push(c as char);
-                i += 1;
-            }
-        }
-    }
-    out
-}
-
-/// `?a=1&b=2` → the decoded value of `key`, or None when absent/valueless.
-#[cfg(target_arch = "wasm32")]
-fn qs_raw(search: &str, key: &str) -> Option<String> {
-    search.trim_start_matches('?').split('&').find_map(|kv| {
-        let (k, v) = kv.split_once('=')?;
-        (k == key).then(|| pct_decode(v))
-    })
-}
-
-/// Bare presence flag: `?hero` and `?hero=1` both count, `?nothero` does not.
-#[cfg(target_arch = "wasm32")]
-fn qs_flag(search: &str, key: &str) -> bool {
-    search
-        .trim_start_matches('?')
-        .split('&')
-        .any(|kv| kv.split('=').next() == Some(key))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn qs_num<T: std::str::FromStr>(search: &str, key: &str) -> Option<T> {
-    qs_raw(search, key)?.trim().parse().ok()
-}
-
-/// Same all-or-nothing contract as `env_floats`: `?cam=a,b,c` with the wrong
-/// arity is ignored rather than half-applied.
-#[cfg(target_arch = "wasm32")]
-fn qs_floats<const N: usize>(search: &str, key: &str) -> Option<[f32; N]> {
-    let raw = qs_raw(search, key)?;
-    let parts: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-    if parts.len() == N {
-        let mut out = [0.0; N];
-        out.copy_from_slice(&parts);
-        Some(out)
-    } else {
-        None
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn read_cfg() -> Cfg {
-    let search = web_sys::window()
-        .and_then(|w| w.location().search().ok())
-        .unwrap_or_default();
-    Cfg {
-        bench: qs_flag(&search, "bench"),
-        grid: qs_num(&search, "grid").unwrap_or(6),
-        // No filesystem in the browser: screenshots/map IO stay native-only.
-        shot: None,
-        // `?play` is the web twin of `--play` (the scene falls back to procedural
-        // terrain there — `scene::play_map` can't stat a file in a browser).
-        play: qs_flag(&search, "play") || qs_flag(&search, "playdemo"),
-        play_demo: qs_flag(&search, "playdemo"),
-        hero: qs_flag(&search, "hero"),
-        present: None,
-        start_side: qs_num(&search, "startside").unwrap_or(1).max(1),
-        edit_demo: qs_flag(&search, "editdemo"),
-        walk_demo: qs_flag(&search, "walkdemo"),
-        combat_demo: qs_flag(&search, "combatdemo"),
-        quest_demo: qs_flag(&search, "questdemo"),
-        editor_demo: qs_flag(&search, "paintdemo"),
-        map_load: None,
-        map_save: None,
-        cam: qs_floats(&search, "cam"),
-        sun: qs_floats(&search, "sun"),
-        dof: qs_floats(&search, "dof"),
-        fog: qs_num(&search, "fog"),
-        exposure: qs_num(&search, "exposure"),
-        grade: qs_floats(&search, "grade"),
-        ambient: qs_num(&search, "ambient"),
-        emissive: qs_num(&search, "emissive"),
-        dfog: qs_num(&search, "dfog"),
-        // Read for parity even though the web build drops PCSS (see hero.rs) —
-        // the field is cfg'd out at the use site, not here.
-        soft: qs_num(&search, "soft"),
-        seed: qs_num(&search, "seed").unwrap_or(42),
-        wide: qs_flag(&search, "wide"),
-        fg_apron: qs_flag(&search, "fgapron"),
-        dust: qs_num(&search, "dust"),
-        bluescale: qs_num(&search, "bluescale"),
-        bounce: qs_num(&search, "bounce"),
-        bounce2: qs_num(&search, "bounce2"),
-        shoulder: qs_num(&search, "shoulder"),
-        ambcolor: qs_floats(&search, "ambcolor"),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn set_dom(id: &str, text: &str) {
-    if let Some(el) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id(id))
-    {
-        el.set_text_content(Some(text));
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn set_dom(_id: &str, _text: &str) {}
 
 // ---------------------------------------------------------------------------
 
@@ -515,7 +374,7 @@ fn main() {
         app.insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 })
             .insert_resource(cfg)
             .add_systems(Startup, hero::setup_hero)
-            .add_systems(Update, (fly_camera, screenshot_once, hero_hud));
+            .add_systems(Update, (fly_camera, screenshot_once));
     } else {
         // ---- Editor shell ---------------------------------------------------
         // EditorPlugin owns AppState{Editor, Play} + the SelectedBlock resource +
@@ -563,23 +422,26 @@ fn main() {
             // runs keep using the play-mode `fly_camera` for their screenshots.
             editor_camera::EditorCameraPlugin,
             gizmo::GizmoPlugin,
-            // Combat/ambient VFX (Flamingo's lane). `VfxPlugin` is inert until
-            // something writes a message or carries a marker component, so it
-            // costs the editor/bench/hero lanes nothing. `VfxBridgePlugin` is the
-            // only thing that knows about combat: it reads the SfxEvent stream
-            // combat already broadcasts and turns hits/deaths into Impact/Unravel,
-            // so no other lane's file had to change. See vfx_bridge.rs.
-            vfx::VfxPlugin,
-            vfx_bridge::VfxBridgePlugin,
-            // Combat "weight" layer (combat.rs) — hit-stop, knockback, camera
-            // kick, Impact/Stagger/Dodge messages. Self-wiring; this line is all.
-            combat::CombatFeelPlugin,
-            // Combat "depth" layer (dodge_parry.rs) — frame-counted dodge
-            // i-frames and the parry → poise-break → riposte chain, riding the
-            // weight layer's ImpactWeight table. Self-wiring; this line is all.
-            dodge_parry::DodgeParryPlugin,
         ))
+            .add_plugins((
+                // Combat/ambient VFX (Flamingo's lane). `VfxPlugin` is inert until
+                // something writes a message or carries a marker component, so it
+                // costs the editor/bench/hero lanes nothing. `VfxBridgePlugin` is the
+                // only thing that knows about combat: it reads the SfxEvent stream
+                // combat already broadcasts and turns hits/deaths into Impact/Unravel,
+                // so no other lane's file had to change. See vfx_bridge.rs.
+                vfx::VfxPlugin,
+                vfx_bridge::VfxBridgePlugin,
+                // Combat "weight" layer (combat.rs) — hit-stop, knockback, camera
+                // kick, Impact/Stagger/Dodge messages. Self-wiring; this line is all.
+                combat::CombatFeelPlugin,
+                // Combat "depth" layer (dodge_parry.rs) — frame-counted dodge
+                // i-frames and the parry → poise-break → riposte chain, riding the
+                // weight layer's ImpactWeight table. Self-wiring; this line is all.
+                dodge_parry::DodgeParryPlugin,
+            ))
             .add_plugins(look::LookPlugin)
+            .add_plugins(settings_menu::SettingsPlugin)
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
             .insert_resource(Editor {
@@ -626,7 +488,7 @@ fn main() {
                     // edit_voxels (L-click break / R-click place) is gated OFF
                     // during Play — the player fights, not builds. EditorPlugin
                     // owns the build loop in Editor state.
-                    fly_camera.run_if(editor::not_interactive_editor),
+                    fly_camera.run_if(editor::not_interactive_editor).run_if(settings_menu::settings_closed),
                     editor_controls,
                     highlight_target,
                     edit_demo,
@@ -1144,8 +1006,7 @@ fn world_to_map(world: &World, name: &str) -> mapfile::MapFile {
 }
 
 /// Write the world to disk as JSON, creating the `maps/` folder if needed. Returns
-/// the number of solid blocks saved. Native-only (no filesystem on wasm).
-#[cfg(not(target_arch = "wasm32"))]
+/// the number of solid blocks saved.
 fn save_world_to(world: &World, path: &str) -> Result<usize, String> {
     let name = std::path::Path::new(path)
         .file_stem()
@@ -1163,21 +1024,10 @@ fn save_world_to(world: &World, path: &str) -> Result<usize, String> {
     Ok(map.blocks.len())
 }
 
-/// Read + parse a map file. Native-only (no filesystem on wasm).
-#[cfg(not(target_arch = "wasm32"))]
+/// Read + parse a map file.
 fn load_map_file(path: &str) -> Result<mapfile::MapFile, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     mapfile::parse(&text)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn save_world_to(_world: &World, _path: &str) -> Result<usize, String> {
-    Err("saving maps is not supported on web".into())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn load_map_file(_path: &str) -> Result<mapfile::MapFile, String> {
-    Err("loading maps is not supported on web".into())
 }
 
 /// Despawn every live chunk and rebuild the world from a map file — the shared
@@ -2339,30 +2189,6 @@ fn walk_demo(
     }
 }
 
-/// HUD for the `?hero` / VOXELFORGE_HERO branch — FPS + status only.
-///
-/// `hud` below cannot run here: it takes `Res<Editor>` and `Res<SelectedBlock>`,
-/// which only the editor branch inserts, so scheduling it on the hero app would
-/// panic on the first frame. Without SOMETHING writing `#fps` the web hero page
-/// left the HUD on "booting…" forever, and `scripts/web-verify.mjs` — which
-/// proves the wasm booted by waiting for a real FPS number — reported
-/// `rendered: false` on a page that was in fact rendering the scene fine
-/// (`frameDrawn: true`, 100% non-black). It also left the parity checklist's
-/// §4.4 open: "วัด FPS บนเฟรมนั้น — FPS จากฉาก editor ใช้เทียบ Lite target ไม่ได้
-/// (คนละ workload)". This closes both: the number now comes from the graded frame.
-fn hero_hud(
-    diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
-    world: Option<Res<World>>,
-) {
-    let fps = diagnostics
-        .get(&FrameTimeDiagnosticsPlugin::FPS)
-        .and_then(|d| d.smoothed())
-        .unwrap_or(0.0);
-    let quads = world.as_ref().map(|w| w.total_quads).unwrap_or(0);
-    set_dom("fps", &format!("{fps:.0}"));
-    set_dom("status", &format!("FPS {fps:.0}  |  hero scene  |  quads {quads}"));
-}
-
 fn hud(
     diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
     world: Option<Res<World>>,
@@ -2417,10 +2243,8 @@ fn hud(
         )
     };
     if let Ok(mut text) = q.single_mut() {
-        text.0 = line.clone();
+        text.0 = line;
     }
-    set_dom("fps", &format!("{fps:.0}"));
-    set_dom("status", &line);
 }
 
 fn bench_ramp(
@@ -2457,8 +2281,6 @@ fn bench_ramp(
     println!("{line}");
     bench.log.push_str(&line);
     bench.log.push('\n');
-    let full_log = bench.log.clone();
-    set_dom("bench", &full_log);
 
     if fps >= 60.0 {
         bench.max_60 = chunks;
@@ -2472,11 +2294,7 @@ fn bench_ramp(
             bench.max_60, chunks
         );
         println!("{summary}");
-        set_dom("result", &summary);
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            exit.write(AppExit::Success);
-        }
+        exit.write(AppExit::Success);
         return;
     }
 

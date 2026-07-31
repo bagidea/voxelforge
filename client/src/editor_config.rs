@@ -137,8 +137,8 @@ struct EditorConfigFile {
 
 /// Bevy plugin that registers `KeyBindings` and `EditorSettings` as resources.
 ///
-/// On native builds the plugin loads both from `editor_config.json` (creating a
-/// default file if none exists).  On `wasm32` it inserts the defaults directly.
+/// The plugin loads both from `editor_config.json`, creating a default file if
+/// none exists.
 ///
 /// ```ignore
 /// app.add_plugins(editor_config::InputConfigPlugin);
@@ -159,23 +159,15 @@ impl Plugin for InputConfigPlugin {
 const CONFIG_PATH: &str = "editor_config.json";
 
 /// Public save entry-point.  Call this after mutating `KeyBindings` or
-/// `EditorSettings` to persist the change to disk.  No-op on `wasm32`.
+/// `EditorSettings` to persist the change to disk.
 pub fn save_config(bindings: &KeyBindings, settings: &EditorSettings) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if let Err(e) = write_config_file(bindings, settings) {
-            eprintln!("EDITOR_CONFIG save failed: {e}");
-        }
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = (bindings, settings);
+    if let Err(e) = write_config_file(bindings, settings) {
+        eprintln!("EDITOR_CONFIG save failed: {e}");
     }
 }
 
 /// Load the config from disk, falling back to defaults and writing a template
 /// file so the user has something to edit.
-#[cfg(not(target_arch = "wasm32"))]
 fn load_config() -> (KeyBindings, EditorSettings) {
     match std::fs::read_to_string(CONFIG_PATH) {
         Ok(text) => match serde_json::from_str::<EditorConfigFile>(&text) {
@@ -197,13 +189,7 @@ fn load_config() -> (KeyBindings, EditorSettings) {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-fn load_config() -> (KeyBindings, EditorSettings) {
-    (KeyBindings::default(), EditorSettings::default())
-}
-
 /// Write the full config to disk as pretty-printed JSON.
-#[cfg(not(target_arch = "wasm32"))]
 fn write_config_file(bindings: &KeyBindings, settings: &EditorSettings) -> Result<(), String> {
     let cfg = EditorConfigFile {
         keybindings: bindings.clone(),

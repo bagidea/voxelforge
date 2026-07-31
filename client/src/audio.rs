@@ -37,6 +37,7 @@
 use bevy::audio::{AudioPlayer, AudioSource, GlobalVolume, PlaybackSettings, SpatialListener, Volume};
 use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::editor::AppState;
 use crate::scene::Campsite;
@@ -51,7 +52,7 @@ use voxelforge_sim::worldgen::{terrain_block, terrain_height};
 /// Per-bus volume settings. Every sound's playback volume is computed as
 /// `AudioSettings.master * AudioSettings.<bus>` so the player can lower SFX
 /// without touching ambient, and vice-versa.
-#[derive(Resource, Clone)]
+#[derive(Resource, Clone, Debug, Serialize, Deserialize)]
 pub struct AudioSettings {
     pub master: f32,
     pub sfx: f32,
@@ -157,10 +158,10 @@ struct StepTracker {
 
 /// Ambient sound entities so we can despawn them when leaving Play.
 #[derive(Resource, Default)]
-struct AmbientEnts {
-    wind: Option<Entity>,
-    campfire: Option<Entity>,
-    village: Option<Entity>,
+pub struct AmbientEnts {
+    pub wind: Option<Entity>,
+    pub campfire: Option<Entity>,
+    pub village: Option<Entity>,
 }
 
 pub struct AudioPlugin;
@@ -272,7 +273,7 @@ fn footstep_tracker(
 }
 
 /// Push [`GlobalVolume`] from [`AudioSettings::master`].
-fn update_volumes(settings: Res<AudioSettings>, mut global: ResMut<GlobalVolume>) {
+pub(crate) fn update_volumes(settings: Res<AudioSettings>, mut global: ResMut<GlobalVolume>) {
     global.volume = Volume::Linear(settings.master);
 }
 

@@ -21,6 +21,7 @@ use bevy_egui::EguiContexts;
 use voxelforge_sim::block::BlockId;
 
 use crate::gizmo::GizmoState;
+use crate::settings_menu::{settings_closed, SettingsMenuSet};
 use crate::{paint_at_cursor, OrbitCam, PaintOp, World};
 
 /// Top-level mode. `Editor` builds the world (combat/physics AI held off); `Play`
@@ -78,7 +79,10 @@ impl Plugin for EditorPlugin {
                         .after(crate::gizmo::gizmo_begin_drag)
                         .run_if(in_interactive_editor),
                     enter_play.run_if(in_state(AppState::Editor)),
-                    exit_play.run_if(in_state(AppState::Play)),
+                    exit_play
+                        .run_if(in_state(AppState::Play))
+                        .run_if(settings_closed)
+                        .after(SettingsMenuSet),
                 ),
             )
             .add_systems(OnEnter(AppState::Play), on_enter_play)
