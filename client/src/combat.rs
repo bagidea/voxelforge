@@ -315,8 +315,19 @@ pub struct PlayerCombat {
     pub state: CombatState,
     /// Elapsed time in the current action state.
     pub timer: f32,
-    /// Remaining i-frame time (dodge). While > 0 the player ignores damage.
+    /// Remaining i-frame time (dodge). Drives the roll *glide* only — how far a
+    /// body travels must not depend on frame rate. Invulnerability is
+    /// `iframe_frames` below.
     pub iframes: f32,
+    /// Dodge invulnerability in **frames** (§2.2/§6 say "10 frames @ 60 FPS",
+    /// not "167 ms"). Opened by `start_dodge`, spent one per frame by
+    /// `dodge_parry::spend_window_frames`, read by `invulnerable()`.
+    pub iframe_frames: u32,
+    /// Parry receive window, likewise in frames (§2.5: 12 frames @ 60 FPS).
+    pub parry_frames: u32,
+    /// Which enemy a successful parry left open to a riposte, if any.
+    /// See `dodge_parry::take_riposte`.
+    pub riposte_on: Option<Entity>,
     /// Lock before the next action may start (dodge recovery, parry recovery…).
     pub recovery: f32,
     /// Combo index (0..3) and the window left to continue it.
@@ -339,6 +350,9 @@ impl Default for PlayerCombat {
             state: CombatState::Idle,
             timer: 0.0,
             iframes: 0.0,
+            iframe_frames: 0,
+            parry_frames: 0,
+            riposte_on: None,
             recovery: 0.0,
             combo: 0,
             combo_window: 0.0,
@@ -352,7 +366,7 @@ impl Default for PlayerCombat {
 
 impl PlayerCombat {
     pub fn invulnerable(&self) -> bool {
-        self.iframes > 0.0
+        self.iframe_frames > 0
     }
 
     /// May a new action begin? Blocked while busy, recovering, exhausted, dead,
@@ -408,6 +422,7 @@ impl PlayerCombat {
         self.state = CombatState::Dodge;
         self.timer = 0.0;
         self.iframes = DODGE_IFRAMES;
+        self.iframe_frames = crate::dodge_parry::DODGE_IFRAME_FRAMES;
         self.combo = 0;
         true
     }
@@ -446,6 +461,10 @@ impl PlayerCombat {
             CombatState::Heavy => HEAVY_TIME,
             CombatState::Charged => CHARGED_TIME,
             CombatState::Dodge => DODGE_IFRAMES + DODGE_RECOVERY,
+            // Without this arm the state fell through to 0.0 and `tick` dropped
+            // it back to Idle on the next frame — which made the 12-frame parry
+            // window one frame long and `FailedParry` unreachable.
+            CombatState::Parry => crate::dodge_parry::PARRY_STATE_LEN,
             _ => 0.0,
         }
     }
@@ -1023,6 +1042,8 @@ pub fn player_combat(
     mut impacts: MessageWriter<ImpactEvent>,
     mut staggers: MessageWriter<StaggerEvent>,
     mut dodges: MessageWriter<DodgeEvent>,
+    feel: Res<FeelLog>,
+    dp: Res<crate::dodge_parry::DodgeParryState>,
     mut player_q: Query<
         (Entity, &mut Transform, &mut PlayerCombat, &mut Stamina, &Health, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
@@ -1088,6 +1109,7 @@ pub fn player_combat(
         if stam.try_spend(COST_PARRY, DELAY_PARRY) {
             pc.state = CombatState::Parry;
             pc.timer = 0.0;
+            pc.parry_frames = crate::dodge_parry::PARRY_WINDOW_FRAMES;
         }
     } else if intent.block && pc.can_act(&stam) {
         pc.state = CombatState::Block;
@@ -1143,10 +1165,13 @@ pub fn player_combat(
             if !in_cone {
                 continue;
             }
-            // Stagger amplifies damage (§3.2); a fresh parry punish adds +25% (§2.5).
+            // Stagger amplifies damage (§3.2); a fresh parry punish adds +25%
+            // (§2.5) — unless this enemy is the one a parry left open, in which
+            // case the swing is a riposte and takes the much heavier multiplier.
+            let riposte = crate::dodge_parry::take_riposte(&mut pc, enemy);
             let mut mult = if ep.staggered() { STAGGER_DMG_MULT } else { 1.0 };
             if pc.punish > 0.0 {
-                mult *= PARRY_PUNISH_MULT;
+                mult *= if riposte { crate::dodge_parry::RIPOSTE_MULT } else { PARRY_PUNISH_MULT };
             }
             ehp.damage(dmg * mult);
             let broke = ep.take(poise_dmg, false);
@@ -1163,6 +1188,7 @@ pub fn player_combat(
             // end up with a light's freeze and a heavy's shove (which reads as a
             // bug you can feel but not name).
             let weight = match pc.state {
+                _ if riposte => ImpactWeight::Critical, // a riposte is the loudest hit there is
                 _ if broke => ImpactWeight::Critical, // a poise break outranks the swing
                 CombatState::Charged => ImpactWeight::Critical,
                 CombatState::Heavy => ImpactWeight::Heavy,
@@ -1221,6 +1247,11 @@ pub fn player_combat(
                     is_player: false,
                 });
             }
+            if riposte {
+                crate::dodge_parry::log_riposte(
+                    &feel, &dp, enemy, mult, dmg * mult, weight, ehp.cur,
+                );
+            }
         }
         if landed {
             pc.hit_applied = true;
@@ -1247,6 +1278,7 @@ pub fn husk_ai(
     mut impacts: MessageWriter<ImpactEvent>,
     mut staggers: MessageWriter<StaggerEvent>,
     feel: Res<FeelLog>,
+    mut dp: ResMut<crate::dodge_parry::DodgeParryState>,
     mut enemy_q: Query<
         (Entity, &mut Transform, &mut Enemy, &Health, &mut Poise, Option<&Knockback>),
         (With<Enemy>, Without<FlyCam>),
@@ -1409,14 +1441,15 @@ pub fn husk_ai(
                         HUSK_SWING1_DMG, HUSK_SWING1_POISE, dist, &mut php, &mut pc,
                         &mut pstam, &mut ppoise, &mut shake,
                     );
+                    // Dodge / parry / mistimed parry — posture, poise break,
+                    // shove, riposte and their log lines all live in one place.
+                    crate::dodge_parry::resolve_defence(
+                        outcome, HUSK_SWING1_DMG, &feel, &mut dp, &mut commands, entity,
+                        &mut e, &mut ep, &mut pc, &php, etf.translation, to_player,
+                        &mut shake, &mut staggers,
+                    );
                     if connected {
-                        e.hitstop = HITSTOP_ENEMY;
-                        // Parried? The player's punish window just opened → the
-                        // Husk eats posture damage and a longer hit-stop (§2.5).
-                        if pc.punish > 0.0 {
-                            ep.take(PARRY_POSTURE, false);
-                            e.hitstop = HITSTOP_PARRY;
-                        }
+                        e.hitstop = e.hitstop.max(HITSTOP_ENEMY);
                         emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
                         taken_feel(
                             ImpactWeight::Light, broke, outcome, &to_player, ptf.translation,
@@ -1443,12 +1476,13 @@ pub fn husk_ai(
                         HUSK_SWING2_DMG, HUSK_SWING2_POISE, dist, &mut php, &mut pc,
                         &mut pstam, &mut ppoise, &mut shake,
                     );
+                    crate::dodge_parry::resolve_defence(
+                        outcome, HUSK_SWING2_DMG, &feel, &mut dp, &mut commands, entity,
+                        &mut e, &mut ep, &mut pc, &php, etf.translation, to_player,
+                        &mut shake, &mut staggers,
+                    );
                     if connected {
-                        e.hitstop = HITSTOP_ENEMY;
-                        if pc.punish > 0.0 {
-                            ep.take(PARRY_POSTURE, false);
-                            e.hitstop = HITSTOP_PARRY;
-                        }
+                        e.hitstop = e.hitstop.max(HITSTOP_ENEMY);
                         emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
                         // Swing 2 is the heavier half of the combo (20 dmg vs 15).
                         taken_feel(
@@ -1515,7 +1549,10 @@ fn try_hit_player(
         return (false, EnemyHitOutcome::Dodged, false);
     }
     // Parry window (§2.5): tap parry as the hit lands → negate + posture + punish.
-    if pc.state == CombatState::Parry && pc.timer <= PARRY_WINDOW {
+    // Counted in frames — see `dodge_parry::PARRY_WINDOW_FRAMES`. The posture
+    // damage and the riposte are booked by `dodge_parry::resolve_defence` at the
+    // call site, which is the only place the *attacker's* poise is in hand.
+    if pc.state == CombatState::Parry && pc.parry_frames > 0 {
         ppoise.take(0.0, false); // no self-damage; parry succeeded
         pc.punish = PARRY_PUNISH; // +25% window opens on the enemy
         shake.hit(SHAKE_LIGHT);
@@ -2322,8 +2359,13 @@ mod tests {
         }
         assert_eq!(hp.cur, HP_PLAYER); // untouched
 
-        // i-frames expire after ~167 ms.
-        pc.tick(DODGE_IFRAMES + 0.001);
+        // i-frames expire after exactly N *frames* — not after 167 ms of `dt`.
+        // `dodge_parry::spend_window_frames` is what spends them in the app.
+        for _ in 0..crate::dodge_parry::DODGE_IFRAME_FRAMES {
+            assert!(pc.invulnerable());
+            pc.iframe_frames -= 1;
+            pc.tick(1.0 / 600.0); // a 600 FPS frame must not shorten the window
+        }
         assert!(!pc.invulnerable());
     }
 

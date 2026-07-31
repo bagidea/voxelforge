@@ -347,6 +347,8 @@ pub struct QuestDemo {
     pub tap_t: f32,
     /// Which leg of `GATE_ROUTE` the demo is currently walking.
     pub leg: usize,
+    /// Last whole-second tick when we printed a debug position line.
+    pub debug_tick: u32,
 }
 
 /// Cached story data — loaded ONCE at startup so `load_story_data()` is never
@@ -432,14 +434,13 @@ fn cache_story_data(mut commands: Commands) {
 }
 
 /// Shorthand to get the cached story data, panicking if it was never loaded
-/// (should only happen on wasm or if the JSON file is missing/corrupt).
+/// (should only happen if the JSON file is missing/corrupt).
 fn story_data(story: &StoryDataRes) -> &StoryData { &story.data }
 
 // =============================================================================
 // JSON loader — called ONLY from cache_story_data at Startup.
 // =============================================================================
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn load_story_data() -> Option<StoryData> {
     let path = "assets/story/act1.json";
     match std::fs::read_to_string(path) {
@@ -454,9 +455,6 @@ pub fn load_story_data() -> Option<StoryData> {
         Err(e) => { eprintln!("STORY_LOAD read error path={path} err={e}"); None }
     }
 }
-
-#[cfg(target_arch = "wasm32")]
-pub fn load_story_data() -> Option<StoryData> { None }
 
 // =============================================================================
 // Journal init
@@ -1076,12 +1074,13 @@ fn render_objective_tracker(
 /// and the gate square is a two-block plateau whose only climbable side is the
 /// x≈32 ramp (z 12-15). Step-up is one block, so this is the walkable path.
 /// Each leg is an (x, z) waypoint.
-const GATE_ROUTE: [(f32, f32); 5] = [
-    (32.5, 28.5), // north out of the shelter, between its posts
-    (38.5, 28.5), // east, clear of the longhouse
-    (38.5, 16.5), // north up the east lane
+// Route goes FAR east (x=45) to stay clear of the longhouse (x 28-36, z 25-27),
+// then north along open ground, and only merges west at the ramp column.
+const GATE_ROUTE: [(f32, f32); 4] = [
+    (45.0, 32.0), // far east out of the shelter, clear of the village
+    (45.0, 16.5), // north along the open east field
     (32.5, 16.5), // west onto the ramp column
-    (32.5, 6.4),  // up the ramp onto the gate square, nose against the gate wall
+    (32.5, 6.4),  // up the ramp onto the gate square
 ];
 const WAYPOINT_TOL: f32 = 0.6; // blocks — a 6 b/s walk moves ~0.1 per frame
 /// How close the demo walks to Maren before pressing E. `INTERACT_RANGE` is 5.0
@@ -1162,8 +1161,34 @@ fn quest_demo(
                 demo.leg += 1;
                 return;
             }
-            steer(&mut key_input, dx, dz, WAYPOINT_TOL);
-            if phase_t > 40.0 {
+            // ---- fight any enemy that aggros during the walk ----
+            // Face the closest enemy, close distance, and attack. The walk
+            // continues once the enemy is dead. The walk clock is NOT reset
+            // during combat — 90 s is enough for the full route + the fight.
+            let target = enemies.iter()
+                .filter(|(etf, h)| !h.dead() && da(etf, ptf) < 12.0)
+                .min_by(|(a, _), (b, _)| {
+                    da(a, ptf).partial_cmp(&da(b, ptf)).unwrap_or(std::cmp::Ordering::Equal)
+                });
+            if let Some((etf, _)) = target {
+                let to = etf.translation - ptf.translation;
+                let flat = Vec3::new(to.x, 0.0, to.z);
+                if flat.length() > MELEE_CLOSE {
+                    steer(&mut key_input, flat.x, flat.z, 0.4);
+                } else {
+                    steer(&mut key_input, 0.0, 0.0, 1.0);
+                }
+                tap(&mut demo, &mut key_input, KeyCode::KeyX, t);
+            } else {
+                steer(&mut key_input, dx, dz, WAYPOINT_TOL);
+            }
+            let tick = phase_t as u32;
+            if tick > 0 && tick % 3 == 0 && tick != demo.debug_tick {
+                println!("QUEST_DEBUG pt=({:.1},{:.1}) leg={} t={:.1}",
+                    ptf.translation.x, ptf.translation.z, demo.leg, phase_t);
+                demo.debug_tick = tick;
+            }
+            if phase_t > 90.0 {
                 steer(&mut key_input, 0.0, 0.0, 1.0);
                 println!("QUEST_WALK_TO_GATE timeout leg={} at ({:.1},{:.1}) => FAIL",
                     demo.leg, ptf.translation.x, ptf.translation.z);

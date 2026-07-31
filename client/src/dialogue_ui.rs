@@ -35,24 +35,32 @@ fn dialogue_box(
         return;
     }
 
-    // ---- Keyboard fallback: Escape to close, Space to advance ----------------
+    // ---- Keyboard fallback: Escape to close, Space/Enter to advance ----------
+    // Enter never picks a choice — that is the bug that sent the quest demo into
+    // the wrong dialogue branch every time the last line of dlg_maren_gate
+    // advanced into choosing mode on the same frame Enter was still held.
     if keys.just_pressed(KeyCode::Escape) {
         ui_events.write(DialogueUiEvent::Close);
+        return; // close wins — don't also send an advance/choice this frame
     }
-    if keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::Enter) {
+    if keys.just_pressed(KeyCode::Space) {
         if dialogue.choosing {
-            // Space during choices picks the first one.
             ui_events.write(DialogueUiEvent::Choose(0));
         } else {
             ui_events.write(DialogueUiEvent::Advance);
         }
+    } else if keys.just_pressed(KeyCode::Enter) && !dialogue.choosing {
+        ui_events.write(DialogueUiEvent::Advance);
     }
-    for i in 0..4usize {
+    // Digit keys 1–6 → choice indices 0–5 (dlg_maren_gate has 5 choices).
+    for i in 0..6usize {
         let key = match i {
             0 => KeyCode::Digit1,
             1 => KeyCode::Digit2,
             2 => KeyCode::Digit3,
-            _ => KeyCode::Digit4,
+            3 => KeyCode::Digit4,
+            4 => KeyCode::Digit5,
+            _ => KeyCode::Digit6,
         };
         if keys.just_pressed(key) && dialogue.choosing {
             ui_events.write(DialogueUiEvent::Choose(i));
