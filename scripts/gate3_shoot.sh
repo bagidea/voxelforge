@@ -4,8 +4,9 @@
 #
 # DESIGN:
 #   This script DOES NOT build. It checks once that `target/release/voxelforge.exe`
-#   is newer than the last commit to touch `client/src/look.rs` (i.e. it was
-#   actually built from the current LookPlugin source), then immediately fires
+#   is newer than the newest source file that feeds the build (client/src/**/*.rs
+#   + Cargo.toml + Cargo.lock + client/Cargo.toml) — i.e. it was actually built
+#   from current source — then immediately fires
 #   the same three screenshot invocations a reviewer would run — one binary,
 #   three modes, no recompile between them. There is nothing that rebuilds the
 #   exe out from under this script, so the guard is a single pass/fail check,
@@ -21,9 +22,8 @@
 #   QUALITY       LookQuality tier                 (default: high)
 #   OUT           output directory                 (default: docs/assets/gate3)
 #   LOGS          log directory                    (default: _gate3_logs)
-#   MIN_MTIME     epoch seconds the exe must be newer than (default: commit
-#                 time of the latest commit touching client/src/look.rs, or
-#                 that file's on-disk mtime if it has uncommitted edits)
+#   MIN_MTIME     epoch seconds the exe must be newer than (default: newest mtime
+#                 among Cargo.toml + Cargo.lock + client/Cargo.toml + client/src/**/*.rs)
 #
 # Usage:
 #   bash scripts/gate3_shoot.sh              # wait + shoot all 3
@@ -56,15 +56,31 @@ exe_mtime() {
   fi
 }
 
-look_rs_min_mtime() {
-  # The guard's real intent: the exe must not be older than the LookPlugin
-  # source it's supposed to represent. Use the newer of (a) the commit time of
-  # the latest commit touching client/src/look.rs and (b) that file's current
-  # on-disk mtime, so uncommitted edits also count.
-  local commit_t=0 disk_t=0
-  commit_t=$(git log -1 --format=%ct -- client/src/look.rs 2>/dev/null || echo 0)
-  [ -f client/src/look.rs ] && disk_t=$(stat -c %Y client/src/look.rs 2>/dev/null || date -r client/src/look.rs +%s 2>/dev/null || echo 0)
-  if [ "$disk_t" -gt "$commit_t" ]; then echo "$disk_t"; else echo "$commit_t"; fi
+newest_source_mtime() {
+  # The exe is "fresh enough" if its mtime ≥ the newest source file that feeds
+  # the build — Cargo.toml + Cargo.lock + client/Cargo.toml + client/src/**/*.rs.
+  # A binary built from current source does not need a rebuild.
+  #
+  # KEEP THIS BROAD. An earlier revision narrowed it to look.rs alone; that let
+  # a stale exe — one built before an unrelated main.rs/settings edit — slip
+  # through and shoot false Gate-3 frames (Shino verified the hole 2026-08-01).
+  # The look depends on more than look.rs (camera rig in main.rs, settings_menu,
+  # hero.rs constants), so the guard must cover every source file. There is also
+  # a correctness footgun to avoid: if this function ever returns empty (e.g. an
+  # undefined name in the call site), `[ "$MTIME" -lt "" ]` errors inside the
+  # `if`, is treated as false, and the guard silently passes ANY exe — so the
+  # name called at the guard must match this definition exactly.
+  local newest=0 t f
+  for f in Cargo.toml Cargo.lock client/Cargo.toml; do
+    [ -f "$f" ] || continue
+    t=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+    [ "$t" -gt "$newest" ] && newest=$t
+  done
+  while IFS= read -r -d '' f; do
+    t=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+    [ "$t" -gt "$newest" ] && newest=$t
+  done < <(find client/src -name '*.rs' -print0 2>/dev/null)
+  echo "$newest"
 }
 
 gate_one_shot() {
