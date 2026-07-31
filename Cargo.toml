@@ -2,11 +2,15 @@
 members = ["sim", "server", "client"]
 resolver = "2"
 
-# Workspace-wide release profile — inherited by all members.
+# Workspace-wide release profile — inherited by all members. This is the Steam
+# ship profile: fat LTO across the whole graph + a single codegen unit buys the
+# frame time, `strip` drops debuginfo so the shipped exe isn't a few hundred MB.
+# NO `panic = "abort"` — parts of Bevy still rely on unwinding.
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
+strip = "debuginfo"
 
 # Keep dependencies fast even in debug builds so Bevy isn't unusably slow.
 [profile.dev.package."*"]
