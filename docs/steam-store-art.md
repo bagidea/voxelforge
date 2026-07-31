@@ -4,7 +4,7 @@
 > This doc locks the **art direction for the store page**, not the in-game beauty shot. Source of truth for
 > mood/palette/characters: `docs/look-bible.md` + `docs/character-bible.md`. No new art direction invented here —
 > every choice below is a reapplication of those two docs to a marketing surface.
-> Owner: Monanisa (Design). Last updated: 2026-07-31.
+> Owner: Monanisa (Design). Last updated: 2026-08-01 (capsule sizes corrected to Valve's current spec — see §6).
 
 ---
 
@@ -87,36 +87,59 @@ For the key art specifically:
 
 ## 6. Capsule crop plan
 
-One landscape master + one portrait master, cropped (not separately generated per size) so the composition
-stays consistent across every Steam surface. Sizes below are the ones Director provided 2026-07-31;
-**if Sahara's Valve-2026 spec check comes back with different numbers, those numbers win — swap the
-crop targets, the art direction in §1–§5 does not change.**
+> **Correction, 2026-08-01 (Monanisa):** the table below used to list the pre-August-2024 Valve sizes
+> (460×215 header, 616×353 main) — Valve retired those for new store pages. Sahara's
+> `docs/research/steamworks-publishing-brief-2026.md` §3.4 flagged it first; independently
+> cross-checked against `https://partner.steamgames.com/doc/store/assets/standard` and
+> `https://partner.steamgames.com/doc/store/assets/libraryassets` directly (not just the project doc)
+> on 2026-08-01 before touching anything — both current sizes below match Valve's own page.
+> `docs/steam-art-review-2026-08-01.md` (Flamingo) caught the same issue plus several composition/
+> palette/logo problems this pass does **not** fix — see the note after the table.
 
 | Asset | Size (px) | Aspect | Source master | Crop notes |
 |---|---|---|---|---|
-| Library capsule | 600×900 | 2:3 portrait | Portrait master | Full-body Auren, top 25% reserved for logo |
-| Header capsule | 460×215 | ~2.14:1 | Landscape master | Horizontal band through the god-ray + Auren's upper body; left half stays clear |
-| Main capsule | 616×353 | ~1.75:1 | Landscape master | Same band as header, slightly taller — more fog/environment visible top/bottom |
-| Library hero | 3840×1240 | ~3.1:1 ultrawide | Landscape master | Thinnest band — composition must keep Auren + god-ray inside the vertical-center third so an ultrawide crop doesn't clip the hero |
+| Header capsule | **920×430** | ~2.14:1 | Landscape master | Same ratio as the old 460×215 slot (Valve doubled the resolution) — horizontal band through the god-ray + Auren's upper body |
+| Small capsule | **462×174** | ~2.66:1 | Landscape master | New required asset (search results, wishlist rows, top-sellers) — same vertical composition center as header/main |
+| Main capsule | **1232×706** | ~1.75:1 | Landscape master | Same ratio as the old 616×353 slot — same band as header, slightly taller |
+| Vertical capsule | **748×896** | ~0.83:1 | Portrait master | New required asset (sales/seasonal features) — full-height centered crop, distinct from the library capsule's 2:3 |
+| Page background | **1438×810** | ~1.78:1 | Landscape master | Optional per spec but requested — same composition family as main capsule |
+| Library capsule | 600×900 | 2:3 portrait | Portrait master | Unchanged — still Valve's current library spec. Full-body Auren, top 25% reserved for logo |
+| Library hero | 3840×1240 | ~3.1:1 ultrawide | Landscape master | Unchanged — still Valve's current library spec. Thinnest band — composition must keep Auren + god-ray inside the vertical-center third |
 
-All final files land in `docs/assets/steam/`.
+All final files land in `docs/assets/steam/`. Library Header Capsule (a separate library-asset slot,
+also 920×430 per Valve) defaults to the Store Header Capsule when not set explicitly — no separate file
+needed unless Steamworks App Admin says otherwise.
+
+**What this pass fixed vs. what's still open:** this was a dimensions-only correction — every asset
+above is now byte-verified against Valve's current upload spec (see §7). It does **not** address
+`docs/steam-art-review-2026-08-01.md`'s composition findings: no logotype composited into any capsule
+(F2), the library hero's face sits outside Valve's safe area (F4), the header/main/small crops cut off
+the sword/cloak/ember pouch (F6/F8), and the palette reads as one hue with crushed shadows instead of
+the look-bible's warm-with-teal-accent law (F9/F10). Those need new key art or a compositing pass, not
+a resize — Director's call on that review's §4 options (A: re-shoot masters at target aspect, B: patch
+in place, C: wait for in-engine Gate 3 shots). Flamingo's `scripts/_review_steam_capsules.py` still
+points at the old 460×215/616×353 filenames — re-point it at the new filenames before re-running it.
 
 ## 7. Deliverables checklist
 
 - [x] This art-direction doc.
 - [x] Landscape key art master (no text) — `docs/assets/steam/key-art-landscape-master.png`.
 - [x] Portrait key art master (no text) — `docs/assets/steam/key-art-portrait-master.png`.
-- [x] Cropped capsule set at the sizes in §6, all generated by `scripts/make_steam_capsules.py`
-  (the script now actually reproduces every shipped file byte-for-byte when re-run — verified
-  2026-07-31, see fix note below):
-  - `docs/assets/steam/library-capsule-600x900.png`
-  - `docs/assets/steam/header-capsule-460x215.png`
-  - `docs/assets/steam/main-capsule-616x353.png`
-  - `docs/assets/steam/library-hero-3840x1240.png` — **note:** this one is a Lanczos upscale of a crop
-    from the 1024×1024 landscape master (our image-gen tool tops out at 1024²), so it's soft at full
-    size/zoom. Fine as a placeholder for review; if it ships as-is on the store page, re-render the
-    master at native 3840px resolution first (or run this file through an upscaler) rather than shipping
-    the soft upscale.
+- [x] **Fixed 2026-08-01:** capsule set regenerated at Valve's current upload sizes by
+  `scripts/make_steam_capsules.py`, and every output verified against a fresh disk read (not just the
+  script's own print) — actual `PIL.Image.open(...).size` per file:
+  - `docs/assets/steam/header-capsule-920x430.png` — 920×430 ✅
+  - `docs/assets/steam/small-capsule-462x174.png` — 462×174 ✅ (new asset)
+  - `docs/assets/steam/main-capsule-1232x706.png` — 1232×706 ✅
+  - `docs/assets/steam/vertical-capsule-748x896.png` — 748×896 ✅ (new asset)
+  - `docs/assets/steam/page-background-1438x810.png` — 1438×810 ✅ (new asset, optional per spec)
+  - `docs/assets/steam/library-capsule-600x900.png` — 600×900 ✅ (unchanged, still current)
+  - `docs/assets/steam/library-hero-3840x1240.png` — 3840×1240 ✅ (unchanged, still current) — **note
+    still applies:** this is a Lanczos upscale of a crop from the 1024×1024 landscape master, so it's
+    soft at full size/zoom. Same caveat now applies more mildly to `main-capsule-1232x706.png` (~1.2×
+    upscale) and `page-background-1438x810.png` (~1.4× upscale) — both above the master's native
+    1024px width. Re-render the masters at native resolution before treating any of these as final-final.
+  - Old, now-deprecated files **removed**: `header-capsule-460x215.png`, `main-capsule-616x353.png`.
 - [x] **Fixed 2026-07-31:** the hero-crop call in `make_steam_capsules.py` used to pass
   `target_w=1024, target_h=330` — a no-op resize on an already-1024×330 crop band, which produces a
   1024×330 image, not the shipped 3840×1240 file. That meant re-running the script (as the item below
@@ -126,9 +149,17 @@ All final files land in `docs/assets/steam/`.
   (`crop_band(landscape, 330, 660, 3840, 1240, ...)`) now does the Lanczos upscale directly and its
   output is byte-identical to a from-scratch re-crop of the master. Re-running the whole script end to
   end regenerates all four capsule files from the two masters with no manual steps.
-- [ ] Pending: confirm final px sizes against Sahara's 2026 Valve spec pull before calling this final-final
-  (crop script is `scripts/make_steam_capsules.py` — re-run with new target sizes if they change; the
-  script is now self-contained and reproducible, see fix note above).
+- [x] **Closed 2026-08-01:** px sizes confirmed against Valve's live spec pages directly (not just
+  Sahara's brief) — see the correction note above §6. This item used to read "pending Sahara's 2026
+  Valve spec pull"; that pull landed in `docs/research/steamworks-publishing-brief-2026.md` §3.4 and is
+  now independently verified.
+- [ ] Still open (tracked in `docs/steam-art-review-2026-08-01.md`, not resolved by this pass): logo
+  compositing (F2), library hero safe-area fix (F4), header/main/small crop composition (F6/F8),
+  palette + shadow-floor law (F9/F10). Needs a Director decision on that review's §4 options before any
+  more art work happens here.
+- [ ] Still open: at least 5 gameplay screenshots at ≥1920×1080 16:9 — these have to come from a real
+  build capture (see `docs/steam-store-copy.md` §6 shot list), not from this crop pipeline, and this
+  pass did not touch the game binary to get them.
 
 ---
 
