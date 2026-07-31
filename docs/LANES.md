@@ -60,6 +60,28 @@ Five agents were killed mid-build in one night. Print a progress line at least
 every 2 minutes while a long command runs — `echo` inside the build loop is
 enough. Don't go silent through a compile.
 
+**Fire-and-forget is now the rule (CEO-approved 2026-07-31).** A cold build on
+this box measured 15–17 minutes on 2026-07-31 — three times the watchdog's
+5-minute idle cut. Three agents were killed mid-build that morning alone. So:
+**never hold a foreground build.** Detach it, write to a log, and poll:
+
+```bash
+nohup bash scripts/build_safe.sh build --bin voxelforge \
+  --target-dir target-int > _build.log 2>&1 &
+echo $! > _build.pid                       # then poll every ~60–90s:
+kill -0 "$(cat _build.pid)" && echo "still building $(wc -l < _build.log) lines"
+```
+
+Two consequences that are not optional:
+
+- **A killed session does not mean a killed build.** The detached `cargo` keeps
+  running after your agent dies. Before restarting anything, check for a live
+  `cargo`/`rustc` (`tasklist | grep -i cargo`) — starting a second cold build
+  on top of a live one is what produced the 19-process pile-up above.
+- **Grade the exit code, never the tail.** `cargo ... | tail` reports *tail's*
+  exit 0 even when cargo denied-access on a locked exe. Check
+  `${PIPESTATUS[0]}`, or don't pipe at all, and confirm the binary's mtime moved.
+
 ## The build lock — only the integration lead runs a full build
 
 The night of 2026-07-31, four to five lanes each kicked off their own cold

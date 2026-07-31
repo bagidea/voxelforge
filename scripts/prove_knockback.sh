@@ -28,9 +28,24 @@
 #   bash scripts/prove_knockback.sh --log <file>     # grade an existing log
 set -uo pipefail
 
-BIN=${BIN:-./target-combat/debug/voxelforge.exe}
+BIN=${BIN:-./target/debug/voxelforge.exe}
 LOGS=_combat_proof
 mkdir -p "$LOGS"
+
+# A stale binary reproduces the old behaviour and greens a bug you already
+# fixed (2026-07-31: this script defaulted to target-combat/ and graded a
+# binary two hours older than the source). Refuse to grade one.
+stale_guard() {
+  [ -f "$BIN" ] || { echo "STALE_BINARY_GUARD: $BIN does not exist => FAIL"; exit 1; }
+  newer=$(find client/src -name '*.rs' -newer "$BIN" 2>/dev/null | head -5)
+  if [ -n "$newer" ]; then
+    echo "STALE_BINARY_GUARD: $BIN is older than these sources => FAIL"
+    echo "$newer" | sed 's/^/  /'
+    echo "rebuild first, or pass BIN=<fresh binary>"
+    exit 1
+  fi
+  echo "STALE_BINARY_GUARD: $BIN newer than all client/src/*.rs => PASS"
+}
 
 if [ "${1:-}" = "--log" ]; then
   log="${2:?--log requires a log file path}"
@@ -41,6 +56,7 @@ if [ "${1:-}" = "--log" ]; then
 else
   echo "=== KNOCKBACK PROOF ==="
   echo "binary: $BIN"
+  stale_guard
   log="$LOGS/knockback.log"
   echo "=== run --combat-demo with VOXELFORGE_FEEL_LOG=1 (timeout 180s) ==="
   VOXELFORGE_FEEL_LOG=1 timeout 180 "$BIN" --combat-demo >"$log" 2>&1
