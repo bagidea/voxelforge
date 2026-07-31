@@ -234,22 +234,12 @@ pub fn setup_hero(
     });
 
     // ---- geometry helpers ----------------------------------------------
-    // A box region [x0..x1)×[y0..y1)×[z0..z1) filled with one material.
-    let fill = |c: &mut Commands,
-                    mat: &Handle<StandardMaterial>,
-                    x0: i32, x1: i32, y0: i32, y1: i32, z0: i32, z1: i32| {
-        for x in x0..x1 {
-            for y in y0..y1 {
-                for z in z0..z1 {
-                    c.spawn((
-                        Mesh3d(cube.clone()),
-                        MeshMaterial3d(mat.clone()),
-                        Transform::from_xyz(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
-                    ));
-                }
-            }
-        }
-    };
+    // Every grid-aligned cube in this scene is written into ONE cell map and
+    // spawned once, at the end, by `grid.flush()`. Nothing below calls
+    // `commands.spawn` for a unit cube directly — see `VoxelGrid` for why that
+    // rule exists (short version: two cubes in one cell z-fight, the winner is
+    // draw order, and draw order silently changed the golden image).
+    let mut grid = VoxelGrid::default();
 
     // ---- room shell -----------------------------------------------------
     // Layout is authored for a camera looking toward +Z (screen-LEFT = +X):
@@ -262,11 +252,7 @@ pub fn setup_hero(
         for x in 0..16 {
             for z in 0..16 {
                 let m = if (x + z) % 2 == 0 { &wood_a } else { &wood_b };
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x as f32 + 0.5, 0.5, z as f32 + 0.5),
-                ));
+                grid.put(x, 0, z, m);
             }
         }
     }
@@ -275,22 +261,14 @@ pub fn setup_hero(
     for x in 0..16 {
         for y in 1..9 {
             let m = if (x + y) % 2 == 0 { wa } else { wb };
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(m.clone()),
-                Transform::from_xyz(x as f32 + 0.5, y as f32 + 0.5, 15.5),
-            ));
+            grid.put(x, y, 15, m);
         }
     }
     // Right-screen wall (-X, x=0) — solid, behind the fridge.
     for z in 0..16 {
         for y in 1..9 {
             let m = if (z + y) % 2 == 0 { wa } else { wb };
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(m.clone()),
-                Transform::from_xyz(0.5, y as f32 + 0.5, z as f32 + 0.5),
-            ));
+            grid.put(0, y, z, m);
         }
     }
     // Left-screen wall (+X, x=15) — holds the window hole (z 4..10, y 3..8).
@@ -301,11 +279,7 @@ pub fn setup_hero(
                 continue;
             }
             let m = if (z + y) % 2 == 0 { wa } else { wb };
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(m.clone()),
-                Transform::from_xyz(15.5, y as f32 + 0.5, z as f32 + 0.5),
-            ));
+            grid.put(15, y, z, m);
         }
     }
 
@@ -313,27 +287,31 @@ pub fn setup_hero(
     // Bright pane sits OUTSIDE the wall (x = 16.5); the mullion bars on the wall
     // plane (x=15.5) occlude the volumetric light => banded god rays inside.
     // Lower band (y 3..5) brighter than upper band (y 5..8) => sky gradient.
-    fill(&mut commands, &pane_lo, 16, 17, 3, 5, 4, 10);
-    fill(&mut commands, &pane_hi, 16, 17, 5, 8, 4, 10);
+    grid.fill(&pane_lo, 16, 17, 3, 5, 4, 10);
+    grid.fill(&pane_hi, 16, 17, 5, 8, 4, 10);
     // Mullions across the opening (x=15 layer).
-    fill(&mut commands, &frame, 15, 16, 3, 8, 6, 7); // vertical mullion
-    fill(&mut commands, &frame, 15, 16, 5, 6, 4, 10); // horizontal mullion
+    grid.fill(&frame, 15, 16, 3, 8, 6, 7); // vertical mullion
+    grid.fill(&frame, 15, 16, 5, 6, 4, 10); // horizontal mullion
 
     // ---- counters / cabinets -------------------------------------------
     // Counter run under the window (+X side).
-    fill(&mut commands, &cabinet, 11, 15, 0, 3, 1, 15);
-    fill(&mut commands, &counter, 11, 15, 3, 4, 1, 15);
+    grid.fill(&cabinet, 11, 15, 0, 3, 1, 15);
+    grid.fill(&counter, 11, 15, 3, 4, 1, 15);
     // Back counter run along the far wall.
-    fill(&mut commands, &cabinet, 4, 11, 0, 3, 12, 15);
-    fill(&mut commands, &counter, 4, 11, 3, 4, 12, 15);
+    grid.fill(&cabinet, 4, 11, 0, 3, 12, 15);
+    grid.fill(&counter, 4, 11, 3, 4, 12, 15);
     // Upper cabinets on the far wall.
-    fill(&mut commands, &cabinet, 4, 7, 6, 9, 13, 15);
-    fill(&mut commands, &cabinet, 8, 11, 6, 9, 13, 15);
-    // A little open shelf with a book stack (the ref has one).
-    fill(&mut commands, &book, 7, 9, 6, 7, 13, 14);
+    grid.fill(&cabinet, 4, 7, 6, 9, 13, 15);
+    grid.fill(&cabinet, 8, 11, 6, 9, 13, 15);
+    // A little open shelf with a book stack (the ref has one). The niche between
+    // the two upper-cabinet runs is ONE column wide (they take x 4..7 and x 8..11),
+    // so the stack has to be x 7..8. It used to be x 7..9, which put a book cube
+    // inside the cabinet cube at (8,6,13) — see `report_voxel_overlaps` below: that
+    // block flipped between cream book and dark cabinet from run to run.
+    grid.fill(&book, 7, 8, 6, 7, 13, 14);
 
     // ---- fridge (screen-right, -X wall) --------------------------------
-    fill(&mut commands, &steel, 1, 4, 0, 8, 8, 12);
+    grid.fill(&steel, 1, 4, 0, 8, 8, 12);
 
     // ---- hero island (front-centre) + the hero bowl --------------------
     // P0.2 charm (Flamingo): the bowl rim (5 wide, x5..9) used to span the WHOLE
@@ -341,7 +319,7 @@ pub fn setup_hero(
     // sitting ON a counter. Widened the island to x4..10 (7 wide) so there's a wood
     // margin on each side of the bowl — the silhouette now reads as a ceramic vessel
     // resting on the surface, like the ref.
-    fill(&mut commands, &cabinet, 4, 11, 0, 2, 2, 6);
+    grid.fill(&cabinet, 4, 11, 0, 2, 2, 6);
     // Tabletop top surface (y=2..3): planked wood instead of one flat plate. Per-block
     // checker of counter/counter_dk lays a seam grid on the exact tiles the grader's
     // fg zone samples — the one in-scope lever for the fg/bg hi-freq axis.
@@ -351,11 +329,7 @@ pub fn setup_hero(
         for x in 4..11 {
             for z in 2..6 {
                 let m = if (x + z) % 2 == 0 { &counter } else { &counter_dk };
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x as f32 + 0.5, 2.5, z as f32 + 0.5),
-                ));
+                grid.put(x, 2, z, m);
             }
         }
     }
@@ -368,24 +342,20 @@ pub fn setup_hero(
     // the bright counter/counter_dk checker (22-pt albedo gap) fills the fg zone
     // instead of the dark floor. VOXELFORGE_FGAPRON=1 to enable; bake only on sign-off.
     if cfg.fg_apron {
-        fill(&mut commands, &cabinet, 4, 11, 0, 2, -1, 2); // support under the apron
+        grid.fill(&cabinet, 4, 11, 0, 2, -1, 2); // support under the apron
         for x in 4..11 {
             for z in -1..2 {
                 let m = if (x + z) % 2 == 0 { &counter } else { &counter_dk };
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x as f32 + 0.5, 2.5, z as f32 + 0.5),
-                ));
+                grid.put(x, 2, z, m);
             }
         }
     }
     // Hero bowl on the island top (y=3), centred ~ x7,z4 — the DOF focus point.
     // Rim alternates cream/shaded cream => bevelled edges (fg hi-freq on the subject).
-    bowl(&mut commands, &cube, &ceramic, Some(&ceramic_sh), 7, 3, 4);
+    bowl(&mut grid, &ceramic, Some(&ceramic_sh), 7, 3, 4);
     // A second bowl far off on the back counter (depth cue, blurs out in DOF) — plain
     // rim: must NOT add hi-freq to the blurred background zone.
-    bowl(&mut commands, &cube, &ceramic, None, 6, 4, 13);
+    bowl(&mut grid, &ceramic, None, 6, 4, 13);
 
     // ---- green accent block on the island (≤15% of frame) --------------
     // One small moss-green block beside the bowl — the single cool note that
@@ -394,7 +364,7 @@ pub fn setup_hero(
     // Narrow only — the WIDE path swaps this for a proper TEAL GLASS tumbler
     // beside the hero bowl (matches the ref's teal accent), placed in the block below.
     if !wide {
-        fill(&mut commands, &accent, 9, 10, 3, 5, 4, 6); // 1×2×2 standing accent
+        grid.fill(&accent, 9, 10, 3, 5, 4, 6); // 1×2×2 standing accent
     }
 
     // ---- WIDE establishing dressing (env-gated · default OFF) ----------
@@ -428,11 +398,7 @@ pub fn setup_hero(
         for x in 0..16 {
             for z in -14..16 {
                 let m = plank_at(x, z);
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x as f32 + 0.5, 0.5, z as f32 + 0.5),
-                ));
+                grid.put(x, 0, z, m);
             }
         }
         // 2) Taller room — raise the far wall (+Z) to y=14 (blocky grid). NO
@@ -440,27 +406,15 @@ pub fn setup_hero(
         for x in 0..16 {
             for y in 9..14 {
                 let m = if (x + y) % 2 == 0 { wa } else { wb };
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x as f32 + 0.5, y as f32 + 0.5, 15.5),
-                ));
+                grid.put(x, y, 15, m);
             }
         }
         // Side walls: raise to y=14 across the full deepened footprint (z -14..16)…
         for z in -14..16 {
             for y in 9..14 {
                 let m = if (z + y) % 2 == 0 { wa } else { wb };
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(0.5, y as f32 + 0.5, z as f32 + 0.5),
-                ));
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(15.5, y as f32 + 0.5, z as f32 + 0.5),
-                ));
+                grid.put(0, y, z, m);
+                grid.put(15, y, z, m);
             }
         }
         // …and close the FOREGROUND side stretch (z -14..0) full height so a wide
@@ -469,31 +423,19 @@ pub fn setup_hero(
         for z in -14..0 {
             for y in 1..9 {
                 let m = if (z + y) % 2 == 0 { wa } else { wb };
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(0.5, y as f32 + 0.5, z as f32 + 0.5),
-                ));
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(15.5, y as f32 + 0.5, z as f32 + 0.5),
-                ));
+                grid.put(0, y, z, m);
+                grid.put(15, y, z, m);
             }
         }
         // 3) Run the hero island body + its WOOD-PLANK top across the full length
         //    (z −10..6 — base tabletop skipped when wide) so the bowl rests on a
         //    long warm TABLE that fills the foreground like the ref, reading as
         //    wood boards instead of a flat-yellow slab.
-        fill(&mut commands, &cabinet, 4, 11, 0, 2, -10, 2);
+        grid.fill(&cabinet, 4, 11, 0, 2, -10, 2);
         for x in 4..11 {
             for z in -10..6 {
                 let m = table_at(x);
-                commands.spawn((
-                    Mesh3d(cube.clone()),
-                    MeshMaterial3d(m.clone()),
-                    Transform::from_xyz(x as f32 + 0.5, 2.5, z as f32 + 0.5),
-                ));
+                grid.put(x, 2, z, m);
             }
         }
         // 4) TEAL GLASS tumbler beside the hero bowl (bowl sits at x7,z4). Placed
@@ -501,29 +443,45 @@ pub fn setup_hero(
         //    ref's bowl-left / teal-right foreground pairing. A 2×2 vessel, 2 tall,
         //    with a hollowed top and a 1-block handle nub so it reads as a mug/glass,
         //    not a plain cube. Sits on the tabletop top (y=3).
+        //
+        //    THE HOLE (Flamingo, 2026-07-31 — root cause of the missing teal voxel
+        //    in `wide-hero-final.png`; full write-up in docs/voxel-hole-findings.md).
+        //    The tumbler's top course reaches INTO the hero bowl's rim ring: `bowl()`
+        //    lays a hollow 5×5 ring at y = base_y+1 = 4 spanning x 5..9 / z 2..6, so
+        //    its near-left corner block sits on (5,4,2) — and the top course below
+        //    claims that same cell. Nothing here moved; the placement is what the
+        //    ref-matching web frame (`docs/assets/wasm-hero-v3.png`) shows. What was
+        //    broken is that the OLD code spawned both cubes and let the renderer pick:
+        //    two opaque unit cubes at one transform z-fight, the winner is draw order,
+        //    and draw order is not a property of this file. So the block was teal on
+        //    web and gone on native, and the locked golden lost a voxel without a
+        //    single line here changing.
+        //
+        //    THE FIX is `VoxelGrid` (top of this fn): every cube goes into ONE cell
+        //    map, last write wins, and the map is spawned sorted. The tumbler is
+        //    written after `bowl()`, so (5,4,2) resolves to teal — deterministically,
+        //    and matching web. That is the whole change: no re-stage, no camera move,
+        //    the CEO-approved composition is untouched.
+        //
+        //    (5,4,2) is therefore a DECLARED overwrite, not an accident, and
+        //    `scripts/voxel_hole_proof.py` carries it in EXPECTED_OVERWRITES with
+        //    this reason. Any OTHER shared cell fails that script. Keep it that way:
+        //    an overwrite nobody wrote down is the exact bug this comment is about.
         {
             let (gx, gz) = (4, 2); // screen-right of the bowl, one row forward
             // solid 2×2 base course (y=3)
-            fill(&mut commands, &glass_teal, gx, gx + 2, 3, 4, gz, gz + 2);
+            grid.fill(&glass_teal, gx, gx + 2, 3, 4, gz, gz + 2);
             // upper course (y=4): open one back-inner corner so the top reads hollow
             for x in gx..gx + 2 {
                 for z in gz..gz + 2 {
                     if x == gx + 1 && z == gz + 1 {
                         continue; // hollow notch
                     }
-                    commands.spawn((
-                        Mesh3d(cube.clone()),
-                        MeshMaterial3d(glass_teal.clone()),
-                        Transform::from_xyz(x as f32 + 0.5, 4.5, z as f32 + 0.5),
-                    ));
+                    grid.put(x, 4, z, &glass_teal);
                 }
             }
             // handle nub on the screen-left face (+x side), mid height
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(glass_teal.clone()),
-                Transform::from_xyz(gx as f32 + 2.0 + 0.5, 3.5, gz as f32 + 0.5),
-            ));
+            grid.put(gx + 2, 3, gz, &glass_teal);
         }
 
         // 5) Pin 3 (LOOK): DUST MOTES in the god-ray. The volumetric shaft reads
@@ -568,6 +526,18 @@ pub fn setup_hero(
             }
         }
     }
+
+    // ---- commit the voxel grid ------------------------------------------
+    // Every cube above was a WRITE into one cell map; this is the only place a
+    // grid cube is actually spawned, exactly once per occupied cell. Later
+    // writes overwrote earlier ones, which is what the authoring above already
+    // assumed ("the fridge stands ON the floor tile", "the counter caps the
+    // cabinet") — it just used to express that as two coincident cubes and let
+    // the GPU pick. `report_voxel_overlaps` is the standing proof it stays that
+    // way; the dust motes below are the only cubes that bypass the grid, and
+    // they're a different mesh at fractional positions, so they can't collide.
+    let placed = grid.flush(&mut commands, &cube);
+    println!("VOXEL_CELLS={placed}");
 
     // ---- sun (golden key, streaming through the +X window) -------------
     // P0-BLUE (grade-vs-golden): midtone B was ~34 (target <=10). The dominant
@@ -881,27 +851,151 @@ pub fn setup_hero(
     ));
 }
 
+/// Marks a cube that came out of [`VoxelGrid::flush`] — i.e. one that went through
+/// the dedup. Anything drawn without it bypassed the grid, which is exactly the
+/// thing `report_voxel_overlaps` is watching for.
+#[derive(Component)]
+pub struct VoxelCell;
+
+/// The scene's single source of truth for grid-aligned cubes: one material per
+/// integer cell, last write wins.
+///
+/// WHY THIS EXISTS. The hero kitchen is authored as overlapping boxes — the fridge
+/// is filled from y=0 so it sits *on* the floor, the counter caps the cabinet run,
+/// the two walls share a corner column. Written as direct `commands.spawn` calls
+/// that meant 233 cells each held two opaque unit cubes at the same transform.
+/// Coincident faces z-fight, and the winner is decided by draw order, which is not
+/// a stable property: it shifts whenever anything else in the scene changes. That
+/// is not theoretical — the teal tumbler's top block and the hero bowl's rim corner
+/// both claimed (5,4,2), and merely adding the dust-mote material+mesh flipped the
+/// order, so a whole teal voxel (~5.6k px) vanished from the locked golden while
+/// the source still "clearly" spawned it. Reading the code never showed it.
+///
+/// Routing every cube through `put`/`fill` makes the winner the LAST write, which
+/// is what the authoring order already meant, and makes it deterministic. It also
+/// drops ~233 redundant draw calls.
+#[derive(Default)]
+pub struct VoxelGrid {
+    cells: std::collections::HashMap<(i32, i32, i32), Handle<StandardMaterial>>,
+}
+
+impl VoxelGrid {
+    /// Claim one cell. A later `put` on the same cell replaces the earlier one.
+    fn put(&mut self, x: i32, y: i32, z: i32, mat: &Handle<StandardMaterial>) {
+        self.cells.insert((x, y, z), mat.clone());
+    }
+
+    /// Claim the box region [x0..x1)×[y0..y1)×[z0..z1) for one material.
+    fn fill(
+        &mut self,
+        mat: &Handle<StandardMaterial>,
+        x0: i32,
+        x1: i32,
+        y0: i32,
+        y1: i32,
+        z0: i32,
+        z1: i32,
+    ) {
+        for x in x0..x1 {
+            for y in y0..y1 {
+                for z in z0..z1 {
+                    self.put(x, y, z, mat);
+                }
+            }
+        }
+    }
+
+    /// Spawn one cube per occupied cell and return how many. Sorted, because a
+    /// `HashMap`'s iteration order is deliberately randomised per run and this
+    /// whole type exists to stop render output depending on spawn order.
+    fn flush(self, commands: &mut Commands, cube: &Handle<Mesh>) -> usize {
+        let mut cells: Vec<((i32, i32, i32), Handle<StandardMaterial>)> =
+            self.cells.into_iter().collect();
+        cells.sort_by_key(|(k, _)| *k);
+        for ((x, y, z), mat) in &cells {
+            commands.spawn((
+                Mesh3d(cube.clone()),
+                MeshMaterial3d(mat.clone()),
+                Transform::from_xyz(*x as f32 + 0.5, *y as f32 + 0.5, *z as f32 + 0.5),
+                VoxelCell,
+            ));
+        }
+        cells.len()
+    }
+}
+
+/// PROOF GATE (Flamingo, 2026-07-31) — no cell may hold two cubes of DIFFERENT
+/// materials.
+///
+/// [`VoxelGrid`] makes that true by construction, so this gate is not the fix —
+/// it is the guard that the fix stays in force. It reads the live World, not the
+/// grid, so it also catches a cube spawned *around* the grid: the failure mode
+/// that produced the missing teal voxel was code that looked correct in isolation.
+///
+/// It keys on the material handle rather than raw cube count on purpose. Two cubes
+/// of the same material in one cell are wasteful but invisible; two of *different*
+/// materials are the live landmine, because which one you see is draw order. Grading
+/// only the second keeps the gate at "this can change the picture".
+///
+/// Runs once on the first Update (Startup's commands are applied by then) and prints
+/// a line the render driver greps. `VOXEL_OVERLAPS=0` is the pass.
+/// `VOXELFORGE_DUPPROBE=1` (see `shot_main.rs`) deliberately plants one conflicting
+/// cube so this gate can be watched to go red — a gate nobody has seen fail is not
+/// a gate.
+pub fn report_voxel_overlaps(
+    mut done: Local<bool>,
+    q: Query<(&Transform, &MeshMaterial3d<StandardMaterial>)>,
+) {
+    if *done {
+        return;
+    }
+    *done = true;
+    // Quantise to millimetres so float noise can't split one cell into two keys.
+    let mut cells: std::collections::HashMap<(i64, i64, i64), Vec<AssetId<StandardMaterial>>> =
+        std::collections::HashMap::new();
+    for (t, mat) in &q {
+        let p = t.translation;
+        let key = (
+            (p.x * 1000.0).round() as i64,
+            (p.y * 1000.0).round() as i64,
+            (p.z * 1000.0).round() as i64,
+        );
+        cells.entry(key).or_default().push(mat.id());
+    }
+    let mut conflicts: Vec<((i64, i64, i64), usize)> = cells
+        .into_iter()
+        .filter_map(|(k, mut ids)| {
+            ids.sort();
+            ids.dedup();
+            (ids.len() > 1).then_some((k, ids.len()))
+        })
+        .collect();
+    conflicts.sort();
+    println!("VOXEL_OVERLAPS={}", conflicts.len());
+    for ((x, y, z), n) in conflicts.iter().take(32) {
+        println!(
+            "  OVERLAP at ({:.3}, {:.3}, {:.3}) {} distinct materials",
+            *x as f64 / 1000.0,
+            *y as f64 / 1000.0,
+            *z as f64 / 1000.0,
+            n
+        );
+    }
+}
+
 /// A hollow stepped bowl (voxel frustum) whose base sits at (cx, base_y, cz).
 fn bowl(
-    commands: &mut Commands,
-    cube: &Handle<Mesh>,
+    grid: &mut VoxelGrid,
     mat: &Handle<StandardMaterial>,
     rim_alt: Option<&Handle<StandardMaterial>>,
     cx: i32,
     base_y: i32,
     cz: i32,
 ) {
-    let put = |c: &mut Commands, m: &Handle<StandardMaterial>, x: i32, y: i32, z: i32| {
-        c.spawn((
-            Mesh3d(cube.clone()),
-            MeshMaterial3d(m.clone()),
-            Transform::from_xyz(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
-        ));
-    };
     // base 3×3 solid
     for x in cx - 1..=cx + 1 {
         for z in cz - 1..=cz + 1 {
-            put(commands, mat, x, base_y, z);
+            grid.put(x, base_y, z, mat);
         }
     }
     // rim ring 5×5, hollow centre (walls, height 1) => bowl silhouette. When rim_alt
@@ -915,7 +1009,7 @@ fn bowl(
                     Some(alt) if (x + z) % 2 != 0 => alt,
                     _ => mat,
                 };
-                put(commands, m, x, y, z);
+                grid.put(x, y, z, m);
             }
         }
     }
