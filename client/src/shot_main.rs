@@ -173,11 +173,55 @@ fn main() {
             println!("VFX showcase: {which:?} mute={} (fixed 1/60 step)", mute.0);
         }
         None => {
-            app.add_systems(Startup, hero::setup_hero);
+            app.add_systems(Startup, (hero::setup_hero, dup_probe).chain())
+                // Overlap gate: prints `VOXEL_OVERLAPS=<n>` once, on the first
+                // Update (Startup's spawns are applied by then).
+                // `scripts/render_wide_hero.sh` fails the render unless that
+                // reads 0 — two cubes in one cell z-fight, and which one you get
+                // then depends on draw order, which is how the teal accent block
+                // fell out of the old golden the moment dust motes were added.
+                .add_systems(Update, hero::report_voxel_overlaps);
         }
     }
 
     app.run();
+}
+
+/// SELF-TEST for `hero::report_voxel_overlaps` (default OFF).
+///
+/// `VOXELFORGE_DUPPROBE=1` plants exactly one extra cube on top of a cube the hero
+/// scene already spawned, so the overlap gate has to report `VOXEL_OVERLAPS=1`. It
+/// lives here rather than in `hero.rs` for two reasons: this bin is native-only so a
+/// direct `env::var` is honest here (hero.rs takes every knob through `Cfg` because
+/// `env::var` always errs on wasm), and adding a debug-only field to `Cfg` would mean
+/// editing `main.rs`, which is another lane's file.
+///
+/// The cell is the hero bowl's own base corner (6,3,3) — spawned on every path,
+/// wide or narrow — so the probe never depends on a flag that might be off.
+///
+/// The planted cube gets its own material, not a bare mesh: the gate grades cells
+/// holding two *different* materials (same-material coincidence is invisible, so
+/// grading it would only add noise), and a material-less entity isn't in its query
+/// at all. A probe that can't be seen by the gate it tests proves nothing.
+fn dup_probe(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+) {
+    if std::env::var("VOXELFORGE_DUPPROBE").is_err() {
+        return;
+    }
+    let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
+    let mat = mats.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.0, 1.0),
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(cube),
+        MeshMaterial3d(mat),
+        Transform::from_xyz(6.5, 3.5, 3.5),
+    ));
+    println!("DUPPROBE: planted a conflicting cube at (6.5, 3.5, 3.5)");
 }
 
 /// Let TAA/PCSS/SSAO accumulate, grab the frame, then exit.
