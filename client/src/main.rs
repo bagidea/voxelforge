@@ -569,6 +569,9 @@ fn main() {
             // so no other lane's file had to change. See vfx_bridge.rs.
             vfx::VfxPlugin,
             vfx_bridge::VfxBridgePlugin,
+            // Combat "weight" layer (combat.rs) — hit-stop, knockback, camera
+            // kick, Impact/Stagger/Dodge messages. Self-wiring; this line is all.
+            combat::CombatFeelPlugin,
         ))
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)

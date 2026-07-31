@@ -127,6 +127,41 @@ pub const SHAKE_LIGHT: (f32, f32) = (0.04, 0.10); // amp, dur       §5.3
 pub const SHAKE_HEAVY: (f32, f32) = (0.10, 0.20); //             §5.3 / §6
 pub const SHAKE_ENEMY_HIT: (f32, f32) = (0.15, 0.25); //         §5.3
 
+// -- Weight layer: what makes a swing feel like it *lands* ------------------
+// §5.2 only fixed one hit-stop length for the player. A single length reads as
+// a stutter, not as weight: the ear/eye grades "how hard was that?" almost
+// entirely off how long the frame froze. So hit-stop is graded by the blow.
+pub const HITSTOP_HEAVY: f32 = 0.120; // heavy swing connects
+pub const HITSTOP_CRITICAL: f32 = 0.170; // charged, or a poise break
+/// How far a connected blow shoves the target along the blade's direction. Small
+/// on purpose — a souls-like nudges, it does not punt (a punt would push the
+/// enemy out of the follow-up's reach and break every combo).
+pub const KNOCKBACK_LIGHT: f32 = 0.18; // blocks
+pub const KNOCKBACK_HEAVY: f32 = 0.32; // blocks
+pub const KNOCKBACK_CRITICAL: f32 = 0.55; // blocks
+/// The shove is spread over this window so the body slides, never teleports.
+pub const KNOCKBACK_TIME: f32 = 0.12; // sec
+/// Directional camera kick — rides on top of [`Shake`]'s omni-directional
+/// rattle: the rattle says "something happened", the kick says "*that* way".
+pub const KICK_LIGHT: f32 = 0.045;
+pub const KICK_HEAVY: f32 = 0.100;
+pub const KICK_CRITICAL: f32 = 0.155;
+pub const KICK_TAKEN: f32 = 0.130; // the player eating a hit
+pub const KICK_TIME: f32 = 0.16; // sec — snap out, ease back
+
+// -- Guard Husk rhythm (§4.1 extended) --------------------------------------
+// One fixed 0.8 s wind-up is a metronome: after two swings the player has the
+// timing and the fight is over as a threat. The signature of a soulslike boss is
+// that the *same* wind-up resolves at different times, so the dodge has to be
+// read, not memorised.
+pub const HUSK_TELEGRAPH_DELAYED: f32 = 1.55; // holds the pose, then falls
+pub const HUSK_FEINT_HOLD: f32 = 0.42; // pulls back before the swing ever comes
+pub const HUSK_FEINT_RECOVER: f32 = 0.55; // beat of nothing — baits the dodge
+/// A husk that has not closed the gap keeps stepping in *while* winding up (at
+/// half walk speed). Standing still through a 1.5 s wind-up would let the player
+/// simply back off, and it would let hit-knockback slide the fight apart.
+pub const HUSK_STEP_IN: f32 = 0.5; // × HUSK_WALK
+
 // ===========================================================================
 // Pure combat model — the testable core (no Bevy scheduling, headless-proofable)
 // ===========================================================================
@@ -463,12 +498,56 @@ pub enum HuskState {
     Patrol,
     Chase,
     Telegraph, // wind-up (honest — no active hitbox yet)
+    Feint,     // wind-up aborted on purpose — no hitbox ever appears
     Swing1,
     Gap,
     Swing2,
     Recover,
     Staggered,
     Dead,
+}
+
+/// How the husk plays the *next* combo (§4.1 extended). Picked once, when the
+/// wind-up starts, and it is the only thing that decides how long the raised
+/// blade hangs there — see [`telegraph_hold`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HuskRhythm {
+    /// Spec tempo: `HUSK_TELEGRAPH` (0.8 s) then the swing lands.
+    Straight,
+    /// Holds the pose almost twice as long. A dodge rolled on the straight
+    /// timing comes out of i-frames *before* the blade arrives.
+    Delayed,
+    /// Pulls the blade back down without ever swinging, waits a beat, then
+    /// opens a real wind-up. Punishes the panic roll.
+    Feint,
+}
+
+/// How long the raised-blade pose is held before the swing (or the fake) resolves.
+/// Pure — the unit tests grade the tempo spread off this, not off a copy of it.
+#[inline]
+pub fn telegraph_hold(rhythm: HuskRhythm) -> f32 {
+    match rhythm {
+        HuskRhythm::Straight => HUSK_TELEGRAPH,
+        HuskRhythm::Delayed => HUSK_TELEGRAPH_DELAYED,
+        HuskRhythm::Feint => HUSK_FEINT_HOLD,
+    }
+}
+
+/// Pick the rhythm for one combo from a seed (entity ⊕ combo counter). Kept
+/// deterministic on purpose: a headless proof that re-rolls its enemy behaviour
+/// every run cannot be re-run to check a fix. The avalanche below is there so
+/// neighbouring seeds (`entity+1`, `combo+1`) do not walk the table in lockstep.
+#[inline]
+pub fn pick_rhythm(seed: u32) -> HuskRhythm {
+    let mut h = seed.wrapping_mul(0x9E37_79B9);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x85EB_CA6B);
+    h ^= h >> 13;
+    match h % 100 {
+        0..=44 => HuskRhythm::Straight, // 45% — the tempo everything else reads against
+        45..=79 => HuskRhythm::Delayed, // 35%
+        _ => HuskRhythm::Feint,         // 20% — rare enough to stay a surprise
+    }
 }
 
 /// The Guard Husk enemy (§4.1). One archetype for the first playable.
@@ -482,6 +561,13 @@ pub struct Enemy {
     pub hitstop: f32,
     pub hit_applied: bool,
     pub surface_y: f32,
+    /// Rhythm this combo is being played on (§4.1 extended).
+    pub rhythm: HuskRhythm,
+    /// How many combos this husk has opened — half of the rhythm seed.
+    pub combo_no: u32,
+    /// True while the *current* wind-up is the follow-up to a feint, so the husk
+    /// can never fake twice in a row (that reads as a broken enemy, not a mind game).
+    pub feinted: bool,
 }
 
 /// Marker for the enemy's telegraph/arm mesh (child), so the telegraph system
@@ -511,11 +597,23 @@ pub struct LockOn {
 
 /// Screen-shake accumulator (§5.3). Diminishing sine decay applied to the
 /// camera after the follow system positions it.
+///
+/// Also carries the *directional* kick (the weight layer). The two are one
+/// resource on purpose: `hit()` is the omni-directional rattle ("something
+/// happened") and `kick()` is the shove along an axis ("*that* way"). Splitting
+/// them into two resources would mean two systems fighting over the same camera
+/// transform in the same frame.
 #[derive(Resource, Default)]
 pub struct Shake {
     pub amp: f32,
     pub time: f32,
     pub dur: f32,
+    /// Unit direction of the kick in world space (0 = no kick pending).
+    pub kick_dir: Vec3,
+    pub kick_amp: f32,
+    pub kick_t: f32,
+    /// Set once per kick so the log line is emitted on its first applied frame.
+    pub kick_logged: bool,
 }
 
 impl Shake {
@@ -526,6 +624,19 @@ impl Shake {
             self.dur = spec.1;
             self.time = 0.0;
         }
+    }
+
+    /// Punch the camera along `dir` (world space). Same "strongest wins" rule as
+    /// [`Shake::hit`], so a heavy landing during a light's kick is not swallowed.
+    pub fn kick(&mut self, dir: Vec3, amp: f32) {
+        let d = Vec3::new(dir.x, dir.y, dir.z).normalize_or_zero();
+        if d == Vec3::ZERO || amp < self.kick_amp * (1.0 - (self.kick_t / KICK_TIME).min(1.0)) {
+            return;
+        }
+        self.kick_dir = d;
+        self.kick_amp = amp;
+        self.kick_t = 0.0;
+        self.kick_logged = false;
     }
 }
 
@@ -563,6 +674,146 @@ pub struct CombatDemo {
 pub struct PlayerDied;
 
 impl Message for PlayerDied {}
+
+// ===========================================================================
+// The weight layer — hit-stop, knockback, camera kick, and the public messages
+// the animation (anim.rs) and VFX (vfx.rs) lanes hang off.
+// ===========================================================================
+
+/// How hard a blow landed. This is the ONE knob the whole feel layer reads:
+/// hit-stop length, knockback distance and camera-kick strength are all derived
+/// from it, so "make heavies feel heavier" is a one-line change, not five.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ImpactWeight {
+    /// Light swing / chained light.
+    Light,
+    /// Committed heavy swing.
+    Heavy,
+    /// Charged swing, or *any* blow that broke the target's poise. A poise break
+    /// is the loudest thing that can happen in a soulslike trade, so it borrows
+    /// the charged attack's whole feel budget regardless of which swing did it.
+    Critical,
+}
+
+impl ImpactWeight {
+    /// Frames of frozen time on the attacker when this lands (§5.2 extended).
+    pub fn hitstop(self) -> f32 {
+        match self {
+            ImpactWeight::Light => HITSTOP_LIGHT,
+            ImpactWeight::Heavy => HITSTOP_HEAVY,
+            ImpactWeight::Critical => HITSTOP_CRITICAL,
+        }
+    }
+    /// Blocks the target slides along the blade direction.
+    pub fn knockback(self) -> f32 {
+        match self {
+            ImpactWeight::Light => KNOCKBACK_LIGHT,
+            ImpactWeight::Heavy => KNOCKBACK_HEAVY,
+            ImpactWeight::Critical => KNOCKBACK_CRITICAL,
+        }
+    }
+    /// Directional camera-kick amplitude.
+    pub fn kick(self) -> f32 {
+        match self {
+            ImpactWeight::Light => KICK_LIGHT,
+            ImpactWeight::Heavy => KICK_HEAVY,
+            ImpactWeight::Critical => KICK_CRITICAL,
+        }
+    }
+    /// Stable lowercase tag used in the log lines the proof script grades.
+    pub fn label(self) -> &'static str {
+        match self {
+            ImpactWeight::Light => "light",
+            ImpactWeight::Heavy => "heavy",
+            ImpactWeight::Critical => "critical",
+        }
+    }
+}
+
+/// **A blade connected.** Written by [`player_combat`] the frame the hit
+/// resolves, before any feel is applied.
+///
+/// Consumers (`anim.rs` — hit reaction pose; `vfx.rs` — sparks/blood/flash):
+/// ```ignore
+/// fn my_system(mut hits: MessageReader<combat::ImpactEvent>) {
+///     for hit in hits.read() {
+///         // hit.pos    — world-space contact point (the target's transform)
+///         // hit.dir    — unit vector attacker → target (the blade's direction)
+///         // hit.weight — Light | Heavy | Critical; .hitstop()/.kick() give the numbers
+///         // hit.target / hit.attacker — entities, if you need to pose a specific rig
+///     }
+/// }
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct ImpactEvent {
+    pub pos: Vec3,
+    pub dir: Vec3,
+    pub weight: ImpactWeight,
+    pub target: Entity,
+    pub attacker: Entity,
+}
+impl Message for ImpactEvent {}
+
+/// **Poise broke.** Written the frame a stagger starts, for either side.
+/// `is_player` says whose poise went; `pos` is where they are standing.
+#[derive(Clone, Copy, Debug)]
+pub struct StaggerEvent {
+    pub entity: Entity,
+    pub pos: Vec3,
+    pub is_player: bool,
+}
+impl Message for StaggerEvent {}
+
+/// **A roll started.** Written the frame `start_dodge` succeeds — i.e. only when
+/// the stamina was actually paid, so a mashed dodge that failed emits nothing.
+#[derive(Clone, Copy, Debug)]
+pub struct DodgeEvent {
+    pub pos: Vec3,
+    pub dir: Vec3,
+    pub iframes: f32,
+}
+impl Message for DodgeEvent {}
+
+/// An in-flight shove on a struck body. Inserted by [`player_combat`], consumed
+/// by [`apply_knockback`], removed when it runs out.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Knockback {
+    /// Unit direction (XZ only — a soulslike shove does not launch).
+    pub dir: Vec3,
+    /// Blocks still to travel.
+    pub left: f32,
+    /// Total the impulse was worth, for the log line.
+    pub total: f32,
+    /// Seconds left in the slide.
+    pub time: f32,
+    /// Hit-stop to hand the struck body on the first applied frame.
+    pub hitstop: f32,
+    /// Where the body stood when the blow landed — the log line's `from`.
+    pub from: Vec3,
+    /// False until the first frame has run (that frame books the hit-stop).
+    pub started: bool,
+    /// Distance this system has actually pushed, summed frame by frame.
+    ///
+    /// Exists to separate the two ways a shove can come up short, which the
+    /// `from`/`to` pair alone cannot tell apart: `apply_knockback` under-
+    /// delivering, versus another system writing the same `Transform` later in
+    /// the frame and undoing part of it. `slid` is what this system put in;
+    /// `moved` is what survived to the end of the frame. `slid > moved` names
+    /// the thief.
+    pub slid: f32,
+    /// Distance added by the end-of-window remainder top-up (see
+    /// `apply_knockback`). Logged so a run can show whether that branch ever
+    /// fires at all, instead of the question being argued from theory.
+    pub topup: f32,
+}
+
+/// Turns the feel layer's structured log lines on. Off by default so an
+/// interactive session is not spammed; the proof scripts set
+/// `VOXELFORGE_FEEL_LOG=1` (the feel probe implies it).
+#[derive(Resource, Default, Clone, Copy)]
+pub struct FeelLog {
+    pub enabled: bool,
+}
 
 // ===========================================================================
 // Spawning
@@ -621,6 +872,9 @@ pub fn spawn_guard_husk(
                 hitstop: 0.0,
                 hit_applied: false,
                 surface_y: surface,
+                rhythm: HuskRhythm::Straight,
+                combo_no: 0,
+                feinted: false,
             },
             Health::new(HP_HUSK),
             Poise::new(POISE_HUSK),
@@ -760,19 +1014,23 @@ pub fn gather_input(
 #[allow(clippy::type_complexity)]
 pub fn player_combat(
     time: Res<Time>,
+    mut commands: Commands,
     intent: Res<CombatIntent>,
     mut lock: ResMut<LockOn>,
     mut shake: ResMut<Shake>,
     mut died: MessageWriter<PlayerDied>,
     mut sfx: MessageWriter<SfxEvent>,
+    mut impacts: MessageWriter<ImpactEvent>,
+    mut staggers: MessageWriter<StaggerEvent>,
+    mut dodges: MessageWriter<DodgeEvent>,
     mut player_q: Query<
-        (&mut Transform, &mut PlayerCombat, &mut Stamina, &Health, &mut Poise),
+        (Entity, &mut Transform, &mut PlayerCombat, &mut Stamina, &Health, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
     >,
     mut enemy_q: Query<(Entity, &Transform, &mut Health, &mut Poise), (With<Enemy>, Without<FlyCam>)>,
 ) {
     let dt = time.delta_secs();
-    let Ok((mut ptf, mut pc, mut stam, hp, mut poise)) = player_q.single_mut() else {
+    let Ok((player, mut ptf, mut pc, mut stam, hp, mut poise)) = player_q.single_mut() else {
         return;
     };
 
@@ -816,7 +1074,16 @@ pub fn player_combat(
 
     // Start actions from intent (priority: dodge > parry > block > heavy > light).
     if intent.dodge {
-        pc.start_dodge(&mut stam);
+        if pc.start_dodge(&mut stam) {
+            // Only a roll that actually paid its stamina announces itself — a
+            // mashed dodge that was refused must not make anim/vfx play a roll.
+            let fwd = ptf.rotation * Vec3::NEG_Z;
+            dodges.write(DodgeEvent {
+                pos: ptf.translation,
+                dir: Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero(),
+                iframes: DODGE_IFRAMES,
+            });
+        }
     } else if intent.parry && pc.can_act(&stam) {
         if stam.try_spend(COST_PARRY, DELAY_PARRY) {
             pc.state = CombatState::Parry;
@@ -863,7 +1130,7 @@ pub fn player_combat(
         let origin = ptf.translation;
         let facing = pc_facing(&ptf);
         let mut landed = false;
-        for (_, etf, mut ehp, mut ep) in enemy_q.iter_mut() {
+        for (enemy, etf, mut ehp, mut ep) in enemy_q.iter_mut() {
             if ehp.dead() {
                 continue;
             }
@@ -890,13 +1157,70 @@ pub fn player_combat(
             } else {
                 sfx.write(SfxEvent::HitLight { position: etf.translation });
             }
-            // Hit-stop on both (§5.2) + screen-shake (§5.3).
-            pc.hitstop = if broke { HITSTOP_STAGGER } else { HITSTOP_LIGHT };
+
+            // ---- the weight layer --------------------------------------------
+            // One classification drives every channel below, so a heavy can never
+            // end up with a light's freeze and a heavy's shove (which reads as a
+            // bug you can feel but not name).
+            let weight = match pc.state {
+                _ if broke => ImpactWeight::Critical, // a poise break outranks the swing
+                CombatState::Charged => ImpactWeight::Critical,
+                CombatState::Heavy => ImpactWeight::Heavy,
+                _ => ImpactWeight::Light,
+            };
+            // Blade direction: player → target, flattened. `normalize_or_zero`
+            // guards the degenerate "standing inside the enemy" case; the facing
+            // vector is the honest fallback there.
+            let blade = {
+                let flat = Vec3::new(to.x, 0.0, to.z).normalize_or_zero();
+                if flat == Vec3::ZERO {
+                    Vec3::new(-facing.sin(), 0.0, -facing.cos())
+                } else {
+                    flat
+                }
+            };
+
+            // 1. Hit-stop — the single biggest reason a swing reads as "landed".
+            //    A break still floors at HITSTOP_STAGGER so the old §5.2 number
+            //    is never regressed by the new table.
+            pc.hitstop = weight.hitstop().max(if broke { HITSTOP_STAGGER } else { 0.0 });
+            // 2. Knockback — the target slides along the blade, and eats the same
+            //    freeze so the shove starts the instant the world unpauses.
+            commands.entity(enemy).insert(Knockback {
+                dir: blade,
+                left: weight.knockback(),
+                total: weight.knockback(),
+                time: KNOCKBACK_TIME,
+                hitstop: weight.hitstop(),
+                from: etf.translation,
+                started: false,
+                slid: 0.0,
+                topup: 0.0,
+            });
+            // 3. Camera: the existing omni rattle (§5.3) …
             shake.hit(if matches!(pc.state, CombatState::Heavy | CombatState::Charged) {
                 SHAKE_HEAVY
             } else {
                 SHAKE_LIGHT
             });
+            //    … plus a kick down the blade, so the frame lurches *into* the hit.
+            shake.kick(blade, weight.kick());
+
+            // 4. Tell the other lanes. anim.rs poses the reaction, vfx.rs sparks.
+            impacts.write(ImpactEvent {
+                pos: etf.translation,
+                dir: blade,
+                weight,
+                target: enemy,
+                attacker: player,
+            });
+            if broke {
+                staggers.write(StaggerEvent {
+                    entity: enemy,
+                    pos: etf.translation,
+                    is_player: false,
+                });
+            }
         }
         if landed {
             pc.hit_applied = true;
@@ -920,24 +1244,55 @@ pub fn husk_ai(
     mut commands: Commands,
     mut shake: ResMut<Shake>,
     mut sfx: MessageWriter<SfxEvent>,
-    mut enemy_q: Query<(Entity, &mut Transform, &mut Enemy, &Health, &mut Poise), (With<Enemy>, Without<FlyCam>)>,
+    mut impacts: MessageWriter<ImpactEvent>,
+    mut staggers: MessageWriter<StaggerEvent>,
+    feel: Res<FeelLog>,
+    mut enemy_q: Query<
+        (Entity, &mut Transform, &mut Enemy, &Health, &mut Poise, Option<&Knockback>),
+        (With<Enemy>, Without<FlyCam>),
+    >,
     mut player_q: Query<
-        (&Transform, &mut Health, &mut PlayerCombat, &mut Stamina, &mut Poise),
+        (Entity, &Transform, &mut Health, &mut PlayerCombat, &mut Stamina, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
     >,
 ) {
     let dt = time.delta_secs();
-    let Ok((ptf, mut php, mut pc, mut pstam, mut ppoise)) = player_q.single_mut() else {
+    let Ok((player, ptf, mut php, mut pc, mut pstam, mut ppoise)) = player_q.single_mut() else {
         return;
     };
 
-    for (entity, mut etf, mut e, ehp, mut ep) in enemy_q.iter_mut() {
+    for (entity, mut etf, mut e, ehp, mut ep, shove) in enemy_q.iter_mut() {
         ep.tick(dt);
+        // A body mid-shove does not also power-walk. `apply_knockback` runs
+        // immediately before this system and writes the same transform, so any
+        // step taken here is subtracted straight out of the impulse the hit was
+        // booked for — a light hit reads as 0.79× its own knockback number.
+        // The shove is 0.12 s; the AI simply owes it that beat.
+        let shoved = shove.is_some();
+        // Hit-stop drains every frame, *including* through a stagger. It used to
+        // be ticked below the stagger `continue`, so a poise break froze the
+        // timer for the whole 1.5 s stagger — and `apply_knockback` waits on
+        // `hitstop == 0`, so the biggest shove in the game (a critical) never
+        // started. The freeze belongs to the blow, not to the state it left.
+        let frozen = e.hitstop > 0.0;
+        e.hitstop = (e.hitstop - dt).max(0.0);
         if ehp.dead() {
-            e.state = HuskState::Dead;
-            sfx.write(SfxEvent::EnemyDeath { position: etf.translation });
-            commands.entity(entity).despawn();
-            info!("COMBAT husk defeated — despawned entity={:?}", entity);
+            // A killing blow still gets its shove. The corpse rides the impulse
+            // out first and leaves the world when the slide ends — otherwise the
+            // hardest hits in the game (a critical breaks poise, and a poise
+            // break is what kills) despawn the body on the same frame they land
+            // and never move it a millimetre. The death check sits *below* the
+            // hit-stop drain on purpose: `apply_knockback` waits on
+            // `hitstop == 0`, so a corpse that stopped draining it would hold a
+            // `Knockback` forever and never despawn.
+            if e.state != HuskState::Dead {
+                e.state = HuskState::Dead;
+                sfx.write(SfxEvent::EnemyDeath { position: etf.translation });
+            }
+            if !shoved {
+                commands.entity(entity).despawn();
+                info!("COMBAT husk defeated — despawned entity={:?}", entity);
+            }
             continue;
         }
         if ep.staggered() {
@@ -948,8 +1303,7 @@ pub fn husk_ai(
         if e.state == HuskState::Staggered {
             e.state = HuskState::Chase; // recovered
         }
-        if e.hitstop > 0.0 {
-            e.hitstop = (e.hitstop - dt).max(0.0);
+        if frozen {
             continue;
         }
 
@@ -961,7 +1315,9 @@ pub fn husk_ai(
             HuskState::Patrol => {
                 // Walk a 12-block loop along X from the origin (§4.1).
                 let step = HUSK_WALK * dt * e.patrol_dir;
-                etf.translation.x += step;
+                if !shoved {
+                    etf.translation.x += step;
+                }
                 e.facing = if e.patrol_dir > 0.0 { std::f32::consts::FRAC_PI_2 } else { -std::f32::consts::FRAC_PI_2 };
                 if (etf.translation.x - e.patrol_origin.x).abs() > 6.0 {
                     e.patrol_dir = -e.patrol_dir;
@@ -977,24 +1333,79 @@ pub fn husk_ai(
                 if husk_should_leash(dist) {
                     e.state = HuskState::Patrol; // leashed back to patrol (§4.1)
                 } else if dist <= MELEE_RANGE {
+                    // Opening a combo — pick how it will be played *now*, before
+                    // the blade goes up, so the wind-up itself carries the lie.
+                    e.combo_no += 1;
+                    e.feinted = false;
+                    e.rhythm = pick_rhythm((entity.to_bits() as u32) ^ e.combo_no.wrapping_mul(0x9E37_79B9));
                     e.state = HuskState::Telegraph; // begin honest wind-up
                     e.timer = 0.0;
                     e.hit_applied = false;
-                } else {
+                    if feel.enabled {
+                        println!(
+                            "FEEL_HUSK_RHYTHM entity={} combo={} pattern={} hold={:.2} follow_up=false",
+                            entity.to_bits(), e.combo_no, rhythm_label(e.rhythm),
+                            telegraph_hold(e.rhythm)
+                        );
+                    }
+                } else if !shoved {
                     let dir = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
                     etf.translation += dir * HUSK_WALK * dt;
                 }
             }
             HuskState::Telegraph => {
-                if e.timer >= HUSK_TELEGRAPH {
-                    e.state = HuskState::Swing1;
+                // Keep closing while the blade is up. A husk that plants its feet
+                // through a 1.5 s wind-up can be walked away from for free — and
+                // hit-knockback would slide the fight apart over a few trades.
+                if dist > MELEE_RANGE && !shoved {
+                    let dir = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
+                    etf.translation += dir * HUSK_WALK * HUSK_STEP_IN * dt;
+                }
+                if e.timer >= telegraph_hold(e.rhythm) {
+                    if e.rhythm == HuskRhythm::Feint {
+                        // The fake: blade comes back down, no hitbox ever existed.
+                        e.state = HuskState::Feint;
+                        e.timer = 0.0;
+                        e.hit_applied = false;
+                        if feel.enabled {
+                            println!(
+                                "FEEL_HUSK_FEINT entity={} combo={} held={:.2} recover={:.2}",
+                                entity.to_bits(), e.combo_no, HUSK_FEINT_HOLD, HUSK_FEINT_RECOVER
+                            );
+                        }
+                    } else {
+                        e.state = HuskState::Swing1;
+                        e.timer = 0.0;
+                        e.hit_applied = false;
+                    }
+                }
+            }
+            HuskState::Feint => {
+                // A beat of nothing — this is the window the panic roll is wasted
+                // in — then a *real* wind-up. Never two fakes in a row.
+                if e.timer >= HUSK_FEINT_RECOVER {
+                    e.feinted = true;
+                    e.rhythm = match pick_rhythm(
+                        (entity.to_bits() as u32) ^ e.combo_no.wrapping_mul(0x85EB_CA6B) ^ 0x5F5F,
+                    ) {
+                        HuskRhythm::Feint => HuskRhythm::Straight, // no double fake
+                        other => other,
+                    };
+                    e.state = HuskState::Telegraph;
                     e.timer = 0.0;
                     e.hit_applied = false;
+                    if feel.enabled {
+                        println!(
+                            "FEEL_HUSK_RHYTHM entity={} combo={} pattern={} hold={:.2} follow_up=true",
+                            entity.to_bits(), e.combo_no, rhythm_label(e.rhythm),
+                            telegraph_hold(e.rhythm)
+                        );
+                    }
                 }
             }
             HuskState::Swing1 => {
                 if !e.hit_applied && e.timer <= HUSK_ACTIVE {
-                    let (connected, outcome) = try_hit_player(
+                    let (connected, outcome, broke) = try_hit_player(
                         HUSK_SWING1_DMG, HUSK_SWING1_POISE, dist, &mut php, &mut pc,
                         &mut pstam, &mut ppoise, &mut shake,
                     );
@@ -1007,6 +1418,10 @@ pub fn husk_ai(
                             e.hitstop = HITSTOP_PARRY;
                         }
                         emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
+                        taken_feel(
+                            ImpactWeight::Light, broke, outcome, &to_player, ptf.translation,
+                            entity, player, &mut pc, &mut shake, &mut impacts, &mut staggers,
+                        );
                     }
                     e.hit_applied = true;
                 }
@@ -1024,7 +1439,7 @@ pub fn husk_ai(
             }
             HuskState::Swing2 => {
                 if !e.hit_applied && e.timer <= HUSK_ACTIVE {
-                    let (connected, outcome) = try_hit_player(
+                    let (connected, outcome, broke) = try_hit_player(
                         HUSK_SWING2_DMG, HUSK_SWING2_POISE, dist, &mut php, &mut pc,
                         &mut pstam, &mut ppoise, &mut shake,
                     );
@@ -1035,6 +1450,11 @@ pub fn husk_ai(
                             e.hitstop = HITSTOP_PARRY;
                         }
                         emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
+                        // Swing 2 is the heavier half of the combo (20 dmg vs 15).
+                        taken_feel(
+                            ImpactWeight::Heavy, broke, outcome, &to_player, ptf.translation,
+                            entity, player, &mut pc, &mut shake, &mut impacts, &mut staggers,
+                        );
                     }
                     e.hit_applied = true;
                 }
@@ -1072,9 +1492,10 @@ pub(crate) enum EnemyHitOutcome {
 }
 
 /// One Husk swing against the player. Honors i-frames (negate), block (50% +
-/// stamina), parry window (negate + posture) per §2.5. Returns (hit_stop_needed,
-/// what_happened) so the caller can book hit-stop and the audio layer can pick
-/// the right SFX.
+/// stamina), parry window (negate + posture) per §2.5. Returns
+/// (hit_stop_needed, what_happened, poise_broke) so the caller can book hit-stop,
+/// the audio layer can pick the right SFX, and the feel layer knows whether this
+/// blow was merely a hit or the one that broke the player's stance.
 #[allow(clippy::too_many_arguments)]
 fn try_hit_player(
     dmg: f32,
@@ -1085,13 +1506,13 @@ fn try_hit_player(
     pstam: &mut Stamina,
     ppoise: &mut Poise,
     shake: &mut Shake,
-) -> (bool, EnemyHitOutcome) {
+) -> (bool, EnemyHitOutcome, bool) {
     if dist > MELEE_RANGE + PLAYER_HALF_W + 0.4 {
-        return (false, EnemyHitOutcome::Missed); // player stepped out of reach
+        return (false, EnemyHitOutcome::Missed, false); // player stepped out of reach
     }
     // Dodge i-frames negate everything (§2.2).
     if pc.invulnerable() {
-        return (false, EnemyHitOutcome::Dodged);
+        return (false, EnemyHitOutcome::Dodged, false);
     }
     // Parry window (§2.5): tap parry as the hit lands → negate + posture + punish.
     if pc.state == CombatState::Parry && pc.timer <= PARRY_WINDOW {
@@ -1099,36 +1520,91 @@ fn try_hit_player(
         pc.punish = PARRY_PUNISH; // +25% window opens on the enemy
         shake.hit(SHAKE_LIGHT);
         pc.hitstop = HITSTOP_PARRY;
-        return (true, EnemyHitOutcome::Parried);
+        return (true, EnemyHitOutcome::Parried, false);
     }
     // Failed parry (§2.5): threw the parry but the 0.20 s window had closed —
     // punished with +25% damage and a 0.5 s recovery lock.
     if pc.state == CombatState::Parry {
         php.damage(dmg * PARRY_FAIL_MULT);
         pc.recovery = PARRY_FAIL_RECOVER;
-        ppoise.take(poise_dmg, false);
+        let broke = ppoise.take(poise_dmg, false);
         shake.hit(SHAKE_ENEMY_HIT);
-        return (true, EnemyHitOutcome::FailedParry);
+        return (true, EnemyHitOutcome::FailedParry, broke);
     }
     // Block (§2.5): 50% off if stamina can pay, else guard-break stagger.
     if pc.state == CombatState::Block {
         if pstam.try_spend(COST_BLOCK, DELAY_BLOCK) {
             php.damage(dmg * (1.0 - BLOCK_REDUCTION));
-            ppoise.take(poise_dmg * 0.5, false);
+            let broke = ppoise.take(poise_dmg * 0.5, false);
             shake.hit(SHAKE_LIGHT);
-            return (true, EnemyHitOutcome::Blocked);
+            return (true, EnemyHitOutcome::Blocked, broke);
         } else {
             php.damage(dmg);
             ppoise.stagger = GUARD_BREAK; // guard broken → stagger
             shake.hit(SHAKE_ENEMY_HIT);
-            return (true, EnemyHitOutcome::GuardBroke);
+            return (true, EnemyHitOutcome::GuardBroke, true);
         }
     }
     // Plain hit.
     php.damage(dmg);
-    ppoise.take(poise_dmg, pc.hyper_armor());
+    let broke = ppoise.take(poise_dmg, pc.hyper_armor());
     shake.hit(SHAKE_ENEMY_HIT);
-    (true, EnemyHitOutcome::PlainHit)
+    (true, EnemyHitOutcome::PlainHit, broke)
+}
+
+/// The receiving half of the weight layer: what the *player* feels when a Husk
+/// swing connects. Mirrors the attacking side in `player_combat` — same three
+/// channels (freeze, camera, messages) off the same [`ImpactWeight`] — minus
+/// knockback, because shoving the player's body around on every chip of damage
+/// is how a soulslike loses its footing (§2.2 keeps repositioning on the roll).
+///
+/// A parried or dodged swing feels like *nothing landed*, because nothing did —
+/// those outcomes are filtered out by the caller's `connected` flag only when the
+/// swing missed outright, so they are re-checked here.
+#[allow(clippy::too_many_arguments)]
+fn taken_feel(
+    base: ImpactWeight,
+    broke: bool,
+    outcome: EnemyHitOutcome,
+    enemy_to_player: &Vec3,
+    player_pos: Vec3,
+    enemy: Entity,
+    player: Entity,
+    pc: &mut PlayerCombat,
+    shake: &mut Shake,
+    impacts: &mut MessageWriter<ImpactEvent>,
+    staggers: &mut MessageWriter<StaggerEvent>,
+) {
+    if matches!(outcome, EnemyHitOutcome::Missed | EnemyHitOutcome::Dodged | EnemyHitOutcome::Parried) {
+        return;
+    }
+    let weight = if broke { ImpactWeight::Critical } else { base };
+    let dir = Vec3::new(enemy_to_player.x, 0.0, enemy_to_player.z).normalize_or_zero();
+    // Freeze the player too — a hit you take should stop *your* frame, not just
+    // the one you deal. Never shortens an in-flight freeze.
+    pc.hitstop = pc.hitstop.max(weight.hitstop());
+    // Kick the camera the way the blow travelled: away from the attacker.
+    shake.kick(dir, KICK_TAKEN.max(weight.kick()));
+    impacts.write(ImpactEvent {
+        pos: player_pos,
+        dir,
+        weight,
+        target: player,
+        attacker: enemy,
+    });
+    if broke {
+        staggers.write(StaggerEvent { entity: player, pos: player_pos, is_player: true });
+    }
+}
+
+/// Stable lowercase tag for [`HuskRhythm`], used in the log lines the proof grades.
+#[inline]
+pub fn rhythm_label(r: HuskRhythm) -> &'static str {
+    match r {
+        HuskRhythm::Straight => "straight",
+        HuskRhythm::Delayed => "delayed",
+        HuskRhythm::Feint => "feint",
+    }
 }
 
 /// Map the outcome of an enemy swing against the player into an [`SfxEvent`].
@@ -1205,25 +1681,64 @@ pub fn lock_on_camera(
 /// Apply diminishing screen-shake to the camera (§5.3). Runs after the camera
 /// follow so it perturbs the final position; camera & audio are unaffected
 /// elsewhere (no global time dilation, per §5.2).
+/// Also applies the directional camera kick (the weight layer) — one system, so
+/// the rattle and the kick compose into a single offset instead of two systems
+/// racing to write `Transform` in the same frame.
 pub fn apply_shake(
     time: Res<Time>,
+    feel: Res<FeelLog>,
     mut shake: ResMut<Shake>,
     mut cam_q: Query<&mut Transform, With<crate::OrbitCam>>,
 ) {
-    if shake.amp <= 0.0 || shake.dur <= 0.0 {
+    let dt = time.delta_secs();
+    let rattling = shake.amp > 0.0 && shake.dur > 0.0;
+    let kicking = shake.kick_amp > 0.0 && shake.kick_dir != Vec3::ZERO;
+    if !rattling && !kicking {
         return;
     }
-    shake.time += time.delta_secs();
-    if shake.time >= shake.dur {
-        shake.amp = 0.0;
+
+    let mut off = Vec3::ZERO;
+
+    if rattling {
+        shake.time += dt;
+        if shake.time >= shake.dur {
+            shake.amp = 0.0;
+        } else {
+            let decay = 1.0 - (shake.time / shake.dur);
+            // Deterministic pseudo-jitter from the phase (no Math.random needed).
+            let ph = shake.time * 90.0;
+            off += Vec3::new(ph.sin(), (ph * 1.3).cos(), 0.0) * shake.amp * decay;
+        }
+    }
+
+    if kicking {
+        shake.kick_t += dt;
+        if shake.kick_t >= KICK_TIME {
+            shake.kick_amp = 0.0;
+            shake.kick_dir = Vec3::ZERO;
+        } else {
+            // Full offset on the contact frame, then ease back to centre. A
+            // ramp-up would put the lurch *after* the hit, where it reads as lag.
+            let u = shake.kick_t / KICK_TIME;
+            let env = (1.0 - u) * (1.0 - u); // quadratic ease-out
+            off += shake.kick_dir * shake.kick_amp * env;
+        }
+    }
+
+    if off == Vec3::ZERO {
         return;
     }
     let Ok(mut ctf) = cam_q.single_mut() else { return };
-    let decay = 1.0 - (shake.time / shake.dur);
-    // Deterministic pseudo-jitter from the phase (no Math.random needed).
-    let ph = shake.time * 90.0;
-    let off = Vec3::new(ph.sin(), (ph * 1.3).cos(), 0.0) * shake.amp * decay;
     ctf.translation += off;
+
+    if feel.enabled && kicking && !shake.kick_logged {
+        shake.kick_logged = true;
+        println!(
+            "FEEL_CAMKICK amp={:.3} dir=({:.2},{:.2},{:.2}) dur={:.2} applied={:.4}",
+            shake.kick_amp, shake.kick_dir.x, shake.kick_dir.y, shake.kick_dir.z,
+            KICK_TIME, off.length()
+        );
+    }
 }
 
 /// Drive the HUD fill bars from live health/stamina.
@@ -1253,6 +1768,317 @@ pub fn hud_numbers(
     }
     if let Ok(mut t) = stext.single_mut() {
         t.0 = format!("ST: {:.0}/{:.0}", stam.cur.round(), STAMINA_MAX);
+    }
+}
+
+// ===========================================================================
+// Weight-layer systems
+// ===========================================================================
+
+/// Slide a struck body along the blade direction (§ weight layer).
+///
+/// Runs between `player_combat` (which books the impulse) and `husk_ai` (which
+/// re-plants the body on its surface and may walk it back in), so the shove is
+/// always resolved against the same frame's hit.
+pub fn apply_knockback(
+    time: Res<Time>,
+    feel: Res<FeelLog>,
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Transform, &mut Enemy, &mut Knockback)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut tf, mut e, mut kb) in q.iter_mut() {
+        if !kb.started {
+            kb.started = true;
+            kb.from = tf.translation;
+            // Hand the struck body the same freeze the attacker got. Without this
+            // the husk keeps walking through the frame the player is frozen in,
+            // and the hit reads as if it passed straight through.
+            e.hitstop = e.hitstop.max(kb.hitstop);
+        }
+        // A dead body is deliberately *not* dropped here — `husk_ai` holds the
+        // despawn until this component is gone, so the killing blow lands as a
+        // visible shove instead of a body that vanishes where it stood.
+        //
+        // The slide waits out the freeze on purpose — motion resuming the instant
+        // time does is exactly what sells the freeze as impact.
+        if e.hitstop > 0.0 {
+            continue;
+        }
+        let step = (kb.total / KNOCKBACK_TIME * dt).min(kb.left);
+        tf.translation += kb.dir * step;
+        kb.left -= step;
+        kb.slid += step;
+        kb.time -= dt;
+        // Belt-and-braces, not the fix for anything observed. `left` and `time`
+        // are driven by the same running sum of `dt` — `left == total * time /
+        // KNOCKBACK_TIME` holds exactly — so the window cannot close on an
+        // undelivered remainder except through float drift. This pays out that
+        // drift rather than leaving the slide a hair short, and records what it
+        // paid in `topup` so a run can show the branch is inert (it logs 0.000)
+        // instead of the claim resting on the algebra above.
+        if kb.time <= 0.0 && kb.left > 0.0 {
+            tf.translation += kb.dir * kb.left;
+            kb.slid += kb.left;
+            kb.topup += kb.left;
+            kb.left = 0.0;
+        }
+        if kb.left <= 0.0 {
+            if feel.enabled {
+                // XZ only — the shove never launches, and the husk's surface
+                // re-plant writes Y every frame. Measuring in 3D would let that
+                // re-plant flatter or dent a number this lane is graded on.
+                let d = tf.translation - kb.from;
+                let moved = Vec3::new(d.x, 0.0, d.z).length();
+                // `dir=` stays last on the line — scripts/prove_knockback.sh
+                // anchors its parse to end-of-line. New fields go before it.
+                println!(
+                    "FEEL_KNOCKBACK entity={} from=({:.2},{:.2}) to=({:.2},{:.2}) moved={:.3} \
+                     impulse={:.3} slid={:.3} topup={:.3} dir=({:.2},{:.2})",
+                    entity.to_bits(), kb.from.x, kb.from.z,
+                    tf.translation.x, tf.translation.z, moved, kb.total,
+                    kb.slid, kb.topup, kb.dir.x, kb.dir.z
+                );
+            }
+            commands.entity(entity).remove::<Knockback>();
+        }
+    }
+}
+
+/// Print the feel layer's message stream as structured, greppable facts.
+///
+/// This system *reads* what the real combat systems wrote — it never decides
+/// anything and it never grades. The proof script does the grading, off these
+/// numbers, so no PASS in this lane is ever self-awarded by a demo.
+pub fn combat_feel_log(
+    mut impacts: bevy::ecs::message::MessageReader<ImpactEvent>,
+    mut staggers: bevy::ecs::message::MessageReader<StaggerEvent>,
+    mut dodges: bevy::ecs::message::MessageReader<DodgeEvent>,
+) {
+    for hit in impacts.read() {
+        println!(
+            "FEEL_IMPACT pos=({:.2},{:.2},{:.2}) dir=({:.2},{:.2}) weight={} hitstop={:.3} \
+             knockback={:.3} kick={:.3} target={} attacker={}",
+            hit.pos.x, hit.pos.y, hit.pos.z, hit.dir.x, hit.dir.z,
+            hit.weight.label(), hit.weight.hitstop(), hit.weight.knockback(), hit.weight.kick(),
+            hit.target.to_bits(), hit.attacker.to_bits()
+        );
+    }
+    for s in staggers.read() {
+        println!(
+            "FEEL_STAGGER entity={} who={} pos=({:.2},{:.2},{:.2})",
+            s.entity.to_bits(),
+            if s.is_player { "player" } else { "enemy" },
+            s.pos.x, s.pos.y, s.pos.z
+        );
+    }
+    for d in dodges.read() {
+        println!(
+            "FEEL_DODGE pos=({:.2},{:.2},{:.2}) dir=({:.2},{:.2}) iframes={:.3}",
+            d.pos.x, d.pos.y, d.pos.z, d.dir.x, d.dir.z, d.iframes
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Feel probe (VOXELFORGE_FEEL_PROBE=1 with --play)
+// ---------------------------------------------------------------------------
+
+/// Where the probe stands off before it starts swinging.
+const PROBE_REACH: f32 = 2.4;
+/// Wall-clock the probe lets the scene settle before it touches anything.
+const PROBE_START: f32 = 2.0;
+/// Wall-clock the probe runs to. Long enough for several Husk combos, so more
+/// than one rhythm gets a chance to show up in one run.
+const PROBE_END: f32 = 30.0;
+/// One scripted action per this many seconds.
+const PROBE_STEP: f32 = 0.60;
+/// How long the heavy button is held (< `CHARGE_HOLD`, so it commits Heavy).
+const PROBE_HEAVY_HOLD: f32 = 0.30;
+
+/// Bookkeeping for [`feel_probe`].
+#[derive(Resource, Default)]
+pub struct FeelProbe {
+    pub enabled: bool,
+    pub step: u32,
+    pub next_t: f32,
+    pub heavy_until: f32,
+    pub ground_y: Option<f32>,
+    pub spawned: u32,
+    pub done: bool,
+}
+
+/// A live fight, driven entirely through the real `ButtonInput<KeyCode>`.
+///
+/// It exists because the existing `--combat-demo` is over in three seconds — long
+/// enough to prove damage lands, far too short for a Husk to show more than one
+/// wind-up. The probe keeps one husk alive in front of the player for half a
+/// minute and mashes attack / dodge / heavy on a fixed cadence.
+///
+/// **It grades nothing.** Every `FEEL_*` line in the log is written by the combat
+/// systems themselves; the probe only supplies keystrokes and bodies.
+#[allow(clippy::too_many_arguments)]
+pub fn feel_probe(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut keys: ResMut<ButtonInput<KeyCode>>,
+    mut probe: ResMut<FeelProbe>,
+    mut player_q: Query<(&Transform, &mut FlyCam, &Health), (With<FlyCam>, Without<Enemy>)>,
+    enemies: Query<(&Transform, &Health), (With<Enemy>, Without<FlyCam>)>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if probe.done {
+        return;
+    }
+    let t = time.elapsed_secs();
+    let Ok((ptf, mut fly, php)) = player_q.single_mut() else { return };
+    if t < PROBE_START {
+        // Learn the ground plane off whatever the scene already stood a husk on,
+        // so respawns land on the same surface instead of a guessed height.
+        if let Some((etf, _)) = enemies.iter().next() {
+            probe.ground_y = Some(etf.translation.y);
+        }
+        return;
+    }
+    fly.walking = true;
+
+    if t >= PROBE_END {
+        for k in [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD,
+                  KeyCode::KeyX, KeyCode::KeyC, KeyCode::Space] {
+            keys.reset(k);
+        }
+        probe.done = true;
+        println!(
+            "FEEL_PROBE done t={t:.1}s husks_spawned={} player_hp={:.0}",
+            probe.spawned, php.cur
+        );
+        exit.write(AppExit::Success);
+        return;
+    }
+
+    // ---- keep exactly one live husk in front of the player -------------------
+    let target = enemies
+        .iter()
+        .filter(|(_, h)| !h.dead())
+        .map(|(etf, _)| etf.translation)
+        .min_by(|a, b| {
+            a.distance(ptf.translation)
+                .partial_cmp(&b.distance(ptf.translation))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    let Some(tpos) = target else {
+        let y = probe.ground_y.unwrap_or(ptf.translation.y - 1.6);
+        let (x, z) = (ptf.translation.x, ptf.translation.z - 4.0);
+        spawn_guard_husk(&mut commands, &mut meshes, &mut materials, x, z, Some(y));
+        probe.spawned += 1;
+        println!("FEEL_PROBE spawn husk #{} at ({x:.1},{y:.1},{z:.1})", probe.spawned);
+        return;
+    };
+
+    // ---- close the gap ------------------------------------------------------
+    // Headless yaw is 0, so the camera-relative WASD maps straight to world axes:
+    // W = -Z, S = +Z, D = +X, A = -X (same convention the quest demo walks on).
+    let (dx, dz) = (tpos.x - ptf.translation.x, tpos.z - ptf.translation.z);
+    let dist = ptf.translation.distance(tpos);
+    if dist > PROBE_REACH {
+        let tol = 0.4;
+        set_key(&mut keys, KeyCode::KeyD, dx > tol);
+        set_key(&mut keys, KeyCode::KeyA, dx < -tol);
+        set_key(&mut keys, KeyCode::KeyS, dz > tol);
+        set_key(&mut keys, KeyCode::KeyW, dz < -tol);
+        return;
+    }
+    for k in [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD] {
+        keys.reset(k);
+    }
+
+    // ---- swing / roll on a fixed cadence ------------------------------------
+    if probe.next_t == 0.0 {
+        probe.next_t = t + PROBE_STEP;
+    }
+    // The heavy is a hold, so it spans frames: keep the button down until its
+    // window closes, then release — that release is what commits the swing.
+    if probe.heavy_until > 0.0 {
+        if t < probe.heavy_until {
+            keys.press(KeyCode::KeyC);
+            return;
+        }
+        keys.reset(KeyCode::KeyC);
+        probe.heavy_until = 0.0;
+        return;
+    }
+    if t < probe.next_t {
+        return;
+    }
+    probe.next_t = t + PROBE_STEP;
+    probe.step += 1;
+    match probe.step % 4 {
+        1 | 0 => {
+            // Light: reset-then-press so `just_pressed` fires a fresh rising edge.
+            keys.reset(KeyCode::KeyX);
+            keys.press(KeyCode::KeyX);
+        }
+        2 => {
+            keys.reset(KeyCode::Space);
+            keys.press(KeyCode::Space);
+        }
+        _ => {
+            keys.press(KeyCode::KeyC);
+            probe.heavy_until = t + PROBE_HEAVY_HOLD;
+        }
+    }
+}
+
+fn set_key(keys: &mut ButtonInput<KeyCode>, key: KeyCode, down: bool) {
+    if down {
+        keys.press(key);
+    } else {
+        keys.reset(key);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Plugin
+// ---------------------------------------------------------------------------
+
+/// The weight layer, wired in one line next to the other combat systems:
+/// `.add_plugins(combat::CombatFeelPlugin)`.
+///
+/// Every ordering here is explicit. Position inside an `add_systems` tuple is not
+/// run order in Bevy, and two of these edges are load-bearing:
+///  * `feel_probe` writes real key presses, so it must land before anything that
+///    reads the keyboard this frame (`just_pressed` is cleared next `PreUpdate`).
+///  * `apply_knockback` must sit *between* `player_combat` (which books the
+///    impulse) and `husk_ai` (which re-plants the body and walks it back in).
+pub struct CombatFeelPlugin;
+
+impl Plugin for CombatFeelPlugin {
+    fn build(&self, app: &mut App) {
+        let probe = std::env::var("VOXELFORGE_FEEL_PROBE").is_ok();
+        let log = probe || std::env::var("VOXELFORGE_FEEL_LOG").is_ok();
+        app.add_message::<ImpactEvent>()
+            .add_message::<StaggerEvent>()
+            .add_message::<DodgeEvent>()
+            .insert_resource(FeelLog { enabled: log })
+            .insert_resource(FeelProbe { enabled: probe, ..default() })
+            .add_systems(
+                Update,
+                (
+                    feel_probe
+                        .before(gather_input)
+                        .before(crate::fly_camera)
+                        .run_if(|p: Res<FeelProbe>| p.enabled),
+                    apply_knockback
+                        .after(player_combat)
+                        .before(husk_ai),
+                    combat_feel_log
+                        .after(husk_ai)
+                        .run_if(|f: Res<FeelLog>| f.enabled),
+                )
+                    .run_if(in_state(crate::editor::AppState::Play)),
+            );
     }
 }
 
@@ -1634,6 +2460,115 @@ mod tests {
     fn charged_attack_outdamages_light() {
         assert!(CHARGED_DAMAGE > LIGHT_DAMAGE * 2.0); // 70 > 40
         assert!(CHARGED_POISE > LIGHT_POISE * 3.0);   // 60 > 45
+    }
+
+    // ---- weight layer -----------------------------------------------------
+
+    #[test]
+    fn hitstop_is_graded_by_weight() {
+        // The whole point: a light, a heavy and a critical must NOT freeze for
+        // the same number of frames, or every swing feels identical.
+        assert!(ImpactWeight::Light.hitstop() < ImpactWeight::Heavy.hitstop());
+        assert!(ImpactWeight::Heavy.hitstop() < ImpactWeight::Critical.hitstop());
+        assert_eq!(ImpactWeight::Light.hitstop(), HITSTOP_LIGHT); // §5.2 unchanged
+        // A critical must out-freeze the old flat stagger number, never undercut it.
+        assert!(ImpactWeight::Critical.hitstop() >= HITSTOP_STAGGER);
+    }
+
+    #[test]
+    fn knockback_and_kick_scale_with_the_same_weight() {
+        for (a, b) in [
+            (ImpactWeight::Light, ImpactWeight::Heavy),
+            (ImpactWeight::Heavy, ImpactWeight::Critical),
+        ] {
+            assert!(a.knockback() < b.knockback(), "{a:?} !< {b:?} knockback");
+            assert!(a.kick() < b.kick(), "{a:?} !< {b:?} kick");
+        }
+    }
+
+    #[test]
+    fn knockback_never_outruns_the_players_own_reach() {
+        // A shove bigger than the reach would push the enemy out of the follow-up
+        // swing and silently break every combo — the exact failure a "punchier"
+        // tuning pass is most likely to introduce.
+        let reach = MELEE_RANGE + PLAYER_HALF_W + 0.6; // 2.9, combat.rs hit gate
+        assert!(ImpactWeight::Critical.knockback() < reach * 0.25);
+    }
+
+    #[test]
+    fn shake_kick_takes_the_strongest_and_normalises() {
+        let mut s = Shake::default();
+        s.kick(Vec3::new(0.0, 0.0, -4.0), KICK_LIGHT);
+        assert!((s.kick_dir.length() - 1.0).abs() < 1e-4); // unit direction
+        assert_eq!(s.kick_amp, KICK_LIGHT);
+        // A heavier kick on the same frame wins…
+        s.kick(Vec3::X, KICK_HEAVY);
+        assert_eq!(s.kick_amp, KICK_HEAVY);
+        // …a weaker one does not stomp it.
+        s.kick(Vec3::Z, KICK_LIGHT);
+        assert_eq!(s.kick_amp, KICK_HEAVY);
+        // A zero direction is not a kick.
+        let mut z = Shake::default();
+        z.kick(Vec3::ZERO, KICK_CRITICAL);
+        assert_eq!(z.kick_amp, 0.0);
+    }
+
+    // ---- husk rhythm ------------------------------------------------------
+
+    #[test]
+    fn husk_rhythm_covers_all_three_patterns() {
+        // Sweep the real seed space the AI uses (entity bits ⊕ combo counter) and
+        // assert the enemy is not a metronome: every pattern must actually occur.
+        let (mut straight, mut delayed, mut feint) = (0, 0, 0);
+        for seed in 0u32..2000 {
+            match pick_rhythm(seed.wrapping_mul(0x9E37_79B9)) {
+                HuskRhythm::Straight => straight += 1,
+                HuskRhythm::Delayed => delayed += 1,
+                HuskRhythm::Feint => feint += 1,
+            }
+        }
+        assert!(straight > 0 && delayed > 0 && feint > 0,
+            "pattern missing: straight={straight} delayed={delayed} feint={feint}");
+        // None of them may collapse to a rounding error — a 1-in-2000 feint is
+        // the same as no feint at all for a player.
+        for (name, n) in [("straight", straight), ("delayed", delayed), ("feint", feint)] {
+            assert!(n >= 200, "{name} only {n}/2000 — too rare to read as behaviour");
+        }
+    }
+
+    #[test]
+    fn husk_rhythm_is_deterministic() {
+        // Re-runnable proofs need re-runnable enemies.
+        for seed in [0u32, 1, 7, 4242, u32::MAX] {
+            assert_eq!(pick_rhythm(seed), pick_rhythm(seed));
+        }
+    }
+
+    #[test]
+    fn delayed_wind_up_outlasts_a_dodge_rolled_on_the_straight_tempo() {
+        // This is the entire mechanic: roll on the straight timing against a
+        // delayed swing and the i-frames must be long gone when the blade lands.
+        let iframe_end = HUSK_TELEGRAPH + DODGE_IFRAMES;
+        assert!(telegraph_hold(HuskRhythm::Delayed) > iframe_end,
+            "delayed hold {} must outlast a straight-timed roll ending at {iframe_end}",
+            telegraph_hold(HuskRhythm::Delayed));
+        // …and the straight swing must still be dodgeable on its own timing.
+        assert!(telegraph_hold(HuskRhythm::Straight) <= HUSK_TELEGRAPH);
+    }
+
+    #[test]
+    fn feint_pulls_back_earlier_than_any_real_swing() {
+        assert!(telegraph_hold(HuskRhythm::Feint) < telegraph_hold(HuskRhythm::Straight));
+        // The bait beat has to be long enough for a rolled dodge to fully expire,
+        // otherwise the "punish" lands inside i-frames and the feint is free.
+        assert!(HUSK_FEINT_RECOVER > DODGE_IFRAMES + DODGE_RECOVERY);
+    }
+
+    #[test]
+    fn husk_step_in_is_slower_than_a_chase() {
+        // Stepping in during the wind-up must not out-pace the chase, or the
+        // telegraph becomes a charge attack nobody can back away from.
+        assert!(HUSK_STEP_IN > 0.0 && HUSK_STEP_IN < 1.0);
     }
 
     #[test]

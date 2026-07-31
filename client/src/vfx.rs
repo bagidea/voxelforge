@@ -1167,7 +1167,8 @@ fn apply_cam_kick(
 // Showcase stage — the scene the before/after beauty shots are rendered from
 // ===========================================================================
 
-/// Which beat the showcase renders. Set with `VOXELFORGE_VFX=off|impact|dissolve|fire`.
+/// Which beat the showcase renders.
+/// Set with `VOXELFORGE_VFX=off|impact|dissolve|fire|parry|stagger`.
 #[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VfxShot {
     /// Same stage, same camera, VFX layer loaded but nothing fired — the honest
@@ -1176,6 +1177,10 @@ pub enum VfxShot {
     Impact,
     Dissolve,
     Fire,
+    /// A successful parry — the ring flash beat.
+    Parry,
+    /// The husk taking a stagger break: it reels back and the ground kicks up dust.
+    Stagger,
 }
 
 impl VfxShot {
@@ -1185,8 +1190,35 @@ impl VfxShot {
             "impact" | "hit" => Some(VfxShot::Impact),
             "dissolve" | "death" | "unravel" => Some(VfxShot::Dissolve),
             "fire" | "campfire" => Some(VfxShot::Fire),
+            "parry" | "riposte" => Some(VfxShot::Parry),
+            "stagger" | "stun" | "dust" => Some(VfxShot::Stagger),
             _ => None,
         }
+    }
+}
+
+/// Suppresses the effect layer while leaving the beat's staging untouched.
+/// Set with `VOXELFORGE_VFX_MUTE=1`.
+///
+/// This is what makes a before/after pair honest. The old way of shooting a
+/// "before" was `VOXELFORGE_VFX=off`, but `off` is its own branch: it does not run
+/// the chosen beat's staging, so the stagger pair came out with a reeled husk in
+/// the after plate and an upright one in the before plate. The pair then differed
+/// in POSE as well as in VFX and proved nothing.
+///
+/// With mute, both plates render the SAME beat through the SAME code path at the
+/// SAME timestamps — the husk reels in both, the blade sweeps in both — and the one
+/// difference is that the emitters never fire. Whatever the eye picks up between
+/// the two images is therefore the effect layer and nothing else.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct VfxMute(pub bool);
+
+impl VfxMute {
+    pub fn from_env() -> Self {
+        Self(matches!(
+            std::env::var("VOXELFORGE_VFX_MUTE").ok().as_deref().map(str::trim),
+            Some("1") | Some("on") | Some("true") | Some("yes")
+        ))
     }
 }
 
@@ -1228,6 +1260,17 @@ const SWING_END: f32 = -0.60;
 /// Marks the swinging arm so the timeline can turn its trail on and off.
 #[derive(Component)]
 pub struct ShowcaseBlade;
+
+/// Root of the showcase husk, so the stagger beat can reel the whole body.
+#[derive(Component)]
+pub struct ShowcaseHusk;
+
+/// When the stagger beat lands and how long the body takes to reel back.
+const STAGGER_AT: f32 = 2.94;
+const STAGGER_REEL: f32 = 0.42;
+/// When the parry ring fires. Late on purpose: the ring lives ~160 ms by design
+/// (a parry read has to be a *flash*), so it must be caught close to its peak.
+const PARRY_AT: f32 = 3.13;
 
 /// Drives the shot so the chosen beat peaks at the 3.2 s screenshot.
 #[derive(Resource, Default)]
@@ -1354,20 +1397,31 @@ pub fn setup_showcase(
     ));
 
     // ---- the husk taking the hit ----
+    // Built under ONE root so the stagger beat can reel the whole body back around
+    // its feet. The root also means the reel is applied identically in the before and
+    // after plates (`showcase_timeline` drives it in every mode that uses it), so the
+    // pair still differs by VFX only.
     let husk_feet = Vec3::new(0.0, 0.0, -1.2);
-    for (dy, sx, sy, sz) in [
-        (0.45f32, 0.75f32, 0.9f32, 0.55f32),  // legs
-        (1.35, 0.95, 0.9, 0.62),              // torso
-        (2.05, 0.62, 0.5, 0.55),              // head
-    ] {
-        put(
-            &mut commands,
-            &cube,
-            &husk_armor,
-            husk_feet + Vec3::Y * dy,
-            Vec3::new(sx, sy, sz),
-        );
-    }
+    commands
+        .spawn((
+            Transform::from_translation(husk_feet),
+            Visibility::default(),
+            ShowcaseHusk,
+        ))
+        .with_children(|p| {
+            for (dy, sx, sy, sz) in [
+                (0.45f32, 0.75f32, 0.9f32, 0.55f32), // legs
+                (1.35, 0.95, 0.9, 0.62),             // torso
+                (2.05, 0.62, 0.5, 0.55),             // head
+            ] {
+                p.spawn((
+                    Mesh3d(cube.clone()),
+                    MeshMaterial3d(husk_armor.clone()),
+                    Transform::from_translation(Vec3::Y * dy)
+                        .with_scale(Vec3::new(sx, sy, sz)),
+                ));
+            }
+        });
 
     // ---- the player mid-swing, blade carrying the trail emitter (②) ----
     let hero_feet = Vec3::new(-1.9, 0.0, 0.6);
@@ -1499,13 +1553,30 @@ pub fn setup_showcase(
 pub fn showcase_timeline(
     time: Res<Time>,
     shot: Res<VfxShot>,
+    mute: Res<VfxMute>,
     mut tl: ResMut<ShowcaseTimeline>,
     mut impacts: bevy::ecs::message::MessageWriter<Impact>,
     mut unravels: bevy::ecs::message::MessageWriter<Unravel>,
     mut blades: Query<(&mut SwingTrail, &mut Transform), With<ShowcaseBlade>>,
+    mut husks: Query<&mut Transform, (With<ShowcaseHusk>, Without<ShowcaseBlade>)>,
 ) {
     let t = time.elapsed_secs();
     let chest = Vec3::new(0.0, 1.35, -1.2);
+
+    // ---- the husk reels, in the stagger beat only -----------------------
+    // Pose, NOT VFX — so it runs before the mute gate below and therefore lands in
+    // the before plate and the after plate alike. That ordering is the whole point:
+    // a reel that only happened in the after plate would make the pair differ in
+    // body pose, and the reader could no longer tell which difference is the effect.
+    if *shot == VfxShot::Stagger {
+        let k = ((t - STAGGER_AT) / STAGGER_REEL).clamp(0.0, 1.0);
+        // Snap back, settle: the body is thrown, it does not ease into it.
+        let punch = (k * std::f32::consts::PI).sin() * (1.0 - k * 0.35);
+        for mut tf in &mut husks {
+            tf.rotation = Quat::from_rotation_x(-0.40 * punch);
+            tf.translation = Vec3::new(0.0, 0.0, -1.2) + Vec3::new(0.08, 0.0, -0.26) * punch;
+        }
+    }
 
     // ---- the swing itself, run for EVERY mode ---------------------------
     // The blade actually travels; the trail system only ever reads its real
@@ -1525,15 +1596,32 @@ pub fn showcase_timeline(
         tf.rotation = arm * Quat::from_rotation_z(-0.92);
     }
 
+    // ---- everything past here IS the effect layer -----------------------
+    // The mute plate stops exactly here: same stage, same swing, same reel, same
+    // timestamps — no emitters. Held down rather than branched to a different beat
+    // so the two plates cannot drift apart as the beats get retuned.
+    if mute.0 {
+        for (mut b, _) in &mut blades {
+            b.hot = false;
+        }
+        return;
+    }
+
+    // The ribbon is hot only while the blade is actually travelling — the combat
+    // lane's one line is exactly this predicate. Hoisted out of the impact arm so
+    // every beat that swings a blade gets the trail: the parry and stagger plates
+    // show a real weapon arc for the same reason the impact one does. `Off` is left
+    // out on purpose — it is the legacy bare "before" — and `Fire` has no swing.
+    if matches!(*shot, VfxShot::Impact | VfxShot::Parry | VfxShot::Stagger) {
+        let hot = (SWING_FROM..SWING_TO).contains(&t);
+        for (mut b, _) in &mut blades {
+            b.hot = hot;
+        }
+    }
+
     match *shot {
         VfxShot::Off | VfxShot::Fire => {}
         VfxShot::Impact => {
-            // The ribbon is hot only while the blade is actually travelling — the
-            // combat lane's one line is exactly this predicate.
-            let hot = (SWING_FROM..SWING_TO).contains(&t);
-            for (mut b, _) in &mut blades {
-                b.hot = hot;
-            }
             // Three staggered hits (light, light, heavy) so the frame shows debris at
             // three different ages — one lone burst reads as a single freeze-frame.
             // The first two land early enough that their debris is well clear of the
@@ -1571,6 +1659,35 @@ pub fn showcase_timeline(
                     pos: Vec3::new(0.0, 1.25, -1.2),
                     half: Vec3::new(0.48, 1.25, 0.32),
                     tint: Color::srgb(0.32, 0.34, 0.40),
+                });
+            }
+        }
+        VfxShot::Parry => {
+            // The parry lands where the two blades meet — between the bodies at
+            // guard height, not on the husk's chest. Nothing broke, so no wrap flash.
+            if t >= PARRY_AT && tl.fired == 0 {
+                tl.fired = 1;
+                impacts.write(Impact {
+                    pos: Vec3::new(-0.72, 1.52, -0.62),
+                    dir: Vec3::new(-0.42, 0.05, 0.90).normalize(),
+                    power: 1.3,
+                    flavor: HitFlavor::Parry,
+                    body_half: None,
+                });
+            }
+        }
+        VfxShot::Stagger => {
+            // A stagger break is a heavy hit that connects and then the guard
+            // collapses. The hit is fired in both plates; only the ground reaction
+            // is new, which is exactly what this pair is meant to show.
+            if t >= STAGGER_AT && tl.fired == 0 {
+                tl.fired = 1;
+                impacts.write(Impact {
+                    pos: chest,
+                    dir: Vec3::new(0.35, 0.0, -0.94).normalize(),
+                    power: 2.4,
+                    flavor: HitFlavor::Husk,
+                    body_half: Some(Vec3::new(0.48, 1.15, 0.32)),
                 });
             }
         }

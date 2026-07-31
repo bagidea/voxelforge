@@ -814,6 +814,19 @@ fn play_proof(
 /// → get killed (or force-death) → respawn at the campfire. All inputs flow through
 /// real `ButtonInput<KeyCode>` so `gather_input` + `player_combat` + `husk_ai` run
 /// exactly as they would for a human player. Self-grades with `COMBAT_* => PASS/FAIL`.
+///
+/// Stop well *inside* the real melee reach, not just under it: the player's own
+/// swing lands within `MELEE_RANGE + PLAYER_HALF_W + 0.6` (combat.rs → 2.9
+/// blocks), while the Husk's swing back at the player uses the narrower
+/// `MELEE_RANGE + PLAYER_HALF_W + 0.4` (2.7). Derive the stop distance from the
+/// narrower of the two real combat gates, minus a real safety margin — a
+/// hardcoded 3.0 sat *outside* the 2.9 reach and flaked on a frame of drift.
+const NARROWEST_MELEE_GATE: f32 = combat::MELEE_RANGE + PLAYER_HALF_W + 0.4; // 2.7
+const ATTACK_DIST: f32 = NARROWEST_MELEE_GATE - 0.2; // 2.5 — solid margin, not a hair-trigger
+/// How long the finisher may spend walking back into reach before it swings
+/// anyway (and lets the kill gate fail loudly rather than hang).
+const RECLOSE_TIMEOUT: f32 = 3.0; // sec
+
 #[allow(clippy::too_many_arguments)]
 fn combat_proof(
     time: Res<Time>,
@@ -904,18 +917,7 @@ fn combat_proof(
             return;
         }
 
-        // Walk forward until we close the gap. Stop well *inside* the real melee
-        // reach, not just under it: the player's own swing lands within
-        // `MELEE_RANGE + PLAYER_HALF_W + 0.6` (combat.rs:864 → 2.9 blocks), while
-        // the Husk's swing back at the player uses the narrower
-        // `MELEE_RANGE + PLAYER_HALF_W + 0.4` (combat.rs:1054 → 2.7 blocks).
-        // Derive the stop distance from the narrower of the two real combat
-        // gates, minus a real safety margin. Previously this was a hardcoded
-        // 3.0 — just 0.1 blocks *outside* the 2.9 reach — so a single frame of
-        // drift between "stop walking" and "swing resolves" could push the
-        // hit out of range and flake the proof.
-        const NARROWEST_MELEE_GATE: f32 = combat::MELEE_RANGE + PLAYER_HALF_W + 0.4; // 2.7 (combat.rs:1054)
-        const ATTACK_DIST: f32 = NARROWEST_MELEE_GATE - 0.2; // 2.5 — solid margin, not a hair-trigger
+        // Walk forward until we close the gap (see `ATTACK_DIST`).
         if husk_dist > ATTACK_DIST && husk_dist > 0.0 {
             keys.press(KeyCode::KeyW);
 
@@ -1070,7 +1072,21 @@ fn combat_proof(
     // ---- phase 7-9: finish the husk with a couple of insurance lights -------
     // (80 hp - ~20 from COMBAT_HIT - ~45 from COMBAT_HEAVY leaves ~15; one
     // more light kills it outright, the second is margin against a miss.)
+    //
+    // Step back into reach first. The heavy above breaks poise, and a poise
+    // break is a Critical — 0.55 blocks of shove. From the 2.5-block stop
+    // distance that lands the husk at ~3.1, outside the 2.9-block hit gate, and
+    // a staggered husk cannot walk itself back in. A human player closes that
+    // gap without thinking; the script has to be told to.
     if proof.phase == 7 {
+        if proof.stamp.is_none() {
+            proof.stamp = Some(t);
+        }
+        if husk_dist > ATTACK_DIST && t - proof.stamp.unwrap() < RECLOSE_TIMEOUT {
+            keys.press(KeyCode::KeyW);
+            return;
+        }
+        keys.reset(KeyCode::KeyW);
         keys.reset(KeyCode::KeyX);
         keys.press(KeyCode::KeyX);
         enter!(8);
@@ -1080,9 +1096,15 @@ fn combat_proof(
         if proof.stamp.is_none() {
             proof.stamp = Some(t);
         }
-        if t - proof.stamp.unwrap() < 0.6 {
+        let phase_t = t - proof.stamp.unwrap();
+        if phase_t < 0.6 {
             return;
         }
+        if husk_dist > ATTACK_DIST && phase_t < 0.6 + RECLOSE_TIMEOUT {
+            keys.press(KeyCode::KeyW);
+            return;
+        }
+        keys.reset(KeyCode::KeyW);
         keys.reset(KeyCode::KeyX);
         keys.press(KeyCode::KeyX);
         enter!(9);

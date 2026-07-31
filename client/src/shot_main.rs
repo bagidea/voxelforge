@@ -90,10 +90,22 @@ fn read_cfg() -> Cfg {
     }
 }
 
+/// Frames the showcase runs before the grab, and before it quits. At the pinned
+/// 1/60 s step these are the old 3.2 s / 4.4 s marks exactly — but counted, not
+/// timed, so nothing about the grab depends on how fast the machine is.
+const SHOWCASE_SHOT_FRAME: u32 = 192; // 3.2 s
+const SHOWCASE_EXIT_FRAME: u32 = 264; // 4.4 s
+
 #[derive(Resource)]
 struct ShotState {
     path: Option<String>,
     took: bool,
+    /// Frames drawn so far. Only meaningful on the showcase path.
+    frame: u32,
+    /// `Some(n)` ⇒ grab on frame `n` instead of at a wall-clock time. The golden
+    /// kitchen shot leaves this `None` and keeps its original 3.2 s warm-up, so
+    /// that path re-renders exactly as it always did.
+    at_frame: Option<u32>,
 }
 
 fn main() {
@@ -115,7 +127,7 @@ fn main() {
     // 4K directional shadow map → PCSS penumbra has enough texels (matches main.rs).
     .insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 })
     .insert_resource(cfg)
-    .insert_resource(ShotState { path: shot, took: false })
+    .insert_resource(ShotState { path: shot, took: false, frame: 0, at_frame: None })
     .add_systems(Update, screenshot_once);
 
     // `VOXELFORGE_VFX=off|impact|dissolve|fire` swaps the locked golden KITCHEN for
@@ -124,12 +136,41 @@ fn main() {
     // produces the same frame it always did.
     match vfx::VfxShot::from_env() {
         Some(which) => {
+            // Drive the showcase clock off the FRAME COUNT, not off the wall clock.
+            //
+            // `ManualDuration` makes `Time` advance by exactly this much per frame no
+            // matter how long the frame really took, so the beat timings, the husk
+            // reel and the particle integration all land identically whether the box
+            // is idle or has three other lanes' builds on it. That matters for a
+            // before/after pair specifically: the two plates must be caught at the
+            // same point of the beat, and CPU load is not allowed to be the thing
+            // that decides where that point is.
+            //
+            // Note this is NOT the same as clamping `Time<Virtual>`'s `max_delta`.
+            // A clamp only bounds frames that ran SLOWER than the step — the moment
+            // the machine goes quiet and the app hits vsync at 60+ fps, a clamped
+            // clock silently goes back to following the wall clock and the
+            // determinism evaporates exactly when you stop watching for it.
+            //
+            // Scoped to the showcase branch: the golden kitchen shot keeps its
+            // original wall-clock warm-up and re-renders as it always did.
+            let step = std::time::Duration::from_secs_f64(1.0 / 60.0);
+
+            let mute = vfx::VfxMute::from_env();
             app.add_plugins(vfx::VfxPlugin)
+                .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(step))
                 .insert_resource(which)
+                .insert_resource(mute)
                 .init_resource::<vfx::ShowcaseTimeline>()
                 .add_systems(Startup, vfx::setup_showcase)
                 .add_systems(Update, vfx::showcase_timeline);
-            println!("VFX showcase: {which:?}");
+            // Same reason: grab on a counted frame rather than the first frame past a
+            // timestamp. A `now > 3.2` test overshoots by however big the last delta
+            // was, which reintroduces per-run drift through the back door.
+            if let Some(mut st) = app.world_mut().get_resource_mut::<ShotState>() {
+                st.at_frame = Some(SHOWCASE_SHOT_FRAME);
+            }
+            println!("VFX showcase: {which:?} mute={} (fixed 1/60 step)", mute.0);
         }
         None => {
             app.add_systems(Startup, hero::setup_hero);
@@ -139,8 +180,13 @@ fn main() {
     app.run();
 }
 
-/// Wait for TAA/PCSS/SSAO to accumulate (3.2s), grab the frame, then exit — same
-/// timing as `main.rs::screenshot_once` so the look matches the terrain path.
+/// Let TAA/PCSS/SSAO accumulate, grab the frame, then exit.
+///
+/// The kitchen path waits 3.2 s of wall clock, matching `main.rs::screenshot_once`
+/// so the look still matches the terrain path it was graded against. The showcase
+/// path waits 192 frames instead — same 3.2 s at its pinned 1/60 s step, but a
+/// count rather than a deadline, so two plates of a pair cannot be caught at
+/// different points of the beat just because the machine was busier for one of them.
 fn screenshot_once(
     time: Res<Time>,
     mut commands: Commands,
@@ -150,15 +196,27 @@ fn screenshot_once(
     let Some(path) = state.path.clone() else {
         return;
     };
-    let now = time.elapsed_secs();
-    if !state.took && now > 3.2 {
+    state.frame += 1;
+
+    // Two clocks on purpose. The kitchen path keeps the wall-clock warm-up it was
+    // graded on; the showcase path counts frames, because it runs on a fixed step
+    // and a counted frame is the only grab that cannot drift between two plates.
+    let (grab, quit) = match state.at_frame {
+        Some(at) => (state.frame >= at, state.frame >= SHOWCASE_EXIT_FRAME),
+        None => {
+            let now = time.elapsed_secs();
+            (now > 3.2, now > 4.4)
+        }
+    };
+
+    if !state.took && grab {
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path.clone()));
         state.took = true;
-        println!("SHOT saved to {path}");
+        println!("SHOT saved to {path} (frame {})", state.frame);
     }
-    if state.took && now > 4.4 {
+    if state.took && quit {
         exit.write(AppExit::Success);
     }
 }

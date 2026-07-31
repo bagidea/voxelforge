@@ -828,8 +828,19 @@ fn animate_rigs(
 
         let mut root_extra = Quat::IDENTITY;
         let mut root_lift = 0.0f32;
+        let mut root_fwd = 0.0f32;
         match action {
-            Action::Swing => apply_key(&mut pose, swing_pose(rig.actor, &beat)),
+            Action::Swing => {
+                apply_key(&mut pose, swing_pose(rig.actor, &beat));
+                // Weight the whole body into the swing, on top of the limb pose:
+                // a small gather (rise + pull-back) through the wind-up, then the
+                // root sinks and drives forward through the strike, easing back
+                // upright across the recovery leg.
+                let (offset, lean) = swing_root_motion(rig.actor, swing_k(&beat));
+                root_lift += offset.y;
+                root_fwd += offset.z;
+                root_extra = Quat::from_axis_angle(Vec3::X, lean);
+            }
             Action::Guard => apply_key(&mut pose, GUARD_KEY),
             Action::Parry => apply_key(&mut pose, PARRY_KEY),
             Action::Stagger => stagger(&mut pose, elapsed),
@@ -861,7 +872,7 @@ fn animate_rigs(
             Actor::Player => -EYE_HEIGHT,
             Actor::Husk => 0.0,
         };
-        root_tf.translation = Vec3::new(0.0, root_dy + root_lift, 0.0);
+        root_tf.translation = Vec3::new(0.0, root_dy + root_lift, root_fwd);
         root_tf.rotation = Quat::from_axis_angle(Vec3::Y, wrap_pi(rig.face_yaw - root_yaw)) * root_extra;
         root_tf.scale = squash;
 
@@ -1192,16 +1203,7 @@ fn swing_pose(actor: Actor, beat: &Beat) -> Key {
         ..Default::default()
     };
 
-    let (a0, a1) = beat.active;
-    let t = beat.t.clamp(0.0, 1.0);
-    let k = if t < a0 {
-        ease_out(t / a0.max(1e-3))
-    } else if t < a1 {
-        1.0 + ease_io((t - a0) / (a1 - a0).max(1e-3))
-    } else {
-        2.0 + ease_out((t - a1) / (1.0 - a1).max(1e-3))
-    };
-
+    let k = swing_k(beat);
     if k < 1.0 {
         mix(&neutral, &cock, k)
     } else if k < 2.0 {
@@ -1209,6 +1211,61 @@ fn swing_pose(actor: Actor, beat: &Beat) -> Key {
     } else {
         mix(&follow, &neutral, k - 2.0)
     }
+}
+
+/// The swing's progress, 0→3: `0..1` wind-up, `1..2` the strike itself (spanning
+/// exactly `beat.active`), `2..3` recovery. Shared by [`swing_pose`] (limb angles)
+/// and [`swing_root_motion`] (the body's weight) so the two can never drift apart.
+fn swing_k(beat: &Beat) -> f32 {
+    let (a0, a1) = beat.active;
+    let t = beat.t.clamp(0.0, 1.0);
+    if t < a0 {
+        ease_out(t / a0.max(1e-3))
+    } else if t < a1 {
+        1.0 + ease_io((t - a0) / (a1 - a0).max(1e-3))
+    } else {
+        2.0 + ease_out((t - a1) / (1.0 - a1).max(1e-3))
+    }
+}
+
+/// The RIG ROOT's own weight through a swing — on top of whatever [`swing_pose`]
+/// already did to the limbs. A real cut is not thrown from the shoulder alone: the
+/// body gathers (rises, pulls back) through the wind-up, then the whole mass drops
+/// and drives forward through the strike, and eases back upright across recovery.
+/// Purely cosmetic — this moves the rig root, a child of the actor; the actor's own
+/// transform (what combat reads) is never touched.
+///
+/// Returns (translation offset, extra forward/back lean in radians — positive
+/// leans back, matching the sign the authored [`Key::torso_pitch`] values use).
+fn swing_root_motion(actor: Actor, k: f32) -> (Vec3, f32) {
+    let mag = match actor {
+        Actor::Player => 1.0,
+        // The Husk is bigger and its overhead carries more mass — the weight
+        // transfer reads proportionally larger.
+        Actor::Husk => 1.6,
+    };
+    // (rise, pull-back, lean-back) gathered by the top of the wind-up →
+    // (sink, drive-forward, lean-forward) at full extension, at the end of the
+    // strike leg → eased back out to rest across recovery.
+    let gather = (0.016 * mag, 0.03 * mag, 0.06 * mag);
+    let strike = (-0.095 * mag, -0.14 * mag, -0.15 * mag);
+
+    let (lift, back, lean) = if k < 1.0 {
+        let u = ease_out(k);
+        (gather.0 * u, gather.1 * u, gather.2 * u)
+    } else if k < 2.0 {
+        let u = ease_io(k - 1.0);
+        (
+            gather.0 + (strike.0 - gather.0) * u,
+            gather.1 + (strike.1 - gather.1) * u,
+            gather.2 + (strike.2 - gather.2) * u,
+        )
+    } else {
+        let u = ease_out(k - 2.0);
+        (strike.0 * (1.0 - u), strike.1 * (1.0 - u), strike.2 * (1.0 - u))
+    };
+
+    (Vec3::new(0.0, lift, back), lean)
 }
 
 // --- authored keys ---------------------------------------------------------
@@ -1618,6 +1675,19 @@ fn husk_beat(e: &Enemy) -> Beat {
                 combo: 0,
             }
         }
+        HuskState::Feint => {
+            // The wind-up is pulled back down without ever committing — the arm
+            // retreats from the raised pose to neutral over `HUSK_FEINT_RECOVER`,
+            // ending exactly where the next Telegraph starts (t=0), so the tell
+            // reads as "changed its mind", not a stutter.
+            let k = (e.timer / combat::HUSK_FEINT_RECOVER).min(1.0);
+            Beat {
+                action: Action::Swing,
+                t: wind * (1.0 - k),
+                active: (wind, 0.80),
+                combo: 0,
+            }
+        }
         HuskState::Recover => Beat {
             action: Action::Swing,
             t: 0.80 + (1.0 - 0.80) * (e.timer / combat::HUSK_COMBO_PAUSE).min(1.0),
@@ -1770,6 +1840,9 @@ mod tests {
             hitstop: 0.0,
             hit_applied: false,
             surface_y: 0.0,
+            rhythm: combat::HuskRhythm::Straight,
+            combo_no: 0,
+            feinted: false,
         };
         let wind_end = husk_beat(&mk(HuskState::Telegraph, combat::HUSK_TELEGRAPH)).t;
         let swing_start = husk_beat(&mk(HuskState::Swing1, 0.0)).t;
