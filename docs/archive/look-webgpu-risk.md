@@ -1,8 +1,30 @@
-# LOOK lane — WebGPU / wasm portability risk scan
+# ⛔ SUPERSEDED 2026-07-31 — ALL limitations below are RESCINDED
+
+> **Reason:** CEO cancelled the web/wasm target permanently. Voxelforge is now a
+> **native desktop game targeting Steam** (Windows first, Vulkan/DX12). Every risk,
+> constraint, and limitation enumerated in the table below — Bokeh DoF dual-source blending,
+> SSAO `r16float` storage textures, PCSS experimental flags, WebGPU bind-group limits,
+> wasm threading, binary size targets — is **no longer applicable**.
+>
+> **⚠️ DO NOT DELETE THE TABLE BELOW.** Flamingo is using the effect list as a checklist
+> of which effects to progressively enable on the native desktop renderer. The risk labels
+> are obsolete (all effects are safe on native Vulkan/DX12), but the *inventory* of effects
+> and their locations in `hero.rs` remains useful.
+>
+> **Moved to:** `docs/archive/look-webgpu-risk.md`
+
+---
+
+# LOOK lane — WebGPU / wasm portability risk scan (ALL RISKS RESCINDED)
 
 **Scope:** every effect in the hero LOOK stack (`client/src/hero.rs` camera bundle + lights),
 graded for "will this survive a `wasm32-unknown-unknown` + `--features webgpu` build running in a
 browser". **This is a triage list only — nothing has been changed.** Requested by CEO 2026-07-27.
+
+**⚠️ 2026-07-31 UPDATE — WEB TARGET CANCELLED:** All risk assessments below are rescinded.
+The table is retained because Flamingo uses it as an effect inventory checklist for the native
+desktop renderer (`hero.rs`). Every effect listed is safe on native Vulkan/DX12 — the risk
+column is historical only.
 
 **Companion doc:** [`wasm-brief.md`](wasm-brief.md) (Sahara/Poppy) covers the layer *below* this one —
 browser support matrix, wasm runtime limits, binary size. It contains **nothing** about the individual

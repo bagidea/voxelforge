@@ -1,4 +1,14 @@
-# Voxelforge — Rust + Bevy 0.19 on WASM/WebGPU: Constraints & Best Practices
+# ⛔ SUPERSEDED 2026-07-31 — CEO cancelled web/wasm target permanently
+
+> **Reason:** Voxelforge is now a **native desktop game targeting Steam** (Windows first, Vulkan/DX12).
+> All web/wasm research, browser support matrices, wasm-opt profiles, and web build instructions
+> in this document are **no longer applicable**. The document is archived for historical reference only.
+>
+> **Moved to:** `docs/archive/wasm-brief.md` — do not use for any active work.
+
+---
+
+# Voxelforge — Rust + Bevy 0.19 on WASM/WebGPU: Constraints & Best Practices (SUPERSEDED)
 
 > **Dev-facing research brief.** Covers browser support, wasm runtime limits, and binary size/perf —
 > for shipping Voxelforge (voxel game, compute-heavy renderer) to the web.

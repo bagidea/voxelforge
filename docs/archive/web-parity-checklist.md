@@ -1,4 +1,18 @@
-# Voxelforge — Web Look-Parity Checklist
+# ⛔ SUPERSEDED 2026-07-31 — CEO cancelled web/wasm target permanently
+
+> **Reason:** Voxelforge is now a **native desktop game targeting Steam** (Windows first, Vulkan/DX12).
+> The web parity comparison framework, browser-specific gates (W0-A backend detection, PCSS-off waivers,
+> wasm recipe URLs), and the entire W0–G6 grade rubric are **no longer applicable**.
+> The document is archived for historical reference only.
+>
+> **Moved to:** `docs/archive/web-parity-checklist.md` — do not use for any active work.
+>
+> **Note:** The `grade_axes.py` script and golden-beauty-shot rubric remain active for native
+> desktop grading — only the web parity layer is retired.
+
+---
+
+# Voxelforge — Web Look-Parity Checklist (SUPERSEDED)
 
 > **คำถามเดียวที่เอกสารนี้ตอบ:** เฟรมจาก web build (wasm) ให้ "ลุคเดียวกัน" กับ
 > golden beauty shot หรือยัง — และถ้ายัง ตกที่ชั้นไหน.

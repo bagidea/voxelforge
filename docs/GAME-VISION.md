@@ -1,6 +1,6 @@
 # Voxelforge — Game Vision
 
-> **North-star pillars document.** One page, skimmable. Last updated: 2026-07-26.
+> **North-star pillars document.** One page, skimmable. Last updated: 2026-07-31 (web target cancelled).
 
 ---
 
@@ -61,7 +61,7 @@ Visual reference locked: `docs/assets/golden-beauty-shot-ref.png` · Look Bible:
 |---|---|---|
 | Language | **Rust** | Memory safety, performance, no GC pauses |
 | Engine | **Bevy** | ECS-native, Rust-first, no royalties |
-| Renderer | **wgpu (WebGPU)** | Cross-platform GPU; path to web export later |
+| Renderer | **wgpu (WebGPU → Vulkan / DX12)** | Native desktop GPU (Windows first); no web/wasm target |
 | Voxel layer | Custom chunk system in Bevy | Built on top of Bevy ECS; no third-party voxel crate required for v1 |
 
 > **Note on Godot:** Godot appears on the office wallpaper and in unrelated projects. It is **not** used in Voxelforge. This stack is decided — do not reopen the engine question.
@@ -91,7 +91,7 @@ Visual reference locked: `docs/assets/golden-beauty-shot-ref.png` · Look Bible:
 - **No crafting system** — gather blocks and place them, nothing more.
 - **No inventory / loot depth** — 1 weapon type; upgrade is story-gated.
 - **No vehicles, mounts, or traversal gadgets.**
-- **No Lite / Web tier** — Ultra desktop is the only v1 target platform.
+- **No wasm / web / browser export** — native desktop only (Windows → Vulkan/DX12). Distribution: Steam. Former web target permanently cancelled 2026-07-31 by CEO.
 - **No economy, marketplace, or progression meta.**
 
 ---
