@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Gate 3 shoot — wait for a fresh release binary, then capture 3 frames
+# Gate 3 shoot — guard against a stale release binary, then capture 3 frames
 # (boot / walk / combat) through the LookPlugin post stack at High quality.
 #
 # DESIGN:
-#   This script DOES NOT build. It waits for `target/release/voxelforge.exe` to
-#   appear with an mtime newer than "right now", then fires the same three
-#   screenshot invocations a reviewer would run — one binary, three modes, no
-#   recompile between them. Every shot goes through `screenshot_once` (main.rs
-#   t=3.2s → save PNG → AppExit at 4.4s), so the frames are deterministic.
+#   This script DOES NOT build. It checks once that `target/release/voxelforge.exe`
+#   is newer than the last commit to touch `client/src/look.rs` (i.e. it was
+#   actually built from the current LookPlugin source), then immediately fires
+#   the same three screenshot invocations a reviewer would run — one binary,
+#   three modes, no recompile between them. There is nothing that rebuilds the
+#   exe out from under this script, so the guard is a single pass/fail check,
+#   not a poll loop: if the exe is stale, waiting longer will not fix it.
+#   Every shot goes through `screenshot_once` (main.rs t=3.2s → save PNG →
+#   AppExit at 4.4s), so the frames are deterministic.
 #
 #   Captures use env vars (not CLI flags) so a single script invocation owns the
 #   whole environment and there is no shell-state leak between shots.
@@ -17,8 +21,9 @@
 #   QUALITY       LookQuality tier                 (default: high)
 #   OUT           output directory                 (default: docs/assets)
 #   LOGS          log directory                    (default: _gate3_logs)
-#   WAIT_TIMEOUT  max seconds to wait for the exe  (default: 600 = 10 min)
-#   POLL_SEC      how often to check mtime         (default: 5)
+#   MIN_MTIME     epoch seconds the exe must be newer than (default: commit
+#                 time of the latest commit touching client/src/look.rs, or
+#                 that file's on-disk mtime if it has uncommitted edits)
 #
 # Usage:
 #   bash scripts/gate3_shoot.sh              # wait + shoot all 3
@@ -34,8 +39,6 @@ BIN="${BIN:-./target/release/voxelforge.exe}"
 QUALITY="${QUALITY:-high}"
 OUT="${OUT:-docs/assets}"
 LOGS="${LOGS:-_gate3_logs}"
-WAIT_TIMEOUT="${WAIT_TIMEOUT:-600}"
-POLL_SEC="${POLL_SEC:-5}"
 
 mkdir -p "$OUT" "$LOGS"
 
@@ -51,6 +54,17 @@ exe_mtime() {
   else
     echo 0
   fi
+}
+
+look_rs_min_mtime() {
+  # The guard's real intent: the exe must not be older than the LookPlugin
+  # source it's supposed to represent. Use the newer of (a) the commit time of
+  # the latest commit touching client/src/look.rs and (b) that file's current
+  # on-disk mtime, so uncommitted edits also count.
+  local commit_t=0 disk_t=0
+  commit_t=$(git log -1 --format=%ct -- client/src/look.rs 2>/dev/null || echo 0)
+  [ -f client/src/look.rs ] && disk_t=$(stat -c %Y client/src/look.rs 2>/dev/null || date -r client/src/look.rs +%s 2>/dev/null || echo 0)
+  if [ "$disk_t" -gt "$commit_t" ]; then echo "$disk_t"; else echo "$commit_t"; fi
 }
 
 gate_one_shot() {
@@ -97,57 +111,37 @@ gate_one_shot() {
   fi
 }
 
-# ── wait for the binary ──────────────────────────────────────────────────────
+# ── guard: exe must not be older than the newest source file ────────────────
 
-echo "=== GATE3 SHOOT — waiting for fresh binary ==="
+echo "=== GATE3 SHOOT — checking binary freshness ==="
 echo "  bin:      $BIN"
 echo "  quality:  $QUALITY"
 echo "  output:   $OUT"
-echo "  timeout:  ${WAIT_TIMEOUT}s"
 
-# Snapshot "now" in epoch seconds — we want an exe that is strictly newer.
-DEADLINE=$(($(now_epoch) + WAIT_TIMEOUT))
-SNAPSHOT=$(now_epoch)
+MTIME=$(exe_mtime)
+MIN_MTIME="${MIN_MTIME:-$(newest_source_mtime)}"
 
-echo "  snapshot: $SNAPSHOT ($(date -d "@$SNAPSHOT" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$SNAPSHOT" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "epoch $SNAPSHOT"))"
-echo "  deadline: $DEADLINE"
+fmt_t() { date -d "@$1" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$1" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "epoch $1"; }
 
-waited=0
-while true; do
-  MTIME=$(exe_mtime)
+echo "  exe mtime:      $MTIME ($(fmt_t "$MTIME"))"
+echo "  newest source:  $MIN_MTIME ($(fmt_t "$MIN_MTIME"))"
 
-  if [ "$MTIME" -gt "$SNAPSHOT" ]; then
-    echo ""
-    echo "  ✓ binary found — mtime=$MTIME > snapshot=$SNAPSHOT  (waited ${waited}s)"
-    break
-  fi
+if [ "${GATE3_SKIP_WAIT:-0}" = "1" ]; then
+  echo "  ⚡ GATE3_SKIP_WAIT=1 — skipping freshness check"
+elif [ "$MTIME" -eq 0 ]; then
+  echo ""
+  echo "  ✗ FAIL — $BIN does not exist"
+  exit 1
+elif [ "$MTIME" -lt "$MIN_MTIME" ]; then
+  echo ""
+  echo "  ✗ FAIL — exe is older than the newest source file."
+  echo "    exe mtime=$MTIME < source mtime=$MIN_MTIME. Rebuild target/release/voxelforge.exe"
+  echo "    (or pass MIN_MTIME to override, or GATE3_SKIP_WAIT=1 to skip)."
+  exit 1
+fi
 
-  if [ "$(now_epoch)" -ge "$DEADLINE" ]; then
-    echo ""
-    echo "  ✗ TIMEOUT after ${waited}s — binary mtime=$MTIME never passed snapshot=$SNAPSHOT"
-    echo "    Is the release build still running? (check tasklist / cargo)"
-    exit 1
-  fi
-
-  if [ "$waited" -eq 0 ]; then
-    # First poll: report what we see right away so the log is useful.
-    if [ "$MTIME" -eq 0 ]; then
-      echo "  … binary not on disk yet — waiting (poll every ${POLL_SEC}s)"
-    else
-      echo "  … binary exists but mtime=$MTIME ≤ snapshot=$SNAPSHOT (not rebuilt yet)"
-    fi
-  elif [ $((waited % 30)) -eq 0 ]; then
-    echo "  … still waiting (${waited}s elapsed, mtime=$MTIME)"
-  fi
-
-  sleep "$POLL_SEC"
-  waited=$((waited + POLL_SEC))
-done
-
-# Small grace period: let the filesystem finish flushing the write. A build that
-# just closed the file handle may still be syncing its last blocks on spinning
-# rust / a busy CI runner.
-sleep 2
+echo ""
+echo "  ✓ exe is fresh enough — proceeding immediately, no sleep"
 
 # ── the three frames ─────────────────────────────────────────────────────────
 
