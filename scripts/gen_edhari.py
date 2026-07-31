@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the redesigned Edhari village voxel map for Voxelforge.
+"""Generate the AAA redesigned Edhari village voxel map for Voxelforge.
 
-This pass turns the flat 64x64 campsite into a deliberately authored ruin:
+This pass turns the flat 64x64 campsite into a deliberately authored ruin that
+reads as a world people once lived in:
 - Long sight-lines to three landmarks (watchtower, petrified tree, ruined keep)
   that pull the eye north toward the dungeon gate.
 - A readable spawn -> campfire -> first-encounter path on the main street.
@@ -11,6 +12,10 @@ This pass turns the flat 64x64 campsite into a deliberately authored ruin:
   dungeon gate).
 - Environmental story told with blocks alone: burned-out houses, scattered
   belongings, ash piles, and Unravelling pits.
+- Combat cover placed around the first husk encounter.
+- Rest fire spots (campfire + extinguished rings) so the space feels lived in.
+- The previously-empty southern half is filled with fields, a pond, fences and
+  a travellers' rest stop so the village no longer ends at z=44.
 
 Block palette is restricted to what client/src/mapfile.rs actually loads:
 air, grass, dirt, stone, sand.  Wood/leaves are NOT emitted (see maps/FORMAT.md
@@ -73,6 +78,17 @@ def disc(cx, cz, r, y, block):
     for dz in range(-r, r + 1):
         for dx in range(-r, r + 1):
             if dx * dx + dz * dz <= r * r:
+                x, z = cx + dx, cz + dz
+                if in_bounds(x, z):
+                    add(x, y, z, block)
+
+
+def ring(cx, cz, r_inner, r_outer, y, block):
+    """Annulus of blocks on one y layer."""
+    for dz in range(-r_outer, r_outer + 1):
+        for dx in range(-r_outer, r_outer + 1):
+            d2 = dx * dx + dz * dz
+            if r_inner * r_inner <= d2 <= r_outer * r_outer:
                 x, z = cx + dx, cz + dz
                 if in_bounds(x, z):
                     add(x, y, z, block)
@@ -164,10 +180,37 @@ def stone_bridge(x0, x1, z0, z1, y_deck, pillar_depth=4):
                 add(x, y, z, "stone")
 
 
+def lantern_post(x, z, y_base=0, height=3):
+    """Stone marker along a path; doubles as a subtle sight-line guide."""
+    for y in range(y_base + 1, y_base + height + 1):
+        add(x, y, z, "stone")
+    add(x, y_base + height + 1, z, "stone")
+
+
+def low_wall(x0, x1, z0, z1, y_base=0, height=2, gaps=()):
+    """Combat cover: a wall the player can circle, with optional door gaps."""
+    for z in range(z0, z1 + 1):
+        for x in range(x0, x1 + 1):
+            if (x, z) in gaps:
+                continue
+            if x == x0 or x == x1 or z == z0 or z == z1:
+                for y in range(y_base + 1, y_base + height + 1):
+                    add(x, y, z, "stone")
+
+
+def broken_pillar(cx, cz, y_base=0, height=4):
+    """A single free-standing broken column for cover or framing."""
+    for y in range(y_base + 1, y_base + height + 1):
+        add(cx, y, cz, "stone")
+    # capstone tilted off-centre
+    if in_bounds(cx + 1, cz):
+        add(cx + 1, y_base + height, cz, "stone")
+
+
 # ---------------------------------------------------------------------------
 # Buildings
 # ---------------------------------------------------------------------------
-def intact_house(x0, z0, w, d, door_x, door_z, height=4, y_base=0):
+def intact_house(x0, z0, w, d, door_x, door_z, height=4, y_base=0, furnished=False):
     """Hollow perimeter house with one door gap."""
     x1, z1 = x0 + w - 1, z0 + d - 1
     for y in range(y_base + 1, y_base + height + 1):
@@ -183,6 +226,18 @@ def intact_house(x0, z0, w, d, door_x, door_z, height=4, y_base=0):
     for x in range(x0 + 1, x1):
         for z in range(z0 + 1, z1):
             add(x, y_base, z, "stone")
+
+    if furnished:
+        # stone hearth + chimney
+        hx, hz = x0 + 2, z0 + 2
+        for y in range(y_base + 1, y_base + height + 2):
+            add(hx, y, hz, "stone")
+        add(hx, y_base + 1, hz + 1, "dirt")  # cold fire-bed
+        # stone table + two dirt sleeping mats
+        add(x1 - 2, y_base + 1, z1 - 2, "stone")
+        add(x1 - 1, y_base + 1, z1 - 2, "stone")
+        add(x1 - 2, y_base + 1, z1 - 1, "dirt")
+        add(x1 - 3, y_base + 1, z1 - 1, "dirt")
 
 
 def ruin_house(x0, z0, w, d, y_base=0, scattered=False, burned=False):
@@ -235,6 +290,7 @@ def watchtower(cx, cz, base_w, height):
     """Square stone watchtower with a crenellated top — visible from anywhere."""
     half = base_w // 2
     x0, x1 = cx - half, cx + half
+    z0, z1 = cz - half, cz - half
     z0, z1 = cz - half, cz + half
     hollow_box(x0, x1, 1, height, z0, z1, "stone")
     # internal column so it reads solid from a distance
@@ -244,6 +300,9 @@ def watchtower(cx, cz, base_w, height):
         for z in range(z0, z1 + 1):
             if (x + z) % 2 == 0:
                 add(x, height + 1, z, "stone")
+    # beacon pole on top for extra silhouette
+    for y in range(height + 2, height + 5):
+        add(cx, y, cz, "stone")
 
 
 def petrified_tree(cx, cz, height):
@@ -251,11 +310,12 @@ def petrified_tree(cx, cz, height):
     # trunk
     for y in range(1, height + 1):
         add(cx, y, cz, "stone")
-        if y % 4 == 0 and y < height - 2:
+        if y % 3 == 0 and y < height - 2:
             # branches
             for dx, dz in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                 add(cx + dx, y, cz + dz, "stone")
-                add(cx + 2 * dx, y + 1, cz + 2 * dz, "stone")
+                if in_bounds(cx + 2 * dx, cz + 2 * dz):
+                    add(cx + 2 * dx, y + 1, cz + 2 * dz, "stone")
     # canopy / dead foliage
     for dy in range(-2, 3):
         r = 2 if abs(dy) < 2 else 1
@@ -279,22 +339,30 @@ def ruined_keep_wall(x0, z0, w, d, height):
         add(breach_x, 1, z, "stone")
         if rng.random() < 0.5:
             add(breach_x, 2, z, "stone")
+    # corner tower for silhouette
+    tower_x = x1 - 1
+    for z in range(z0, z0 + 3):
+        for y in range(1, height + 3):
+            add(tower_x, y, z, "stone")
+            add(tower_x + 1, y, z, "stone")
 
 
-def village_well(cx, cz, r=2):
-    """Raised stone curb + dry dirt bottom."""
-    for dz in range(-r, r + 1):
-        for dx in range(-r, r + 1):
-            d = math.hypot(dx, dz)
-            x, z = cx + dx, cz + dz
-            if not in_bounds(x, z):
-                continue
-            if r - 1 < d <= r:
-                add(x, 1, z, "stone")
-            elif d <= r - 1:
-                add(x, 0, z, "dirt")
+def fallen_monolith(cx, cz, height):
+    """A broken southern marker visible from the spawn shelter."""
+    # tilted shaft: rising on one side, snapped off on the other
+    for y in range(1, height + 1):
+        add(cx, y, cz, "stone")
+        if y > height // 2:
+            add(cx + 1, y, cz, "stone")
+    # fallen chunk beside it
+    for dx in range(2, 5):
+        add(cx + dx, 1, cz, "stone")
+        add(cx + dx, 1, cz + 1, "stone")
 
 
+# ---------------------------------------------------------------------------
+# Village fixtures
+# ---------------------------------------------------------------------------
 def dungeon_gate(cx, z_near, z_far, y_base=0, half_span=5, height=8):
     """Massive sealed gate with a visible sand sigil."""
     x_out_l, x_in_l = cx - half_span, cx - half_span + 1
@@ -315,6 +383,90 @@ def dungeon_gate(cx, z_near, z_far, y_base=0, half_span=5, height=8):
             add(x, y_base + height + 1, z, "stone")
     # sigil on the +Z face of the lintel, facing the village
     add(cx, y_base + height + 1, z_far, "sand")
+
+
+def village_well(cx, cz, r=2):
+    """Raised stone curb + dry dirt bottom, now 3 blocks deep."""
+    for dz in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            d = math.hypot(dx, dz)
+            x, z = cx + dx, cz + dz
+            if not in_bounds(x, z):
+                continue
+            if r - 1 < d <= r:
+                # curb rises above ground
+                add(x, 1, z, "stone")
+                add(x, 2, z, "stone")
+            elif d <= r - 1:
+                # dry bottom below the surrounding ground
+                add(x, 0, z, "dirt")
+                add(x, 1, z, "dirt")
+
+
+def skeleton(cx, cz, y_base=0):
+    """A small arrangement of stone blocks suggesting remains near the well."""
+    add(cx, y_base + 1, cz, "stone")
+    add(cx + 1, y_base + 1, cz, "stone")
+    add(cx, y_base + 1, cz + 1, "stone")
+    add(cx - 1, y_base + 1, cz, "stone")
+    add(cx, y_base + 2, cz, "stone")  # skull-ish lump
+
+
+def fire_pit(cx, cz, r=2, y_base=0, lit=False):
+    """A rest-fire ring: stone curb with dirt/ash centre.
+    lit=False means extinguished; the engine still gets a readable fire ring."""
+    ring(cx, cz, r - 1, r, y_base + 1, "stone")
+    disc(cx, cz, r - 1, y_base + 1, "dirt")
+    if lit:
+        add(cx, y_base + 1, cz, "stone")  # central fuel marker
+
+
+def market_stall(cx, cz, y_base=0):
+    """A stone-framed stall silhouette in the village square."""
+    for y in range(y_base + 1, y_base + 3):
+        add(cx - 1, y, cz, "stone")
+        add(cx + 1, y, cz, "stone")
+    for x in range(cx - 2, cx + 3):
+        add(x, y_base + 3, cz, "stone")
+
+
+def garden_plot(x0, z0, w, d, y_base=0):
+    """Stone-bordered dirt garden (fields in the south)."""
+    x1, z1 = x0 + w - 1, z0 + d - 1
+    for z in range(z0, z1 + 1):
+        for x in range(x0, x1 + 1):
+            if x == x0 or x == x1 or z == z0 or z == z1:
+                add(x, y_base + 1, z, "stone")
+            else:
+                add(x, y_base + 1, z, "dirt")
+
+
+def pond(cx, cz, r):
+    """Shallow dirt-bottom pond with a stone rim."""
+    for dz in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            d = math.hypot(dx, dz)
+            x, z = cx + dx, cz + dz
+            if not in_bounds(x, z):
+                continue
+            if d <= r:
+                add(x, 0, z, "dirt")
+            if r - 1 < d <= r:
+                add(x, 1, z, "stone")
+
+
+def fence(x0, z0, x1, z1, y_base=0):
+    """Low stone-post fence along a line."""
+    dx = 1 if x1 >= x0 else -1
+    dz = 1 if z1 >= z0 else -1
+    if x0 == x1:
+        for z in range(z0, z1 + dz, dz):
+            if (z - z0) % 3 == 0:
+                add(x0, y_base + 1, z, "stone")
+    else:
+        for x in range(x0, x1 + dx, dx):
+            if (x - x0) % 3 == 0:
+                add(x, y_base + 1, z0, "stone")
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +500,24 @@ def scattered_belongings(cx, cz, count=4):
 
 
 # ---------------------------------------------------------------------------
+# Combat arena
+# ---------------------------------------------------------------------------
+def husk_arena_cover():
+    """Low walls and broken pillars around the first Guard Husk spawn at (32,25).
+    The player can circle these for cover while learning the combat timing."""
+    # west flank low wall
+    low_wall(24, 28, 23, 27, y_base=0, height=2)
+    # east flank low wall
+    low_wall(36, 40, 23, 27, y_base=0, height=2)
+    # north side partial barrier with a gap in the middle
+    low_wall(28, 36, 22, 22, y_base=0, height=2, gaps={(32, 22), (33, 22)})
+    # broken pillars the player can kite around
+    broken_pillar(27, 25, y_base=0, height=3)
+    broken_pillar(37, 25, y_base=0, height=3)
+    broken_pillar(30, 28, y_base=0, height=2)
+
+
+# ---------------------------------------------------------------------------
 # Build the world
 # ---------------------------------------------------------------------------
 floor_all("grass")
@@ -367,9 +537,13 @@ stone_arch(SPAWN_X, 26, y_base=0, height=5, span=4, width=2, axis="x")
 
 # ---- 4. Village square around the well -------------------------------------
 village_well(SPAWN_X, 17, r=3)
-# Two intact houses on raised terraces flanking the well
-intact_house(12, 19, 7, 7, door_x=15, door_z=22, height=4, y_base=1)
-intact_house(46, 19, 7, 7, door_x=46, door_z=22, height=4, y_base=1)
+skeleton(SPAWN_X + 5, 18)  # remains of someone who didn't reach the well
+market_stall(SPAWN_X - 6, 17)
+market_stall(SPAWN_X + 8, 19)
+
+# Two intact houses on raised terraces flanking the well, now furnished
+intact_house(12, 19, 7, 7, door_x=15, door_z=22, height=4, y_base=1, furnished=True)
+intact_house(46, 19, 7, 7, door_x=46, door_z=22, height=4, y_base=1, furnished=True)
 
 # Raise the terraces under those houses
 terrace_patch = []
@@ -378,6 +552,12 @@ for x in range(10, 55):
         if not (MAIN_X0 <= x <= MAIN_X1):  # keep the main street clear
             terrace_patch.append((x, z))
 raise_terrain(terrace_patch, 1, "grass")
+
+# Secondary path from spawn to the well and east house
+paved_rect(35, 44, 17, 19, "stone", y=1)
+paved_rect(32, 34, 19, 22, "stone", y=1)
+# Path from well toward the west ruin area
+paved_rect(20, 29, 17, 17, "stone", y=1)
 
 # ---- 5. Burned / collapsed houses with story props -------------------------
 ruin_house(8, 10, 7, 7, y_base=0, scattered=True, burned=True)
@@ -394,6 +574,7 @@ scattered_belongings(30, 15, count=4)
 ash_pile(24, 24, r=2)
 ash_pile(40, 13, r=1)
 ash_pile(14, 38, r=2)
+ash_pile(22, 28, r=1)
 
 # Unravelling pits
 unravelling_pit(20, 32, 4, 5)
@@ -410,18 +591,56 @@ paved_rect(24, 40, 3, 11, "stone", y=2)
 # ---- 7. Sealed dungeon gate (northern anchor) -----------------------------
 dungeon_gate(SPAWN_X, z_near=3, z_far=5, y_base=2, half_span=6, height=9)
 
-# ---- 8. Landmarks visible from spawn ---------------------------------------
+# ---- 8. Combat cover around first husk encounter --------------------------
+husk_arena_cover()
+
+# ---- 9. Rest fire spots ---------------------------------------------------
+# Main campfire is the procedural one at (32,29).  Add smaller fire rings
+# that read as places villagers paused — reinforcing that this was a home.
+fire_pit(22, 24, r=2, y_base=0, lit=False)
+fire_pit(42, 24, r=2, y_base=0, lit=False)
+fire_pit(32, 48, r=2, y_base=0, lit=True)  # travellers' rest in the south field
+
+# ---- 10. Sight-line lanterns along the main street ------------------------
+for z in (25, 20, 15, 10):
+    lantern_post(28, z, y_base=0, height=3)
+    lantern_post(36, z, y_base=0, height=3)
+
+# ---- 11. Landmarks visible from spawn --------------------------------------
 # Watchtower on a low grassy knoll in the south-east, tall enough to read far away.
-watchtower(52, 50, base_w=5, height=18)
+watchtower(52, 50, base_w=5, height=22)
 # Petrified tree in the north-west corner, silhouetted against the sky.
-petrified_tree(10, 10, height=14)
+petrified_tree(10, 10, height=18)
 # Ruined keep wall along the western edge, framing the village from the side.
-ruined_keep_wall(4, 20, 8, 20, height=8)
+ruined_keep_wall(4, 16, 8, 28, height=12)
+# Fallen monolith in the south, giving the empty half a focal point.
+fallen_monolith(32, 55, height=10)
 
 # Small framed arch near the bridge on the west side, a side-path teaser.
 stone_arch(18, 14, y_base=1, height=4, span=2, width=1, axis="z")
 
-# ---- 9. Export -------------------------------------------------------------
+# ---- 12. Southern fields / lived-in back half ------------------------------
+# The old map had z>=44 empty; fill it with farmland, a pond, fences and ruins
+# so the village feels like it continues past the playable path.
+garden_plot(10, 46, 8, 10, y_base=0)
+garden_plot(42, 44, 10, 8, y_base=0)
+garden_plot(22, 56, 8, 6, y_base=0)
+
+pond(18, 54, r=3)
+
+fence(9, 45, 9, 55, y_base=0)
+fence(10, 56, 21, 56, y_base=0)
+fence(42, 44, 42, 51, y_base=0)
+fence(43, 52, 51, 52, y_base=0)
+
+ruin_house(52, 54, 6, 6, y_base=0, scattered=True, burned=False)
+ruin_house(8, 56, 6, 6, y_base=0, scattered=True, burned=True)
+
+# A low southern boundary wall/cliff to stop the world feeling infinite.
+low_wall(0, 63, 60, 63, y_base=0, height=3)
+low_wall(0, 0, 0, 63, y_base=0, height=2)
+
+# ---- 13. Export ------------------------------------------------------------
 out = {
     "version": 1,
     "name": "edhari",

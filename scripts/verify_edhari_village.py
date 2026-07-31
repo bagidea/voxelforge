@@ -5,10 +5,18 @@ does not cover: does it match the loader's ACTUAL accepted schema
 (client/src/scene.rs::map_spawn/boot_scene) actually put the player inside
 the shelter, standing on solid ground, with headroom?
 
+This AAA pass also verifies authored-world intent:
+- readable silhouette landmarks,
+- a guiding main street,
+- rest fire spots,
+- combat cover around the first encounter,
+- a lived-in southern half that is no longer empty.
+
 Read-only: does not touch client/src, does not build/run Rust.
 """
 import json
 import os
+from collections import deque
 
 MAP_PATH = os.path.join(os.path.dirname(__file__), "..", "maps", "edhari.json")
 CHUNK = 32
@@ -131,6 +139,125 @@ for b in sigil_blocks:
     check(f"sigil block ({sgx},{sgy},{sgz}) has a player-visible face "
           "(+Z toward the village or +Y toward the sky), not buried mid-slab",
           visible_plus_z or visible_plus_y)
+
+# ===========================================================================
+# AAA assertions — verify the authored-world intent is actually in the data.
+# ===========================================================================
+
+by_pos = {(b["x"], b["y"], b["z"]): b["block"].lower() for b in d["blocks"]}
+by_type = {name: set() for name in LOADER_KNOWN_BLOCKS}
+for b in d["blocks"]:
+    by_type[b["block"].lower()].add((b["x"], b["y"], b["z"]))
+
+# ---- 5. World scale: enough blocks to feel like a place, not a flat slab ----
+block_count = len(d["blocks"])
+check(f"map has AAA block count (>= 7000)", block_count >= 7000)
+print(f"    -> block count: {block_count}")
+
+# ---- 6. Landmark silhouettes: at least three distinct clusters reach high ----
+TALL_Y = 12
+skyline = {(b["x"], b["z"]) for b in d["blocks"] if b["y"] >= TALL_Y}
+check(f"landmark skyline has blocks at y >= {TALL_Y}", len(skyline) >= 10)
+
+# Cluster the skyline columns; we expect at least 3 separate landmarks.
+def cluster_columns(cols):
+    if not cols:
+        return 0
+    seen = set()
+    clusters = 0
+    for start in cols:
+        if start in seen:
+            continue
+        clusters += 1
+        q = deque([start])
+        seen.add(start)
+        while q:
+            x, z = q.popleft()
+            for dx, dz in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                nb = (x + dx, z + dz)
+                if nb in cols and nb not in seen:
+                    seen.add(nb)
+                    q.append(nb)
+    return clusters
+
+landmark_clusters = cluster_columns(skyline)
+check(f"skyline forms at least 3 readable landmark silhouettes", landmark_clusters >= 3)
+print(f"    -> skyline columns: {len(skyline)}, clusters: {landmark_clusters}")
+
+# ---- 7. Main street spine remains clear and paved --------------------------
+main_street_cells = [(x, z) for x in range(30, 35) for z in range(6, 30)]
+street_paved = sum(1 for (x, z) in main_street_cells
+                   if (x, 0, z) in by_pos and by_pos[(x, 0, z)] == "stone")
+check("main street (x30-34, z6-29) is majority stone-paved",
+      street_paved >= len(main_street_cells) * 0.85)
+street_clear = all((x, y, z) not in blocks_set
+                   for x in range(30, 35) for z in range(6, 30) for y in range(3, 5))
+check("main street is clear of head-height obstacles (y=3-4)", street_clear)
+
+# ---- 8. Village well is recessed (2+ blocks deep) --------------------------
+# Well centre (32,17); expect stone curb ring around a dirt bottom.
+well_region = [(x, z) for x in range(29, 36) for z in range(14, 21)]
+well_stone_y2 = sum(1 for (x, z) in well_region if (x, 2, z) in by_type["stone"])
+well_dirt_low = sum(1 for (x, z) in well_region
+                    if (x, 0, z) in by_type["dirt"] or (x, 1, z) in by_type["dirt"])
+check("well has raised stone curb at y=2", well_stone_y2 >= 6)
+check("well has dirt bottom below ground level", well_dirt_low >= 4)
+
+# ---- 9. Skeleton remains near the well -------------------------------------
+# A small plus/cross of stone blocks at y=1 around (37,18).
+skeleton_zone = {(x, z) for x in range(36, 40) for z in range(17, 21)}
+skel_stone = sum(1 for (x, z) in skeleton_zone if (x, 1, z) in by_type["stone"])
+check("skeleton remains (stone cross) placed near the well", skel_stone >= 4)
+
+# ---- 10. Rest fire spots ---------------------------------------------------
+# A fire pit is a 2-block-high ring: stone around a dirt centre at y=1.
+def find_fire_pits():
+    found = 0
+    checked = set()
+    stone_y1 = {(x, z) for (x, y, z) in by_type["stone"] if y == 1}
+    dirt_y1 = {(x, z) for (x, y, z) in by_type["dirt"] if y == 1}
+    for cx in range(2, W - 2):
+        for cz in range(2, D - 2):
+            if (cx, cz) in checked:
+                continue
+            # centre must be dirt/ash
+            if (cx, cz) not in dirt_y1:
+                continue
+            # 3x3 neighbourhood: at least 6 of the 8 neighbours are stone
+            neighbours = [(cx + dx, cz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)
+                          if (dx, dz) != (0, 0)]
+            stone_neighbours = sum(1 for p in neighbours if p in stone_y1)
+            if stone_neighbours >= 6:
+                found += 1
+                checked.update((cx + dx, cz + dz) for dx in (-2, -1, 0, 1, 2)
+                               for dz in (-2, -1, 0, 1, 2))
+    return found
+
+fire_pit_count = find_fire_pits()
+check("at least 2 rest fire-pit rings exist", fire_pit_count >= 2)
+print(f"    -> fire pits found: {fire_pit_count}")
+
+# ---- 11. Combat cover around first husk encounter --------------------------
+# Expect low stone walls / pillars in the arena box x24-40, z22-28, y1-2.
+arena_stone = sum(1 for (x, y, z) in by_type["stone"]
+                  if 24 <= x <= 40 and 22 <= z <= 28 and 1 <= y <= 2)
+check("husk arena has combat cover stones (>= 30 blocks)", arena_stone >= 30)
+print(f"    -> arena cover stones: {arena_stone}")
+
+# ---- 12. Southern half is no longer empty ----------------------------------
+# Before the AAA pass z>=44 was essentially barren; now it should have authored
+# content (fields, pond, fences, ruins, boundary wall).
+south_blocks = sum(1 for b in d["blocks"] if b["z"] >= 44 and b["y"] >= 1
+                   and b["block"].lower() != "air")
+check("southern half (z>=44) has authored content (>= 400 blocks)", south_blocks >= 400)
+print(f"    -> southern half blocks: {south_blocks}")
+
+# ---- 13. No accidental holes punched through the spawn shelter floor --------
+# The back of the shelter interior floor should remain grass at y=0.
+# The fire plaza deliberately sits at the north opening (z~29-32).
+shelter_floor = all((x, 0, z) in by_type["grass"]
+                    for x in range(30, 35) for z in range(33, 36))
+check("spawn shelter back floor remains solid grass", shelter_floor)
 
 print()
 if fail:

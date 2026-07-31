@@ -49,8 +49,9 @@ img = Image.fromarray(img_arr).resize((w * scale, h * scale), Image.NEAREST)
 
 # Add a legend and labels
 legend_h = 90
-out_img = Image.new("RGB", (img.width, img.height + legend_h), (0x1a, 0x1a, 0x1a))
-out_img.paste(img, (0, legend_h))
+left_pad = 24  # room for two-digit z-axis labels on the left edge
+out_img = Image.new("RGB", (img.width + left_pad, img.height + legend_h), (0x1a, 0x1a, 0x1a))
+out_img.paste(img, (left_pad, legend_h))
 draw = ImageDraw.Draw(out_img)
 
 try:
@@ -62,7 +63,8 @@ except Exception:
 
 # Title + key info
 draw.text((10, 8), "Edhari Village — top-down layout", fill=(0xff, 0xff, 0xff), font=font)
-draw.text((10, 28), f"6483 blocks  |  spawn(32,32)  |  fire(32,29)  |  gate(32,3-5)",
+block_count = len(d["blocks"])
+draw.text((10, 28), f"{block_count} blocks  |  spawn(32,32)  |  fire(32,29)  |  husk(32,25)  |  gate(32,3-5)",
           fill=(0xcc, 0xcc, 0xcc), font=small)
 
 # Colour key
@@ -76,8 +78,16 @@ for label, col in [("grass", PALETTE["grass"]), ("dirt", PALETTE["dirt"]),
 
 # Axis labels every 8 blocks (now every 8*scale pixels in image space)
 for i in range(0, W + 1, 8):
-    draw.text((i * scale + 2, legend_h - 14), str(i), fill=(0x99, 0x99, 0x99), font=small)
-    draw.text((2, legend_h + i * scale + 2), str(i), fill=(0x99, 0x99, 0x99), font=small)
+    draw.text((left_pad + i * scale + 2, legend_h - 14), str(i), fill=(0x99, 0x99, 0x99), font=small)
+    # Right-align z labels inside the left padding so "16"/"24" are not clipped.
+    label = str(i)
+    try:
+        bbox = draw.textbbox((0, 0), label, font=small)
+        text_w = bbox[2] - bbox[0]
+    except Exception:
+        text_w = 7 * len(label)  # rough fallback for default font
+    draw.text((left_pad - text_w - 4, legend_h + i * scale + 2), label,
+              fill=(0x99, 0x99, 0x99), font=small)
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
 out_img.save(OUT)
