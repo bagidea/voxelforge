@@ -111,6 +111,18 @@ When unlocked:
 
 > **Reference:** Sekiro deflect is the core loop; our parry is narrower and riskier to keep it optional, not mandatory.
 
+**What shipped, and where it diverges (`client/src/dodge_parry.rs`):**
+
+| Property | This spec | Shipped | Why |
+|---|---|---|---|
+| Parry window | 0.20 s | **12 frames**, counted per frame | "0.20 s" is a different number of frames on every machine. A read the player learns by feel has to be a frame count, so the window is a `u32` spent once per frame and `prove_dodge_parry.sh` grades that every window opened for *exactly* 12. Same reasoning applies to §2.2's 10 i-frames. |
+| Dodge i-frames | 10 frames | **10 frames**, counted per frame | as above — `iframes` (seconds) now drives only the roll *glide*; invulnerability is `iframe_frames`. |
+| Successful parry | 25 posture, +25% punish window | 25 posture **+ guaranteed poise break**, then a **riposte at 2.5×** | A 1.25× window rewards a lucky trade, not a 12-frame read. The Elden Ring bargain — parry *always* buys the opening — is the only thing that makes a window this sharp worth taking. 20 × 2.5 × 1.3 (stagger) = 65 damage, so two clean parries end a Husk and one is felt immediately. The riposte books the full `ImpactWeight::Critical` row rather than inventing its own feel. |
+| Failed parry | +25% damage, 0.5 s recovery | unchanged, and now **reachable** | `action_len()` had no `Parry` arm, so the state expired one frame after the button — the window could not be *missed*, which meant it was not a window. The state now outlives its window by `PARRY_FAIL_RECOVER`. |
+
+Proof: `scripts/prove_dodge_parry.sh` (graded against the shipping build's own log);
+the gate itself is graded by `scripts/_poppy_dodge_parry_gate_selftest.sh`.
+
 ---
 
 ## 3. Damage & Poise Model

@@ -29,9 +29,14 @@ the other agent a build.
 | Dialogue UI | `client/src/dialogue_ui.rs` | **sun** | egui dialogue box. Assigned to sun 2026-07-31 — file previously had no listed owner. `bevy_egui` 0.41's single-window `ctx` query returns a `Result`, not `&Context`/`&mut Context`, directly; `egui::style::Margin` fields are private and `Margin::symmetric` takes `i8`, not `f32`. |
 | Look / beauty shots | `client/src/hero.rs`, `client/src/shot_main.rs`, `docs/golden-beauty-shot.md`, `docs/look-acceptance-rubric.md` | **pixel** | `hero.rs` is a beauty-shot scene only — it holds no controller code. |
 | Levels / map data | `maps/`, `scripts/gen_edhari.py` | **shiba** | Authored levels and the generators behind them. |
-| Web / wasm parity | `scripts/web-verify.mjs`, `scripts/grade_web_parity.py`, `docs/web-parity-checklist.md` | **rose** | |
-| Editor UI panels | `client/src/editor_ui.rs` | **kevin** | egui panels + state gate. |
-| Editor camera | `client/src/editor_camera.rs` | **yamamoto** | |
+| Look post stack | `client/src/look.rs`, `docs/look-bible.md`, `docs/look-tier-spec.md` | **rose** | `LookPlugin` — the post stack the *playable* game wears (Bokeh DoF · SSAO · PCSS · TAA · VolumetricFog). Distinct from pixel's beauty-shot lane: `hero.rs` renders the reference, `look.rs` ships it. Retired lane: web/wasm parity (`scripts/web-verify.mjs`, `grade_web_parity.py`) — the client went native-only at `65b1d12`. |
+| Look perf probe | `client/src/perf_main.rs`, `docs/look-perf-methodology.md` | **poppy** | The `voxelforge_perf` bin. It `#[path]`-includes `look.rs` unmodified *on purpose* — measuring must never require an edit in rose's lane. |
+| Settings / options UI | `client/src/settings_menu.rs` | **monanisa** | `SettingsPlugin` + the `settings_closed` run-condition `main.rs` gates the fly camera on. Assigned 2026-07-31 — file was new and unowned. Same `bevy_egui` 0.41 gotchas as the dialogue-UI row. |
+| Editor UI panels | `client/src/editor_ui.rs`, `client/src/editor.rs`, `client/src/editor_config.rs`, `client/src/input_map.rs` | **kevin** | egui panels + state gate, editor mode/state, persisted editor config, key bindings. |
+| Editor camera / gizmos | `client/src/editor_camera.rs`, `client/src/gizmo.rs` | **yamamoto** | |
+| Animation / VFX / asset import | `client/src/anim.rs`, `client/src/vfx.rs`, `client/src/vfx_bridge.rs`, `client/src/import.rs` | **yamamoto** | Anim clips + the parry timeline, particle/impact VFX and the bridge that fires them, `.vox` import. |
+| Dodge & parry | `client/src/dodge_parry.rs` | **kevin** | i-frames + parry→riposte; moves with the combat lane. |
+| Voxel core / map loader | `client/src/voxel.rs`, `client/src/mapfile.rs` | **shiba** | Greedy meshing + the JSON map schema the levels are graded against. |
 | Proof scripts | `scripts/prove_*.sh` | **shino (Director)** | These are the office's grading rules. Propose a gate; don't loosen one. |
 | Independent cross-checks | `scripts/_shino_*.py` | **shino (Director)** | Re-implementations written from the Rust source, *not* from another checker — they exist to be able to disagree with it. Don't delete one because another checker "already covers it". |
 | Map verification | `scripts/verify_edhari_village.py` | **shiba** | Grades `maps/edhari.json` against the loader schema, so it moves with the map lane above. |
