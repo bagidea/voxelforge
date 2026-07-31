@@ -180,8 +180,26 @@ Voxelforge" ไหม เป็นการตัดสินของ look lane
 #    และตัดสินผลจาก log ไม่ใช่จาก exit code ผ่าน pipe (PIPESTATUS หลอก)
 bash scripts/perf_look_build.sh
 
-# 3) รันทั้งสามเฟส (~34 รัน)
+# 2) รันทั้งสามเฟส (~34 รัน)
 scripts/perf_look_probe.sh _poppy_look_perf.log
+```
+
+การ์ดในข้อ 1 **ทดสอบจริงแล้ว** ไม่ใช่ตั้งใจไว้เฉยๆ — สั่งตอน Gate 3 กำลังบิลด์ มันปฏิเสธเองตามคาด:
+
+```
+$ bash scripts/perf_look_build.sh
+REFUSING TO BUILD — 2 cargo.exe already running (another lane).
+$ echo $?
+3
+$ ls -l --time-style=+%H:%M:%S _poppy_perf_build.log
+-rw-r--r-- 1 BagIdea 197121 402 20:50:44 _poppy_perf_build.log   # ไม่ถูกแตะ
+```
+
+cmdline ของ 2 ตัวนั้น ยืนยันว่าเป็นของเลนอื่นจริง ไม่ใช่ของฉัน:
+
+```
+$ Get-CimInstance Win32_Process -Filter "Name='cargo.exe'" | Select CommandLine
+cargo.exe build --release -j 2 --bin voxelforge        # Gate 3 (Yamamoto)
 ```
 
 รูปแบบบรรทัดผล — self-describing ทุกบรรทัด ไม่ต้องเดาว่ามาจาก tier ไหน:
