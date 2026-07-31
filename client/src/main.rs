@@ -12,6 +12,7 @@ mod anim;
 mod audio;
 mod combat;
 mod dialogue_ui;
+mod dodge_parry;
 mod editor;
 mod editor_camera;
 mod editor_config;
@@ -572,6 +573,10 @@ fn main() {
             // Combat "weight" layer (combat.rs) — hit-stop, knockback, camera
             // kick, Impact/Stagger/Dodge messages. Self-wiring; this line is all.
             combat::CombatFeelPlugin,
+            // Combat "depth" layer (dodge_parry.rs) — frame-counted dodge
+            // i-frames and the parry → poise-break → riposte chain, riding the
+            // weight layer's ImpactWeight table. Self-wiring; this line is all.
+            dodge_parry::DodgeParryPlugin,
         ))
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
