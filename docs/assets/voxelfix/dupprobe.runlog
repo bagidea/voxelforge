@@ -1,0 +1,11 @@
+[2m2026-07-31T09:09:08.718325Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-07-31T09:09:09.038547Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+[2m2026-07-31T09:09:09.161308Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-07-31T09:09:09.169829Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-07-31T09:09:09.170472Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — hero shot (65v0)
+VOXEL_CELLS=2080
+DUPPROBE: planted a conflicting cube at (6.5, 3.5, 3.5)
+VOXEL_OVERLAPS=1
+  OVERLAP at (6.500, 3.500, 3.500) 2 distinct materials
+SHOT saved to docs/assets/voxelfix/dupprobe.png (frame 184)
+[2m2026-07-31T09:09:12.506099Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/voxelfix/dupprobe.png

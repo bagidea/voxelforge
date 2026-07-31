@@ -67,9 +67,17 @@ godot/.godot/
 # lock. Together these are ~15 GB — every one of them must stay untracked.
 /target-anim/
 /target-audio/
+/target-feel/
+/target-hole/
 /target-int/
+/target-look/
+/target-poppy/
 /target-quest/
 /target-vfx/
+# Three new side-lane build dirs (Shiba / Rose / Sun — one target-dir per lane).
+/target-shiba/
+/target-rose/
+/target-sun/
 **/__pycache__/
 # One-off rustc/cl.exe toolchain probes from the Windows link-error hunt.
 /_check_rustc_cl.ps1
@@ -90,3 +98,27 @@ client/editor_config.json
 /_quest_proof/
 /_combat_proof_result.txt
 logs-*.txt
+
+# ── Build scratch & proof temp files ──────────────────────────
+# PID files, proof-poll dumps, and one-shot check outputs that accumulate
+# at the repo root during integration passes.  Keep them on disk (they are
+# always regenerated); just don't track them.
+_*.pid
+_*.txt
+_*.json
+# Log-rotation suffixes (e.g. _dp_rebuild.log.1) — `*.log` alone misses these.
+*.log.*
+# Test recordings from clip harness dry-runs.
+/_ddagrab_test.mp4
+# Combat-lane recording scratch (raw MKV captures + review stills from
+# record_combat_clip.ps1).
+/_combat_recordings/
+# Elden Ring reference data — imported weapon/animation dumps for research,
+# never committed as source.
+/er-tmp/
+# Yamamoto integration gate scripts — regenerated per integration pass.
+/_yama_*.sh
+
+# Wait-poller scripts (bare while/sleep loops that only make sense inside
+# a live agent session — never committed as source).
+/scripts/_*.sh
