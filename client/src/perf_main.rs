@@ -419,12 +419,23 @@ fn sample(
     s.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let median = s[s.len() / 2];
     let p95 = s[(s.len() as f32 * 0.95) as usize];
+    let p99 = s[(s.len() as f32 * 0.99) as usize];
+    // "1% low" in the gamer-bench sense: the mean frame time of the slowest 1%
+    // of frames, expressed as the fps that frame-time would produce. This is the
+    // number a quality menu pairs with "avg fps" so a player reads the worst-case
+    // smoothness, not only the typical frame. p95/p99 are the single-frame tails;
+    // the 1%-low mean is more stable than any one of them and is what Settings
+    // shows. With 600 samples the slowest 1% is ~6 frames — thin per run, but the
+    // runner does two interleaved rounds and we report both, not an average.
+    let worst1 = ((s.len() as f32 * 0.01).ceil() as usize).max(1);
+    let low1_mean_ms = s[s.len() - worst1..].iter().sum::<f32>() / worst1 as f32;
     let mean = s.iter().sum::<f32>() / s.len() as f32;
     println!(
-        "PERF mode={} tier={:?} median_ms={median:.3} mean_ms={mean:.3} p95_ms={p95:.3} fps={:.1} frames={}",
+        "PERF mode={} tier={:?} median_ms={median:.3} mean_ms={mean:.3} p95_ms={p95:.3} p99_ms={p99:.3} fps={:.1} fps_1pct_low={:.1} frames={}",
         mode.label(),
         *tier,
         1000.0 / median,
+        1000.0 / low1_mean_ms,
         s.len()
     );
     exit.write(AppExit::Success);
