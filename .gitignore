@@ -119,6 +119,9 @@ _*.json
 # Yamamoto integration gate scripts — regenerated per integration pass.
 /_yama_*.sh
 
+# Ship output directory (packaged EXE + assets — generated, ~80 MB).
+/_ship/
+
 # Wait-poller scripts (bare while/sleep loops that only make sense inside
 # a live agent session — never committed as source).
 /scripts/_*.sh
