@@ -1,0 +1,7 @@
+﻿[DryRun â€” exe not launched]
+exe: target/release/voxelforge.exe
+exe_mtime: 2026-07-29T17:58:43.9493297+07:00
+exe_sha256: B4B7A855B0518DC713237855577BC80FB1119A76A6FE9F89C162D95CF1F4BD18
+commit: 2c438602f
+flags: VOXELFORGE_VFX=parry VOXELFORGE_VFX_MUTE=1 VOXELFORGE_VFX_EYE=-7.90,4.50,0.30 VOXELFORGE_VFX_AIM=-0.35,1.60,-0.55 VOXELFORGE_SHOT=docs\assets\gate3\parry-a-before.png
+---
