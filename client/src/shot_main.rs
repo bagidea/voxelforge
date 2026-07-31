@@ -15,6 +15,13 @@
 #[path = "hero.rs"]
 mod hero;
 
+// The VFX layer (`vfx.rs`) is deliberately bevy-only — it reaches into no other
+// lane's module — so it compiles inside this isolated bin exactly as it will inside
+// `voxelforge`. That is what makes it possible to build, run and photograph the VFX
+// here without an edit to `main.rs` (kevin's lane, per docs/LANES.md).
+#[path = "vfx.rs"]
+mod vfx;
+
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use bevy::window::PresentMode;
@@ -109,8 +116,25 @@ fn main() {
     .insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 })
     .insert_resource(cfg)
     .insert_resource(ShotState { path: shot, took: false })
-    .add_systems(Startup, hero::setup_hero)
     .add_systems(Update, screenshot_once);
+
+    // `VOXELFORGE_VFX=off|impact|dissolve|fire` swaps the locked golden KITCHEN for
+    // the VFX showcase stage. Two scenes, one bin, and — importantly — the kitchen
+    // path is untouched when the var is unset, so re-rendering the golden shot still
+    // produces the same frame it always did.
+    match vfx::VfxShot::from_env() {
+        Some(which) => {
+            app.add_plugins(vfx::VfxPlugin)
+                .insert_resource(which)
+                .init_resource::<vfx::ShowcaseTimeline>()
+                .add_systems(Startup, vfx::setup_showcase)
+                .add_systems(Update, vfx::showcase_timeline);
+            println!("VFX showcase: {which:?}");
+        }
+        None => {
+            app.add_systems(Startup, hero::setup_hero);
+        }
+    }
 
     app.run();
 }

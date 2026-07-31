@@ -1,0 +1,501 @@
+{
+  "schema_version": "1.0.0",
+  "act": 1,
+  "act_title": "The Descent",
+  "lang": "en",
+  "map": "edhari",
+  "start_quest": "q1_embers",
+
+  "_comment_coord": "Positions are world voxels (x, y, z) in the edhari map. y is up; north = -z (the gate is at low z). All coordinates verified against maps/edhari.json on 2026-07-31. Snap each to the nearest matching real block when placing. Entities/regions flagged code_spawned are not map blocks — they are placed by gameplay systems (Shiba places map props; Sun spawns code entities).",
+  "_comment_voice": "All in-game text is English. Auren (the protagonist) is intentionally voiceless per canon — NPCs speak; the world narrates. This file supersedes the earlier stub (stages[]/dialogues-map) per Director, 2026-07-31; build the engine to THIS schema (see docs/act1-script.md).",
+
+  "opening": {
+    "id": "open_cold",
+    "duration_s": 60,
+    "title": "Cold Open",
+    "no_menu": true,
+    "no_loading_text": true,
+    "spawn": { "position": { "x": 32, "y": 1, "z": 33 }, "facing": "north" },
+    "scene": [
+      "Late afternoon. A single golden key light from the west; long shadows across hard-edged stone.",
+      "The player wakes inside a collapsed shelter at the south edge of Edhari. Ash is still falling — slow, warm flecks, not aftermath but something ongoing.",
+      "Camera: third-person, behind the avatar. Through the broken wall: a lit campfire alone in a stone square, and far north a great arch with one faint teal pulse.",
+      "No UI text. The warmth and the teal pull in opposite directions. The player walks to the fire."
+    ],
+    "mechanics_seeded": ["move", "third_person_camera"],
+    "story_seed": "Something beautiful existed here. Something is still happening here."
+  },
+
+  "npcs": [
+    {
+      "id": "maren",
+      "name": "Elder Maren",
+      "role": "Village elder; keeper of the records and the old stories. Speaks through a crack in the sealed dungeon gate.",
+      "voice": "Elderly woman. Urgent but never panicked. Sparse, weighted words. She knows far more than she says and chooses the order of the telling out of care, not deception.",
+      "appearance": "Mostly unseen — shadow behind stone, one grey hand reaching through the gap.",
+      "knows_and_withholds": "She recognises the Hollow from oral tradition. She suspects what Auren is. She will not say either until Auren has seen enough to believe her."
+    },
+    {
+      "id": "echo",
+      "name": "A remembered voice",
+      "role": "Not a living NPC. A voice impressed into stone by repetition and grief — heard when the player reads certain inscriptions.",
+      "voice": "Flat, chanted, the tone of people performing a rite they no longer fully understand."
+    },
+    {
+      "id": "toma",
+      "name": "Toma",
+      "role": "A child of Edhari — the artist of the west-house drawing. Still alive, hidden in the ruins of the west house when almost everyone else is gone. One of the three survivors later found in stasis in the deep (Act 2).",
+      "voice": "Small, frightened, very few words. Speaks in the specific wrong details a child notices — calls the Hollow 'the tall one,' describes its grief before its threat. Not a Shaper, not Shaper-touched; ordinary, which is the point.",
+      "appearance": "The shortest figure in the cast (~1.2 blocks), patched overalls, clutching a plain carved wooden toy that does not glow. Visual spec: docs/character-design.md §3.2 (Monanisa's lane).",
+      "canon_status": "Proposed in docs/character-design.md §3.2, admitted to canon 2026-07-31. Does NOT alter any LOCKED story-bible fact (toy carries no teal; Toma is a villager, Auren is not; Toma = one of the previously-unnamed three Act 2 survivors). See the canon note in docs/act1-script.md."
+    }
+  ],
+
+  "regions": [
+    { "id": "spawn_shelter",     "name": "Collapsed shelter",        "bounds": { "x0": 29, "z0": 30, "x1": 35, "z1": 35 }, "note": "South edge. Player wakes here." },
+    { "id": "campfire_square",   "name": "Campfire square",          "bounds": { "x0": 29, "z0": 27, "x1": 35, "z1": 31 }, "note": "First rest/respawn anchor. Campfire lit by code at ~(32,1,29)." },
+    { "id": "village_road",      "name": "The single road",          "bounds": { "x0": 30, "z0": 6,  "x1": 34, "z1": 31 }, "note": "Leading line from campfire north to the gate." },
+    { "id": "well_square",       "name": "Village well",             "bounds": { "x0": 30, "z0": 15, "x1": 34, "z1": 19 }, "note": "8-block stone rim at y=1, centre landmark." },
+    { "id": "west_house",        "name": "West house (intact)",      "bounds": { "x0": 14, "z0": 22, "x1": 19, "z1": 27 }, "note": "Walkable interior. Holds the child's drawing." },
+    { "id": "east_house",        "name": "East house (intact)",      "bounds": { "x0": 44, "z0": 22, "x1": 49, "z1": 27 }, "note": "Walkable interior. Holds the village ledger." },
+    { "id": "gate_square",       "name": "The sealed gate",          "bounds": { "x0": 27, "z0": 3,  "x1": 37, "z1": 8  }, "note": "Dungeon arch, h12, x27-37 z3-5. Maren is behind it. Sigil (the sand block) above the door at (32,12,5)." },
+    { "id": "guard_post_east",   "name": "Eastern guard post",       "bounds": { "x0": 48, "z0": 4,  "x1": 56, "z1": 12 }, "code_spawned": true, "note": "NOT in edhari.json — combat arena spawned east of the gate. 16x16 courtyard, low south wall, door, inner campfire." },
+    { "id": "hollow_reach_intro", "name": "Threshold of the Hollow Reach", "bounds": { "x0": 28, "z0": 0, "x1": 36, "z1": 2 }, "code_spawned": true, "note": "Just through the gate. First glimpse of the descent. Intro only — Act 2 owns the Reach." }
+  ],
+
+  "quests": [
+    {
+      "id": "q1_embers",
+      "title": "Embers",
+      "subtitle": "Wake to warmth.",
+      "giver": "environment",
+      "trigger": { "type": "on_spawn" },
+      "premise": "You wake in a collapsed shelter at the dead edge of Edhari. Ash is still falling. A campfire burns alone in the square ahead — the only warm thing for a hundred blocks. Walk to it.",
+      "objectives": [
+        { "id": "o1_campfire", "kind": "approach", "target": "campfire_square", "position": { "x": 32, "y": 1, "z": 29 }, "radius": 4, "hint": null, "optional": false },
+        { "id": "o2_find_survivor", "kind": "reach_zone", "target": "west_house", "position": { "x": 16, "y": 1, "z": 24 }, "radius": 5, "hint": "Something moved, in the house to the west.", "optional": true }
+      ],
+      "mechanics_taught": ["move", "rest_at_campfire", "explore"],
+      "rewards": { "heal": "full", "set_flag": "campfire_anchored", "unlock_dialogue": "dlg_maren_first_call", "advance_to": "q2_voice_in_stone" },
+      "next": "q2_voice_in_stone"
+    },
+    {
+      "id": "q2_voice_in_stone",
+      "title": "A Voice in the Stone",
+      "subtitle": "Someone is alive behind the gate.",
+      "giver": "maren",
+      "trigger": { "type": "enter_zone", "zone": "gate_square" },
+      "premise": "A voice, thin and old, calls from behind the sealed gate at the north end of the village. Reach it. Speak low — and listen for what she does not say.",
+      "objectives": [
+        { "id": "o1_gate",   "kind": "reach_zone", "target": "gate_square", "position": { "x": 32, "y": 1, "z": 5 }, "radius": 6, "hint": null, "optional": false },
+        { "id": "o2_listen", "kind": "listen", "target": "dlg_maren_gate", "hint": null, "optional": false }
+      ],
+      "mechanics_taught": ["dialogue", "choices", "objective_marker"],
+      "rewards": { "set_flag": "maren_met", "reveal_path": "east", "advance_to": "q3_gatekeeper" },
+      "next": "q3_gatekeeper"
+    },
+    {
+      "id": "q3_gatekeeper",
+      "title": "The Gatekeeper",
+      "subtitle": "It was a man. It is still trying to do its job.",
+      "giver": "maren",
+      "trigger": { "type": "quest_complete", "quest": "q2_voice_in_stone" },
+      "premise": "Maren points east, to a guard post — and to the thing walking its floor. It kept the gate for thirty years. It still means to.",
+      "objectives": [
+        { "id": "o1_east",    "kind": "reach_zone", "target": "guard_post_east", "position": { "x": 52, "y": 1, "z": 7 }, "radius": 8, "hint": null, "optional": false },
+        { "id": "o2_observe", "kind": "approach_entity", "target": "garren_husk", "position": { "x": 52, "y": 1, "z": 8 }, "radius": 12, "hint": "Watch it before you fight it.", "optional": false },
+        { "id": "o3_defeat",  "kind": "defeat", "target": "garren_husk", "hint": null, "optional": false },
+        { "id": "o4_if_you_fall", "kind": "survive_death", "target": "campfire_square", "hint": "If you fall, you wake at the fire. Get up.", "optional": true }
+      ],
+      "mechanics_taught": ["lock_on", "dodge", "stamina", "light_attack", "death_respawn"],
+      "rewards": { "open_door": "guard_post_door", "activate_campfire": "cp_guardpost", "set_flag": "garren_at_rest", "unlock_dialogue": "dlg_maren_after_husk", "advance_to": "q4_what_walls_remember" },
+      "next": "q4_what_walls_remember"
+    },
+    {
+      "id": "q4_what_walls_remember",
+      "title": "What the Walls Remember",
+      "subtitle": "The village left its confession in the stone.",
+      "giver": "environment",
+      "trigger": { "type": "quest_complete", "quest": "q3_gatekeeper" },
+      "premise": "Inside the guard post, the old way to the sealed gate is broken — a collapsed floor, a gap no one alive can jump. The villagers built this place, and they wrote what they did on its walls. Read it. Then build across the gap, the way they once would have.",
+      "objectives": [
+        { "id": "o1_build",    "kind": "place_block", "target": "collapse_gap", "position": { "x": 50, "y": 1, "z": 9 }, "count": 1, "hint": "Place a block to bridge the gap.", "optional": false },
+        { "id": "o2_ledger",   "kind": "interact", "target": "lore_village_ledger", "position": { "x": 46, "y": 1, "z": 24 }, "hint": null, "optional": false },
+        { "id": "o3_offering", "kind": "interact", "target": "lore_offering_bowl", "position": { "x": 33, "y": 1, "z": 14 }, "hint": null, "optional": false }
+      ],
+      "mechanics_taught": ["build_place", "environmental_lore"],
+      "rewards": { "set_flag": "knew_the_truth", "open_door": "gate_chamber_door", "advance_to": "q5_sigil_that_knew_you" },
+      "next": "q5_sigil_that_knew_you"
+    },
+    {
+      "id": "q5_sigil_that_knew_you",
+      "title": "The Sigil That Knew You",
+      "subtitle": "It has ignored everyone for three hundred years. It pulses for you.",
+      "giver": "environment",
+      "trigger": { "type": "quest_complete", "quest": "q4_what_walls_remember" },
+      "premise": "You stand again before the sealed gate — but this time you came through the village's back way, and you carry what they wrote. Above the door, the teal sigil. It has been dark for every villager who ever prayed to it. It is not dark for you.",
+      "objectives": [
+        { "id": "o1_sigil", "kind": "approach", "target": "sigil", "position": { "x": 32, "y": 12, "z": 5 }, "radius": 4, "hint": null, "optional": false },
+        { "id": "o2_enter", "kind": "reach_zone", "target": "hollow_reach_intro", "position": { "x": 32, "y": 1, "z": 2 }, "radius": 3, "hint": null, "optional": false },
+        { "id": "o3_end",   "kind": "listen", "target": "dlg_maren_cliffhanger", "hint": null, "optional": false }
+      ],
+      "mechanics_taught": ["culmination"],
+      "rewards": { "set_flag": "act1_complete", "unlock_act": "act2" },
+      "next": null
+    }
+  ],
+
+  "dialogue": [
+    {
+      "id": "dlg_maren_first_call",
+      "quest": "q1_embers",
+      "trigger": { "type": "on_objective", "objective": "o1_campfire", "once": true },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "A voice, thin, from far north — behind the sealed gate.",
+      "lines": [
+        "You — by the fire. Stay still.",
+        "It hears running. Walk.",
+        "The gate. North. Come to the gate, and speak low."
+      ],
+      "choices": null,
+      "completes_objective": null,
+      "sets_flag": "maren_calling",
+      "advances_quest": null
+    },
+    {
+      "id": "dlg_maren_gate",
+      "quest": "q2_voice_in_stone",
+      "trigger": { "type": "enter_zone", "zone": "gate_square", "once": true },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Behind the sealed gate. One grey hand reaches through a crack in the stone.",
+      "lines": [
+        "You're awake. Good. I wasn't sure you would be.",
+        "The seal on this gate will hold another hour — maybe less.",
+        "The thing that took our people — it never left. It's nesting.",
+        "There is a way down. The eastern guard post. But something is already walking its floor."
+      ],
+      "choices": [
+        { "id": "c_creature", "label": "What took your people?",                "next_dialogue": "dlg_maren_creature" },
+        { "id": "c_wayin",    "label": "How do I reach the guard post?",        "next_dialogue": "dlg_maren_wayin" },
+        { "id": "c_others",   "label": "Is anyone else alive?",                 "next_dialogue": "dlg_maren_others" },
+        { "id": "c_who",      "label": "Who are you? How can I hear you through stone?", "next_dialogue": "dlg_maren_who" },
+        { "id": "c_go",       "label": "I'll go east. Keep the seal.",          "next_dialogue": null, "completes_objective": "o2_listen", "advances_quest": "q3_gatekeeper", "sets_flag": "maren_met" }
+      ],
+      "completes_objective": null,
+      "advances_quest": null
+    },
+    {
+      "id": "dlg_maren_creature",
+      "quest": "q2_voice_in_stone",
+      "trigger": { "type": "on_choice", "from": "c_creature", "once": false },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Behind the gate. Her voice drops.",
+      "lines": [
+        "We called it the Hollow. The stories said it was a beast that crawled up from below.",
+        "Stories are what you tell children so they'll sleep. I am too old to sleep.",
+        "It isn't eating what it took. It's... looking through them. For something it lost."
+      ],
+      "choices": [
+        { "id": "c_go", "label": "I'll go east. Keep the seal.", "next_dialogue": null, "completes_objective": "o2_listen", "advances_quest": "q3_gatekeeper", "sets_flag": "maren_met" }
+      ]
+    },
+    {
+      "id": "dlg_maren_wayin",
+      "quest": "q2_voice_in_stone",
+      "trigger": { "type": "on_choice", "from": "c_wayin", "once": false },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Behind the gate.",
+      "lines": [
+        "East of here. A guard post — stone roof, one door.",
+        "The door is not the problem. What walks in front of it is.",
+        "Watch it before you swing. It forgets it has a body, for one breath, after each strike. That breath is yours."
+      ],
+      "choices": [
+        { "id": "c_go", "label": "I'll go east. Keep the seal.", "next_dialogue": null, "completes_objective": "o2_listen", "advances_quest": "q3_gatekeeper", "sets_flag": "maren_met" }
+      ]
+    },
+    {
+      "id": "dlg_maren_who",
+      "quest": "q2_voice_in_stone",
+      "trigger": { "type": "on_choice", "from": "c_who", "once": false },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Behind the gate. She pauses a long time before answering.",
+      "lines": [
+        "Maren. I kept the records. Now I keep the gate.",
+        "You hear me through stone because the seal is thinning — and because you are the right shape to fit the crack.",
+        "Don't ask me what that means yet. I owe you the truth. I do not owe you all of it at once."
+      ],
+      "choices": [
+        { "id": "c_go", "label": "I'll go east. Keep the seal.", "next_dialogue": null, "completes_objective": "o2_listen", "advances_quest": "q3_gatekeeper", "sets_flag": "maren_met" }
+      ]
+    },
+    {
+      "id": "dlg_maren_others",
+      "quest": "q2_voice_in_stone",
+      "trigger": { "type": "on_choice", "from": "c_others", "once": false },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Behind the gate. A long silence, then a name said very quietly.",
+      "lines": [
+        "Most are gone. Taken below, or simply... gone. The line between those two is not a clean one.",
+        "Three were carried into the deep while it was still daylight. I felt them leave, the way you feel embers go out in another room.",
+        "But there is a child. Toma. Still up here — hiding in one of the houses. I hear nothing from the well house. But the west house, sometimes, a board creaks that has no right to.",
+        "Don't bring the child to the gate; the seal is thin enough already. Just... know they're there. Know that someone still is."
+      ],
+      "choices": [
+        { "id": "c_go", "label": "I'll go east. Keep the seal.", "next_dialogue": null, "completes_objective": "o2_listen", "advances_quest": "q3_gatekeeper", "sets_flag": "maren_met" }
+      ]
+    },
+    {
+      "id": "dlg_maren_before_combat",
+      "quest": "q3_gatekeeper",
+      "trigger": { "type": "enter_zone", "zone": "guard_post_east", "once": true },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Her voice, thin, carried across the courtyard.",
+      "lines": [
+        "That's Garren, at the post. He kept the gate for thirty years.",
+        "He'll still try to. Don't hate him for it.",
+        "If he puts you down — and he may — you'll wake at the fire. Get up. We don't stay dead here."
+      ],
+      "choices": [
+        { "id": "c_fight", "label": "I'm ready.", "next_dialogue": null, "sets_flag": "garren_named" }
+      ]
+    },
+    {
+      "id": "dlg_toma_first",
+      "quest": "q1_embers",
+      "trigger": { "type": "enter_zone", "zone": "west_house", "once": true },
+      "speaker": "toma",
+      "speaker_display": "Toma",
+      "where": "A small shape pressed into the darkest corner of the west house, behind a tipped crate, clutching a wooden toy.",
+      "lines": [
+        "...don't tell the tall one I'm here.",
+        "He came up through the floor. Not broke — opened. Like a door that goes down.",
+        "He wasn't angry. He was looking. Under the beds. In the walls. Looking for something he'd lost. He looked so sad. I didn't know sad things could take people.",
+        "I made him a friend. Out of wood. I left it by the hole for him. He didn't take it. He only takes the things that are warm."
+      ],
+      "choices": [
+        { "id": "c_stay", "label": "Stay hidden. I'll come back up for you.", "next_dialogue": null },
+        { "id": "c_gate", "label": "There's an elder behind the north gate. Can you reach her?", "next_dialogue": "dlg_toma_maren" }
+      ],
+      "completes_objective": "o2_find_survivor",
+      "sets_flag": "found_toma",
+      "advances_quest": null
+    },
+    {
+      "id": "dlg_toma_maren",
+      "quest": "q1_embers",
+      "trigger": { "type": "on_choice", "from": "c_gate", "once": false },
+      "speaker": "toma",
+      "speaker_display": "Toma",
+      "where": "Toma shakes their head — small, and certain.",
+      "lines": [
+        "Too far. The tall one is between here and there.",
+        "Go on. I'm good at hiding. I've been practising my whole short life."
+      ],
+      "choices": null
+    },
+    {
+      "id": "dlg_well_echo",
+      "quest": "q2_voice_in_stone",
+      "trigger": { "type": "on_interact", "entity": "lore_well_inscription", "once": true },
+      "speaker": "echo",
+      "speaker_display": "A voice remembered in the stone",
+      "where": "At the well. The carved words seem to speak themselves.",
+      "lines": [
+        "— fifth offering, midsummer. We built him a stair of polished stone, block on block, the old way.",
+        "He climbed it. He did not eat. He climbed, and climbed, and could not remember the top.",
+        "We thought: he is hungry, and we are poor food. We were wrong on both counts."
+      ],
+      "choices": null
+    },
+    {
+      "id": "dlg_maren_after_husk",
+      "quest": "q3_gatekeeper",
+      "trigger": { "type": "on_defeat", "entity": "garren_husk", "once": true },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Behind the gate. Quieter now.",
+      "lines": [
+        "Garren's at rest. Thank you. He would have thanked you — the part of him that's still in there.",
+        "The door is open. The second fire is lit. Rest there if you need it.",
+        "Beyond the post, the old way back to this gate. The village wrote its confession on those walls. Read all of it. Then you'll know what we did — and why it didn't work."
+      ],
+      "choices": [
+        { "id": "c_on", "label": "I'll read it.", "next_dialogue": null, "advances_quest": "q4_what_walls_remember" }
+      ]
+    },
+    {
+      "id": "dlg_maren_cliffhanger",
+      "quest": "q5_sigil_that_knew_you",
+      "trigger": { "type": "on_objective", "objective": "o2_enter", "once": true },
+      "speaker": "maren",
+      "speaker_display": "Elder Maren",
+      "where": "Her voice, for the first time, uncertain.",
+      "lines": [
+        "The sigil. It's — it's singing to you. It has never. Not once. Not for any of us.",
+        "I told you it was searching, down there. I didn't tell you what for.",
+        "Go down. Find it. And if it remembers anything at all... tell it Maren is still here. Still waiting."
+      ],
+      "choices": null,
+      "completes_objective": "o3_end",
+      "sets_flag": "act1_complete",
+      "advances_quest": null
+    }
+  ],
+
+  "lore_items": [
+    {
+      "id": "lore_shelter_hand",
+      "kind": "echo",
+      "name": "Scorched handprint",
+      "world_position": { "x": 32, "y": 2, "z": 35 },
+      "requires": null,
+      "lore_layer": 1,
+      "subtitle": "On the shelter wall: a handprint burned into the stone, fingers spread wide, palm flat — someone pressed hard against it as the wall lost its edges.",
+      "text": "The scorch is the shape of a person trying not to fall through a wall that was no longer there.",
+      "tags": ["unravelling", "grief"]
+    },
+    {
+      "id": "lore_masons_chisel",
+      "kind": "object",
+      "name": "A mason's chisel",
+      "world_position": { "x": 40, "y": 1, "z": 18 },
+      "requires": null,
+      "lore_layer": 1,
+      "subtitle": "Lying in the rubble of a collapsed wall, edge still sharp, as if set down mid-stroke.",
+      "text": "The villagers built the way their grandparents taught them — block on block, shaping shelter from raw stone. They never knew the word for what they were really doing. The chisel is the diminished echo of an act that once raised mountains.",
+      "tags": ["forge", "building"]
+    },
+    {
+      "id": "lore_child_drawing",
+      "kind": "drawing",
+      "name": "Child's drawing",
+      "world_position": { "x": 16, "y": 1, "z": 24 },
+      "requires": null,
+      "lore_layer": 2,
+      "subtitle": "Scratched into a wood-block wall inside the west house. Stick figures fleeing. Something tall behind them, rising from a hole in the ground. One corner blackened by fire.",
+      "text": "It came from below. It moved upward. A child drew it the only way a child could — and even then, the part under the ground is drawn largest. The child is Toma, still hiding somewhere in this house.",
+      "tags": ["hollow", "mystery", "toma"]
+    },
+    {
+      "id": "lore_tomas_toy",
+      "kind": "object",
+      "name": "Toma's carved wooden toy",
+      "world_position": { "x": 15, "y": 1, "z": 24 },
+      "requires": null,
+      "lore_layer": 2,
+      "subtitle": "On the floor of the west house, near where Toma hides. A small rough figure whittled from walnut — a person, or a child's attempt at one. It carries no glow, no warmth. It is the only block-crafted thing in Edhari with no Forge-light in it.",
+      "text": "Toma made a friend for the thing beneath the village and left it by the hole. The Hollow did not take it. It takes only what carries Forge-warmth — the offerings, the shaped stone, the people. A plain wooden toy has nothing it wants. Here is the gentlest truth in Edhari: a child performed the same act that once raised mountains, and made something the god below could not even use.",
+      "tags": ["toma", "forge", "offerings", "theme"]
+    },
+    {
+      "id": "lore_well_inscription",
+      "kind": "inscription",
+      "name": "Well inscription",
+      "world_position": { "x": 32, "y": 1, "z": 17 },
+      "requires": null,
+      "lore_layer": 2,
+      "subtitle": "Carved into the well rim. The stone is grooved where countless fingertips have traced the words.",
+      "text": "He came from below. We fed him everything. He left anyway.",
+      "triggers_dialogue": "dlg_well_echo",
+      "tags": ["hollow", "mystery", "offerings"]
+    },
+    {
+      "id": "lore_offering_bowl",
+      "kind": "object",
+      "name": "Offering bowl",
+      "world_position": { "x": 33, "y": 1, "z": 14 },
+      "requires": null,
+      "lore_layer": 3,
+      "subtitle": "A stone bowl by the roadside, crusted with ash and something darker and older than ash. Set facing the gate, not the houses.",
+      "text": "They did not fight it. They fed it. The bowl faces the gate because the feeding was a prayer — and the prayer was: take this, and leave us. It never once left.",
+      "tags": ["offerings", "hollow"]
+    },
+    {
+      "id": "lore_village_ledger",
+      "kind": "note",
+      "name": "Torn village ledger",
+      "world_position": { "x": 46, "y": 1, "z": 24 },
+      "requires": null,
+      "lore_layer": 3,
+      "subtitle": "Inside the east house, on the floor. Pages of tallies in a steady hand — then a final entry in a hand that shakes.",
+      "text": "The ledger counts offerings by date, growing year on year: stone, then shaped stone, then finished works — a stair, a wall, a child's cradle. The last line, in a shaking hand: 'He is not eating. He is searching. God help us, we fed him everything and he is still searching.'",
+      "tags": ["offerings", "hollow", "search"]
+    },
+    {
+      "id": "lore_gate_graffiti",
+      "kind": "inscription",
+      "name": "Scratched warning",
+      "world_position": { "x": 30, "y": 1, "z": 6 },
+      "requires": null,
+      "lore_layer": 3,
+      "subtitle": "Beneath the clean Shaper-stone of the gate, rougher runes cut by many hands across many years — none of them the same age.",
+      "text": "do not wake the builder. do not wake the builder. DO NOT WAKE THE BUILDER.",
+      "tags": ["shaper", "warning"]
+    },
+    {
+      "id": "lore_maren_anchor",
+      "kind": "object",
+      "name": "Charcoal sigil",
+      "world_position": { "x": 34, "y": 1, "z": 4 },
+      "requires": "q2_voice_in_stone",
+      "lore_layer": 3,
+      "subtitle": "On the gate stone by the crack. A small Shaper-anchor mark, redrawn in fresh campfire charcoal over older, faded versions of itself — dozens of layers.",
+      "text": "Maren redraws this every dawn. It is the only thing holding the seal, and the seal is the only thing between the village and what nests below. She has not slept a full night in three years. The charcoal never has time to fade.",
+      "tags": ["maren", "seal", "forge"]
+    },
+    {
+      "id": "lore_sigil_carving",
+      "kind": "mural",
+      "name": "The gate sigil",
+      "world_position": { "x": 32, "y": 12, "z": 5 },
+      "requires": "q4_what_walls_remember",
+      "lore_layer": 4,
+      "subtitle": "Above the door: a spiral of inset channels. Every groove is weathered dull — except the teal inlay at its heart, which looks cut yesterday.",
+      "text": "A Forge-spiral — the oldest sign in Vaelthar, the mark a Shaper leaves on a door they mean to keep. For three centuries it has been dark stone to every eye that looked up at it. The teal is the part that remembers who it was made for.",
+      "triggers_dialogue": null,
+      "tags": ["shaper", "teal", "auren"]
+    },
+    {
+      "id": "lore_guardpost_mural",
+      "kind": "mural",
+      "name": "The Builder fresco",
+      "world_position": { "x": 52, "y": 1, "z": 7 },
+      "requires": "q4_what_walls_remember",
+      "lore_layer": 5,
+      "subtitle": "Inside the guard post, a half-erased wall-carving: a radiant figure raising blocks into a skyline, small figures rejoicing below. The radiant figure's face has been worn smooth — by time, or by hands.",
+      "text": "Before it was a nest, this was a home — built by a being who raised the world the way the villagers raised their walls, only with joy instead of habit. The face is gone. The silhouette is familiar in a way you cannot place and do not want to.",
+      "triggers_dialogue": null,
+      "tags": ["shaper", "hollow", "cliffhanger"]
+    }
+  ],
+
+  "act_end": {
+    "id": "end_act1",
+    "title": "End of Act I — The Descent",
+    "trigger_quest": "q5_sigil_that_knew_you",
+    "beats": [
+      "The teal sigil blazes — not flickering, not pulsing, but steady, the way a lamp looks up when someone it loves walks in. The gate does not grind open. It remembers how, and opens for you alone.",
+      "You step through. The Hollow Reach: an ancient worksite, half-raised and half-Unravelled, beautiful the way a half-finished sentence is beautiful. Walls of shaped light dissolve into ash at their edges. Someone was building here. Someone stopped.",
+      "On the far wall, a carving: a radiant figure raising Edhari block by block, a small crowd rejoicing below. The figure's face is worn smooth — but the outline of the shoulders, the set of the hands on the stone, is a shape you have only ever seen from the outside, in your own shadow.",
+      "Deeper, where the Reach turns to dark, something enormous draws one slow breath. Not asleep. Not awake. Searching.",
+      "And one small, ordinary weight against your chest: Toma, still hidden in the ruins above, waiting for someone to come back up. The descent is a promise made in the wrong direction.",
+      "Behind you, the gate seals shut — gently, the way a door closes on a room someone means to come back to."
+    ],
+    "final_line": "Maren, distant, as if through stone: \"Tell it Maren is still here.\"",
+    "card": "ACT I  ·  THE DESCENT  —  end.  Continue in Act II: The Truth in the Deep.",
+    "cliffhanger_questions": [
+      "Why did the gate open for Auren, and for no one else in three hundred years?",
+      "What is the Hollow searching for — and why does its shadow wear Auren's shape?",
+      "What did Maren mean: 'the right shape to fit the crack'?",
+      "Toma is still hiding above; the three survivors are below. Can one person go down and still come back up for the other?"
+    ]
+  }
+}

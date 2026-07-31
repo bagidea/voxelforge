@@ -63,6 +63,13 @@ godot/.godot/
 # `target-review/` is the same pattern for the review lane's own CARGO_TARGET_DIR.
 /target-combat/
 /target-review/
+# Same pattern, one dir per lane so the lanes never fight each other's build
+# lock. Together these are ~15 GB — every one of them must stay untracked.
+/target-anim/
+/target-audio/
+/target-int/
+/target-quest/
+/target-vfx/
 **/__pycache__/
 # One-off rustc/cl.exe toolchain probes from the Windows link-error hunt.
 /_check_rustc_cl.ps1
@@ -77,3 +84,9 @@ client/editor_config.json
 # .patch snapshots — ignore the whole directory rather than deleting the
 # evidence. Keep the files on disk; just don't track them.
 /_combat_proof/
+/_poppy_proof/
+# Same for the quest lane's evidence + its one-line verdict file, and the
+# `logs-*.txt` run dumps (the rule above only catches `logs_*.txt`).
+/_quest_proof/
+/_combat_proof_result.txt
+logs-*.txt

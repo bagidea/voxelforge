@@ -24,7 +24,10 @@ webgpu = ["bevy/webgpu"]
 
 [dependencies]
 voxelforge-sim = { path = "../sim" }
-bevy = "0.19"
+# `wav` is NOT in bevy's default audio set (that ships vorbis/ogg only), and every
+# file in assets/audio/ is a RIFF/WAVE — without it `bevy_audio` decodes nothing and
+# panics on `UnrecognizedFormat` (audio_source.rs:97) the first time a SFX plays.
+bevy = { version = "0.19", features = ["wav"] }
 dot_vox = "5"
 # VERIFY-ONLY: added temporarily to compile-check editor_ui.rs; remove after Poppy wires.
 bevy_egui = "0.41"

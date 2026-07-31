@@ -985,7 +985,7 @@ fn combat_proof(
                 proof.husk_hp0.unwrap_or(80.0), husk_hp
             );
         } else {
-            let (hx, hy, hz) = husk_tf().map(|ht| (ht.x, ht.y, ht.z)).unwrap_or((0.0, 0.0, 0.0));
+            let (hx, _hy, hz) = husk_tf().map(|ht| (ht.x, ht.y, ht.z)).unwrap_or((0.0, 0.0, 0.0));
             println!(
                 "COMBAT_HIT husk_hp {:.0}->{:.0} (delta={delta:.1}) => FAIL  \
                  player=({:.1},{:.1},{:.1}) husk=({hx:.1},{hz:.1}) dist={:.2}",

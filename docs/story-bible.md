@@ -1,7 +1,7 @@
 # Voxelforge — Story Bible
 
 > **Canon document.** Narrative spine for the full campaign. Engineer-readable where it touches gameplay. Design decisions marked **LOCKED** or **OPEN** for CEO review.
-> Last updated: 2026-07-27 · Owner: Monanisa (Design)
+> Last updated: 2026-07-31 · Owner: Monanisa (Design). Act 1 story-data + Toma canon pass: Rose.
 
 ---
 
@@ -95,6 +95,25 @@ Auren begins as someone who doesn't fully trust their own body (the stamina-base
 
 **Arc beat in the first 10 minutes:** The moment they approach the dungeon gate and the teal sigil pulses in response to them — and them alone — is the first hint. The game does not comment on it. Players who replay will catch it.
 
+### Supporting Cast — Toma (child of Edhari)
+
+**Status:** Canon as of 2026-07-31. Proposed in `docs/character-design.md` §3.2 (Monanisa) and admitted by the story-bible owner on review. **No LOCKED fact was altered** — verified against every LOCKED item in §7: the carved toy carries *no* teal (respects "The Teal is Shaper-light"); Toma is a villager (Auren is not — §3); Toma is one of the three previously-unnamed Act 2 survivors (§5), so this only names something the bible already implies exists.
+
+**Who:** A child of Edhari — the one who drew the picture on the west-house wall (§6, Act 1 environmental fragment). Small, frightened, still alive where almost everyone else is gone.
+
+**Why Toma exists:** the ruined village is affecting because it is abstract; Toma makes it specific. Finding a living child hiding behind their own frightened drawing reframes the whole act — this is not a place that *was* a home, one is still trying to *stay* a home.
+
+**Narrative function (does triple duty, like Maren's lines):**
+- **Stakes** — a named, vulnerable survivor the player has actually met, not just heard about.
+- **Lore vehicle** — Toma saw the Hollow come up through the ground but lacks the words for what it was: a child's-eye account, unfiltered, terrified, specific in exactly the wrong details. Adult NPCs (Maren) cannot give this register.
+- **The toy** — Toma keeps a **carved wooden toy that does not glow**. It is the one block-crafted object in the cast carrying no Forge-light: a child "performing a diminished echo of a divine act" (§2) with no idea what they are really doing. The absence of teal is the point — innocence under the weight the player already understands. (Visual spec lives in `docs/character-design.md` §3.2, Monanisa's lane; do not redesign here.)
+
+**Through-line to Act 2:** Toma is **one of the three survivors** the player later recovers from stasis in the deep (§5, Act 2). Naming them in Act 1 turns a static environmental prop into a thread the player carries down with them: the child they met upstairs is one of the three they will find below. Maren knows Toma is still hidden up in the village and does not say so until asked — rationing hope the way she rations truth.
+
+**What Toma is NOT (canon guard):** not a Shaper, not Shaper-touched, carries no latent Forge ability. Toma is an ordinary child. That ordinariness is load-bearing — it is what the Hollow's tragedy is measured against, and it is why the toy stays plain wood even if the thread is developed further.
+
+⟨**OPEN:** Toma's ultimate fate across the two endings (does the child survive Ending A and Ending B, and reunited with whom?) — defer with the canonical-ending OPEN item in §7.⟩
+
 ---
 
 ## 4. Antagonist & Central Conflict
@@ -133,14 +152,14 @@ This is the question Auren must answer by Act 3. There is no objectively correct
 - Clear the dungeon entrance (first-playable-loop Acts 0–4)
 - Maren provides the first direct exposition: *"The Forge beneath this village was never truly dormant. Something woke it — or something never let it sleep."*
 - First dungeon region: the **Hollow Reach** — an ancient Shaper worksite, half-built, half-consumed. Evidence everywhere that something once built here with love.
-- Chapter boss: **The Warden** — a former villager almost fully Unravelled; still wears the clothes of a village craftsperson. Defeating it drops the first **Shaper Fragment** — a voxel artefact that pulses teal in Auren's hands. A cutscene: Auren's hand involuntarily shapes a small block from nothing. The game immediately moves on. No dialogue about it.
+- Chapter boss: **The Warden** — a former village elder, almost fully Unravelled; still wears the apron of a village craftsperson (in Edhari an elder often *was* a craftsperson; wording unified with §4 Milestone-1 and `docs/character-design.md` §2.2). Defeating it drops the first **Shaper Fragment** — a voxel artefact that pulses teal in Auren's hands. A cutscene: Auren's hand involuntarily shapes a small block from nothing. The game immediately moves on. No dialogue about it.
 
 **Tone:** Grief. The dungeon looks like a place people used to love.
 
 ### Act 2 — The Truth in the Deep (Chapters 3–5)
 
 **World state:** The deeper the player descends, the more the architecture shifts from village ruin to something older — clearly pre-dating Edhari by centuries. Beautiful. Enormous. The Hollow built this.
-**Player goal:** Reach the Hollow's nest. Recover the remaining survivors (three imprisoned in stasis by Unravelling energy).
+**Player goal:** Reach the Hollow's nest. Recover the remaining survivors (three imprisoned in stasis by Unravelling energy — one of them is **Toma**, the child Auren met hiding in Edhari; see §3 Supporting Cast).
 **Story beats:**
 - The three **Shaper Chambers** — each a historical record in environmental form. Block-art murals showing the Hollow in its original form: a radiant being building the world with joy.
 - A sealed room: the Hollow's personal chamber. Inside, a structure that resembles a cradle. Something small was being made here when the grief hit.
@@ -182,7 +201,7 @@ This is the question Auren must answer by Act 3. There is no objectively correct
 
 | Environmental fragment | Narrative layer |
 |---|---|
-| *Child's drawing — figures fleeing something large* | The Hollow came from below, moved upward |
+| *Child's drawing — figures fleeing something large* | The Hollow came from below, moved upward. The artist is **Toma** (§3) — a specific child hiding in the west house, not an abstraction |
 | *Well inscription: "He came from below. We fed him everything. He left anyway."* | The villagers knew. They tried to appease it. They offered their forge-energy (building, shaping) and it consumed that too — but the grief driving it is not satisfied by energy |
 | *Dungeon gate sigil pulses when approached* | **The teal responds to Auren specifically** — other players reaching the gate in a future chapter log will note NPCs cannot trigger it. Auren is a Shaper. The gate recognises them. |
 
@@ -222,6 +241,8 @@ Elder Maren's three lines do triple duty:
 - **Two-ending structure** — both endings exist; canonical default is OPEN
 - Campfire = Forge-point cosmology (already implied in GAME-VISION.md)
 - Theme: Creation and destruction as the same act
+- First dungeon boss: **The Warden** — a former village elder, almost fully Unravelled, in a craftsperson's clothes; drops the first Shaper Fragment (wording unified across §4/§5; visual spec in `docs/character-design.md` §2.2)
+- Supporting NPC: **Toma** — a child of Edhari; artist of the west-house drawing; one of the three Act 2 survivors. Ordinary, *not* Shaper-touched (the carved toy deliberately carries no teal). Role locked; visual spec in `docs/character-design.md` §3.2
 
 ### OPEN — Awaiting CEO Decision
 
@@ -233,6 +254,7 @@ Elder Maren's three lines do triple duty:
 | **What the Hollow lost** | The cradle suggests a child/creation that was destroyed. Deliberately ambiguous to allow CEO to weigh in on emotional register — parental grief vs creative grief vs romantic grief |
 | **Canonical ending** | Ending A (extinction/hope) vs Ending B (reconciliation/unease) — or both equal. This affects Chapter 6 design significantly |
 | **Maren's fate** | Does she survive both endings? Does she enter the dungeon herself? |
+| **Toma's fate** | Survives both endings? Reunited with whom? (Defer with the canonical-ending decision.) |
 | **Chapter count** | 6 chapters assumed for full campaign (~15–20 hr). CEO to confirm scope before Chapters 3–6 are designed in detail |
 | **Multiplayer implication** | GAME-VISION.md marks co-op as non-goal for v1. Story Bible does not contradict this. Flagged in case v2 scope changes. |
 

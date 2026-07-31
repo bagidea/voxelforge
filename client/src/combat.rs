@@ -21,6 +21,7 @@
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
+use crate::audio::SfxEvent;
 use crate::{FlyCam, PLAYER_HALF_W};
 use voxelforge_sim::worldgen::terrain_height;
 
@@ -763,6 +764,7 @@ pub fn player_combat(
     mut lock: ResMut<LockOn>,
     mut shake: ResMut<Shake>,
     mut died: MessageWriter<PlayerDied>,
+    mut sfx: MessageWriter<SfxEvent>,
     mut player_q: Query<
         (&mut Transform, &mut PlayerCombat, &mut Stamina, &Health, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
@@ -786,6 +788,7 @@ pub fn player_combat(
     pc.tick(dt);
     if hp.dead() && pc.state != CombatState::Dead {
         pc.state = CombatState::Dead;
+        sfx.write(SfxEvent::PlayerDeath);
         died.write(PlayerDied);
         info!("COMBAT player died — PlayerDied event fired");
     }
@@ -832,13 +835,19 @@ pub fn player_combat(
     } else if pc.charge > 0.0 {
         // Heavy button released: charged if held past the threshold, else heavy.
         if pc.charge >= CHARGE_HOLD {
-            pc.start_charged(&mut stam);
+            if pc.start_charged(&mut stam) {
+                sfx.write(SfxEvent::SwingHeavy { position: ptf.translation });
+            }
         } else {
-            pc.start_heavy(&mut stam);
+            if pc.start_heavy(&mut stam) {
+                sfx.write(SfxEvent::SwingHeavy { position: ptf.translation });
+            }
         }
         pc.charge = 0.0;
     } else if intent.light {
-        pc.start_light(&mut stam);
+        if pc.start_light(&mut stam) {
+            sfx.write(SfxEvent::SwingLight { position: ptf.translation });
+        }
     }
 
     // Roll movement (§2.2): glide DODGE_DISTANCE (2.5 blocks) forward over the
@@ -875,6 +884,12 @@ pub fn player_combat(
             ehp.damage(dmg * mult);
             let broke = ep.take(poise_dmg, false);
             landed = true;
+            // Audio feedback — pick light or heavy based on the attack type.
+            if matches!(pc.state, CombatState::Heavy | CombatState::Charged) {
+                sfx.write(SfxEvent::HitHeavy { position: etf.translation });
+            } else {
+                sfx.write(SfxEvent::HitLight { position: etf.translation });
+            }
             // Hit-stop on both (§5.2) + screen-shake (§5.3).
             pc.hitstop = if broke { HITSTOP_STAGGER } else { HITSTOP_LIGHT };
             shake.hit(if matches!(pc.state, CombatState::Heavy | CombatState::Charged) {
@@ -904,6 +919,7 @@ pub fn husk_ai(
     time: Res<Time>,
     mut commands: Commands,
     mut shake: ResMut<Shake>,
+    mut sfx: MessageWriter<SfxEvent>,
     mut enemy_q: Query<(Entity, &mut Transform, &mut Enemy, &Health, &mut Poise), (With<Enemy>, Without<FlyCam>)>,
     mut player_q: Query<
         (&Transform, &mut Health, &mut PlayerCombat, &mut Stamina, &mut Poise),
@@ -919,6 +935,7 @@ pub fn husk_ai(
         ep.tick(dt);
         if ehp.dead() {
             e.state = HuskState::Dead;
+            sfx.write(SfxEvent::EnemyDeath { position: etf.translation });
             commands.entity(entity).despawn();
             info!("COMBAT husk defeated — despawned entity={:?}", entity);
             continue;
@@ -977,10 +994,11 @@ pub fn husk_ai(
             }
             HuskState::Swing1 => {
                 if !e.hit_applied && e.timer <= HUSK_ACTIVE {
-                    if try_hit_player(
+                    let (connected, outcome) = try_hit_player(
                         HUSK_SWING1_DMG, HUSK_SWING1_POISE, dist, &mut php, &mut pc,
                         &mut pstam, &mut ppoise, &mut shake,
-                    ) {
+                    );
+                    if connected {
                         e.hitstop = HITSTOP_ENEMY;
                         // Parried? The player's punish window just opened → the
                         // Husk eats posture damage and a longer hit-stop (§2.5).
@@ -988,6 +1006,7 @@ pub fn husk_ai(
                             ep.take(PARRY_POSTURE, false);
                             e.hitstop = HITSTOP_PARRY;
                         }
+                        emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
                     }
                     e.hit_applied = true;
                 }
@@ -1005,15 +1024,17 @@ pub fn husk_ai(
             }
             HuskState::Swing2 => {
                 if !e.hit_applied && e.timer <= HUSK_ACTIVE {
-                    if try_hit_player(
+                    let (connected, outcome) = try_hit_player(
                         HUSK_SWING2_DMG, HUSK_SWING2_POISE, dist, &mut php, &mut pc,
                         &mut pstam, &mut ppoise, &mut shake,
-                    ) {
+                    );
+                    if connected {
                         e.hitstop = HITSTOP_ENEMY;
                         if pc.punish > 0.0 {
                             ep.take(PARRY_POSTURE, false);
                             e.hitstop = HITSTOP_PARRY;
                         }
+                        emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
                     }
                     e.hit_applied = true;
                 }
@@ -1037,9 +1058,23 @@ pub fn husk_ai(
     }
 }
 
+/// What happened when an enemy swing reached the player — used by the audio
+/// layer to pick the right SFX.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum EnemyHitOutcome {
+    Missed,
+    Dodged,
+    Parried,
+    FailedParry,
+    Blocked,
+    GuardBroke,
+    PlainHit,
+}
+
 /// One Husk swing against the player. Honors i-frames (negate), block (50% +
-/// stamina), parry window (negate + posture) per §2.5. Returns true if the swing
-/// connected at all (for hit-stop bookkeeping).
+/// stamina), parry window (negate + posture) per §2.5. Returns (hit_stop_needed,
+/// what_happened) so the caller can book hit-stop and the audio layer can pick
+/// the right SFX.
 #[allow(clippy::too_many_arguments)]
 fn try_hit_player(
     dmg: f32,
@@ -1050,13 +1085,13 @@ fn try_hit_player(
     pstam: &mut Stamina,
     ppoise: &mut Poise,
     shake: &mut Shake,
-) -> bool {
+) -> (bool, EnemyHitOutcome) {
     if dist > MELEE_RANGE + PLAYER_HALF_W + 0.4 {
-        return false; // player stepped out of reach
+        return (false, EnemyHitOutcome::Missed); // player stepped out of reach
     }
     // Dodge i-frames negate everything (§2.2).
     if pc.invulnerable() {
-        return false;
+        return (false, EnemyHitOutcome::Dodged);
     }
     // Parry window (§2.5): tap parry as the hit lands → negate + posture + punish.
     if pc.state == CombatState::Parry && pc.timer <= PARRY_WINDOW {
@@ -1064,7 +1099,7 @@ fn try_hit_player(
         pc.punish = PARRY_PUNISH; // +25% window opens on the enemy
         shake.hit(SHAKE_LIGHT);
         pc.hitstop = HITSTOP_PARRY;
-        return true;
+        return (true, EnemyHitOutcome::Parried);
     }
     // Failed parry (§2.5): threw the parry but the 0.20 s window had closed —
     // punished with +25% damage and a 0.5 s recovery lock.
@@ -1073,7 +1108,7 @@ fn try_hit_player(
         pc.recovery = PARRY_FAIL_RECOVER;
         ppoise.take(poise_dmg, false);
         shake.hit(SHAKE_ENEMY_HIT);
-        return true;
+        return (true, EnemyHitOutcome::FailedParry);
     }
     // Block (§2.5): 50% off if stamina can pay, else guard-break stagger.
     if pc.state == CombatState::Block {
@@ -1081,19 +1116,31 @@ fn try_hit_player(
             php.damage(dmg * (1.0 - BLOCK_REDUCTION));
             ppoise.take(poise_dmg * 0.5, false);
             shake.hit(SHAKE_LIGHT);
-            return true;
+            return (true, EnemyHitOutcome::Blocked);
         } else {
             php.damage(dmg);
             ppoise.stagger = GUARD_BREAK; // guard broken → stagger
             shake.hit(SHAKE_ENEMY_HIT);
-            return true;
+            return (true, EnemyHitOutcome::GuardBroke);
         }
     }
     // Plain hit.
     php.damage(dmg);
     ppoise.take(poise_dmg, pc.hyper_armor());
     shake.hit(SHAKE_ENEMY_HIT);
-    true
+    (true, EnemyHitOutcome::PlainHit)
+}
+
+/// Map the outcome of an enemy swing against the player into an [`SfxEvent`].
+fn emit_enemy_hit_sfx(outcome: &EnemyHitOutcome, pos: Vec3, sfx: &mut MessageWriter<SfxEvent>) {
+    let ev = match outcome {
+        EnemyHitOutcome::Parried => SfxEvent::HitParry { position: pos },
+        EnemyHitOutcome::Blocked => SfxEvent::HitBlock { position: pos },
+        EnemyHitOutcome::GuardBroke => SfxEvent::HitHeavy { position: pos },
+        EnemyHitOutcome::FailedParry | EnemyHitOutcome::PlainHit => SfxEvent::PlayerHurt,
+        _ => return, // Missed | Dodged → no sound
+    };
+    sfx.write(ev);
 }
 
 /// Move the enemy's telegraph arm up during wind-up so the incoming swing reads

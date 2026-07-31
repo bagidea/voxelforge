@@ -8,7 +8,10 @@
 //! Chunk data and world-gen live in `voxelforge_sim` (shared with the server).
 //! The greedy mesher and atlas live in `voxel` (Bevy-coupled, client-only).
 
+mod anim;
+mod audio;
 mod combat;
+mod dialogue_ui;
 mod editor;
 mod editor_camera;
 mod editor_config;
@@ -17,7 +20,10 @@ mod gizmo;
 mod hero;
 mod import;
 mod mapfile;
+mod quest;
 mod scene;
+mod vfx;
+mod vfx_bridge;
 mod voxel;
 // NOTE: no top-level `mod input_map;` — input_map.rs is already pulled in as a
 // submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
@@ -67,6 +73,8 @@ pub(crate) struct Cfg {
     walk_demo: bool,
     /// Scripted combat demo (headless proof of attack→hit→stamina→dodge i-frames).
     combat_demo: bool,
+    /// Scripted quest demo (headless proof of accept→complete→reward→next quest opens).
+    pub(crate) quest_demo: bool,
     /// Scripted editor proof (headless proof that a click places/breaks a voxel
     /// through the same `paint_at_cursor` path the interactive editor uses).
     editor_demo: bool,
@@ -134,6 +142,9 @@ fn read_cfg() -> Cfg {
     // --combat-demo is the combat-loop proof (hit→kill→die→respawn). It also
     // turns --play on — needs the full scene (campsite, player, husk encounter).
     let combat_demo = has_arg("--combat-demo") || std::env::var("VOXELFORGE_COMBAT_DEMO").is_ok();
+    // --quest-demo is the quest-loop proof (accept→complete→reward→next quest).
+    // Also turns --play on — needs the full scene + NPCs + husk.
+    let quest_demo = has_arg("--quest-demo") || std::env::var("VOXELFORGE_QUEST_DEMO").is_ok();
     Cfg {
         bench: std::env::var("VOXELFORGE_BENCH").is_ok(),
         grid: std::env::var("VOXELFORGE_GRID")
@@ -141,7 +152,7 @@ fn read_cfg() -> Cfg {
             .and_then(|v| v.parse().ok())
             .unwrap_or(6),
         shot: std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty()),
-        play: play_demo || combat_demo || has_arg("--play") || std::env::var("VOXELFORGE_PLAY").is_ok(),
+        play: play_demo || combat_demo || quest_demo || has_arg("--play") || std::env::var("VOXELFORGE_PLAY").is_ok(),
         play_demo,
         hero: std::env::var("VOXELFORGE_HERO").is_ok(),
         present: std::env::var("VOXELFORGE_PRESENT").ok().filter(|s| !s.is_empty()),
@@ -153,6 +164,7 @@ fn read_cfg() -> Cfg {
         edit_demo: std::env::var("VOXELFORGE_EDIT_DEMO").is_ok(),
         walk_demo: std::env::var("VOXELFORGE_WALK_DEMO").is_ok(),
         combat_demo,
+        quest_demo,
         editor_demo: std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok(),
         map_load: std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty()),
         map_save: std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty()),
@@ -277,6 +289,7 @@ fn read_cfg() -> Cfg {
         edit_demo: qs_flag(&search, "editdemo"),
         walk_demo: qs_flag(&search, "walkdemo"),
         combat_demo: qs_flag(&search, "combatdemo"),
+        quest_demo: qs_flag(&search, "questdemo"),
         editor_demo: qs_flag(&search, "paintdemo"),
         map_load: None,
         map_save: None,
@@ -523,7 +536,7 @@ fn main() {
             || cfg.combat_demo
             || cfg.editor_demo
             || cfg.map_save.is_some()
-            || cfg.play_demo
+            || cfg.play_demo || cfg.quest_demo
             // A --play session is a human at the controls, so it is NOT scripted —
             // but it never sits in AppState::Editor either, so the editor camera
             // still keeps its hands off (see `in_interactive_editor`).
@@ -534,11 +547,28 @@ fn main() {
             import::ImportPlugin,
             editor_config::InputConfigPlugin,
             scene::ScenePlugin,
+            // Procedural character animation (Poppy's lane). Builds a box-humanoid
+            // rig as a CHILD of the avatar + each Husk and drives it from combat's
+            // own timers. Gated on `cfg.play` like ScenePlugin, so bench/hero/editor
+            // screenshots keep the capsule they were graded against.
+            anim::AnimPlugin,
+            audio::AudioPlugin,
+            // Quest & dialogue engine (Poppy's lane). Gated to AppState::Play.
+            quest::QuestPlugin,
+            dialogue_ui::DialogueUiPlugin,
             // Editor camera (orbit/pan/zoom on the middle button) + transform
             // gizmo. Both gate on `in_interactive_editor` so scripted/headless
             // runs keep using the play-mode `fly_camera` for their screenshots.
             editor_camera::EditorCameraPlugin,
             gizmo::GizmoPlugin,
+            // Combat/ambient VFX (Flamingo's lane). `VfxPlugin` is inert until
+            // something writes a message or carries a marker component, so it
+            // costs the editor/bench/hero lanes nothing. `VfxBridgePlugin` is the
+            // only thing that knows about combat: it reads the SfxEvent stream
+            // combat already broadcasts and turns hits/deaths into Impact/Unravel,
+            // so no other lane's file had to change. See vfx_bridge.rs.
+            vfx::VfxPlugin,
+            vfx_bridge::VfxBridgePlugin,
         ))
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
@@ -649,7 +679,7 @@ fn combat_demo_env_only(cfg: Res<Cfg>) -> bool {
 /// than a test one: "No menu. No loading screen text. Player wakes up directly in the
 /// world" (`docs/first-playable-loop.md`, Act 0) — no Enter press through the editor.
 fn boot_state(cfg: Res<Cfg>, mut next: ResMut<NextState<AppState>>) {
-    if cfg.combat_demo || cfg.play {
+    if cfg.combat_demo || cfg.quest_demo || cfg.play {
         next.set(AppState::Play);
     }
 }
@@ -900,6 +930,23 @@ fn setup(
             ..default()
         },
         HudText,
+    ));
+
+    // Objective tracker — top-right corner.
+    commands.spawn((
+        Text::new(""),
+        TextFont {
+            font_size: FontSize::from(14.0),
+            ..default()
+        },
+        TextColor(Color::srgba(1.0, 0.95, 0.80, 0.9)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(40.0),
+            right: Val::Px(12.0),
+            ..default()
+        },
+        quest::ObjectiveTracker,
     ));
 
     // Crosshair — the aim point the raycast edits fire from.

@@ -24,6 +24,9 @@ the other agent a build.
 | Player / scene / spawn | `client/src/scene.rs` | **poppy** | Spawn placement, campsite, the `SPAWN_GROUND` invariant. |
 | Combat | `client/src/combat.rs` | **kevin** | Hit → die → respawn loop and its proof harness. |
 | App wiring / CLI | `client/src/main.rs` | **kevin** | Modes, schedules, the `--play*` flags. Coordinate with the scene lane before changing what `boot_scene` receives. |
+| Audio | `client/src/audio.rs` | **kevin** | SFX playback + `SfxEvent`. Uses Bevy's message API (`MessageReader`/`MessageWriter`/`app.add_message`), not the old `EventReader`/`EventWriter`/`add_event` — this repo's Bevy 0.19 has no such types. |
+| Quest | `client/src/quest.rs` | **sun** | Quest journal, objectives, dialogue triggers, `DialogueUiEvent`. Same message-API rule as above. |
+| Dialogue UI | `client/src/dialogue_ui.rs` | **sun** | egui dialogue box. Assigned to sun 2026-07-31 — file previously had no listed owner. `bevy_egui` 0.41's single-window `ctx` query returns a `Result`, not `&Context`/`&mut Context`, directly; `egui::style::Margin` fields are private and `Margin::symmetric` takes `i8`, not `f32`. |
 | Look / beauty shots | `client/src/hero.rs`, `client/src/shot_main.rs`, `docs/golden-beauty-shot.md`, `docs/look-acceptance-rubric.md` | **pixel** | `hero.rs` is a beauty-shot scene only — it holds no controller code. |
 | Levels / map data | `maps/`, `scripts/gen_edhari.py` | **shiba** | Authored levels and the generators behind them. |
 | Web / wasm parity | `scripts/web-verify.mjs`, `scripts/grade_web_parity.py`, `docs/web-parity-checklist.md` | **rose** | |
@@ -56,6 +59,32 @@ A full Voxelforge build runs about 4:44 and the idle watchdog cuts at 5:00.
 Five agents were killed mid-build in one night. Print a progress line at least
 every 2 minutes while a long command runs — `echo` inside the build loop is
 enough. Don't go silent through a compile.
+
+## The build lock — only the integration lead runs a full build
+
+The night of 2026-07-31, four to five lanes each kicked off their own cold
+`cargo build --bin voxelforge` at the same time (`target-audio`, `target-quest`,
+`target-anim`, plus the integration lead's own recovery build) — around 19
+`rustc`/`cargo` processes on the box simultaneously. The watchdog killed the
+integration lead's and sun's builds mid-run. A full build is already the
+single most fragile thing this machine does (see `STATUS_DLL_INIT_FAILED`
+below); stacking several of them at once multiplies both the wall-clock time
+each one takes and the odds any one of them gets starved past the 5-minute
+idle cut.
+
+**The rule:**
+
+- **Full `cargo build --bin voxelforge`** (or `scripts/build_safe.sh build
+  --bin voxelforge ...`) is run by the **integration lead only**, during an
+  integration pass, into `target-int` (or `target-combat` if `target-int` is
+  unusable that day — see the watchdog note above).
+- **Every other lane** verifies its own work with `cargo check` (or
+  `scripts/build_safe.sh check`) scoped to **its own warm `target-<lane>`
+  dir** — it catches the same type errors as a full build, spawns far fewer
+  processes, and doesn't contend with anyone else's build lock.
+- If you believe you need a full binary build to verify your change (e.g. a
+  runtime proof script), say so and let the integration lead run it, or wait
+  for the next integration pass rather than starting your own.
 
 ## Build safety — the `STATUS_DLL_INIT_FAILED` trap
 
