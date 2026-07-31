@@ -19,7 +19,7 @@
 # ENV OVERRIDES (for Poppy / manual runs):
 #   BIN           path to the voxelforge binary   (default: ./target/release/voxelforge.exe)
 #   QUALITY       LookQuality tier                 (default: high)
-#   OUT           output directory                 (default: docs/assets)
+#   OUT           output directory                 (default: docs/assets/gate3)
 #   LOGS          log directory                    (default: _gate3_logs)
 #   MIN_MTIME     epoch seconds the exe must be newer than (default: commit
 #                 time of the latest commit touching client/src/look.rs, or
@@ -37,7 +37,7 @@ set -euo pipefail
 
 BIN="${BIN:-./target/release/voxelforge.exe}"
 QUALITY="${QUALITY:-high}"
-OUT="${OUT:-docs/assets}"
+OUT="${OUT:-docs/assets/gate3}"
 LOGS="${LOGS:-_gate3_logs}"
 
 mkdir -p "$OUT" "$LOGS"
