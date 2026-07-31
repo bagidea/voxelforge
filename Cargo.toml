@@ -11,3 +11,12 @@ codegen-units = 1
 # Keep dependencies fast even in debug builds so Bevy isn't unusably slow.
 [profile.dev.package."*"]
 opt-level = 3
+
+# Measurement profile (perf probe). Same opt-level as the ship profile — CPU-side
+# frame time has to be real — but WITHOUT fat LTO/1 codegen unit, which buy a few
+# percent at the cost of a ~20 min link on every probe rebuild. The probe is
+# GPU-post-bound; the LTO delta is far below the effects being measured.
+[profile.perf]
+inherits = "release"
+lto = false
+codegen-units = 16

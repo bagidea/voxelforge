@@ -14,6 +14,13 @@ path = "src/main.rs"
 name = "voxelforge_shot"
 path = "src/shot_main.rs"
 
+# Perf probe (Poppy) — measures the look post stack's per-frame cost by
+# `#[path]`-including look.rs unmodified. Separate bin so the measurement needs no
+# edit to look.rs (Rose) or main.rs (Kevin). See src/perf_main.rs.
+[[bin]]
+name = "voxelforge_perf"
+path = "src/perf_main.rs"
+
 [features]
 # PCSS soft shadows (bible pass #4 / gate G4) are behind an experimental Bevy
 # flag; on by default so the hero shot gets penumbras out of the box.
