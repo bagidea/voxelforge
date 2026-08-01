@@ -7,7 +7,7 @@
 //! ## Schema reference: docs/act1-script.md + assets/story/act1.json
 //! ## Integration: QuestPlugin in main.rs, gated to AppState::Play.
 
-use bevy::ecs::message::{Message, MessageReader};
+use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -365,6 +365,57 @@ pub struct KillLog {
 }
 
 // =============================================================================
+// Campfire rest / save constants
+// =============================================================================
+
+/// Path for quest journal save file — written at campfire rest points.
+const QUEST_SAVE_PATH: &str = "quest_save.json";
+
+/// Campfire centre position (`campfire_square` x 29-35, z 27-31).
+const CAMPFIRE_POS: (f32, f32) = (32.0, 29.0);
+
+/// Max distance from campfire centre to show the "[E] Rest" prompt.
+const CAMPFIRE_REST_RANGE: f32 = 4.0;
+
+/// Marker component for the "[E] Rest at campfire" UI prompt.
+#[derive(Component)]
+pub struct CampfirePrompt;
+
+/// Marker component for the "[E] Read" lore-item UI prompt.
+#[derive(Component)]
+pub struct LorePrompt;
+
+// =============================================================================
+// Save / Load — quest journal to disk
+// =============================================================================
+
+/// Serialise the full quest journal to `quest_save.json`.
+pub fn save_quest_journal(journal: &QuestJournal) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(journal).map_err(|e| e.to_string())?;
+    std::fs::write(QUEST_SAVE_PATH, json).map_err(|e| e.to_string())?;
+    println!("QUEST_SAVE ok path={QUEST_SAVE_PATH} flags={} quests={}",
+        journal.flags.len(), journal.active_order.len());
+    Ok(())
+}
+
+/// Try to load a previously-saved quest journal; returns `None` when the save
+/// file doesn't exist or is corrupt — the caller falls back to `init_journal`.
+pub fn load_quest_journal() -> Option<QuestJournal> {
+    let text = std::fs::read_to_string(QUEST_SAVE_PATH).ok()?;
+    match serde_json::from_str::<QuestJournal>(&text) {
+        Ok(j) => {
+            println!("QUEST_LOAD ok path={QUEST_SAVE_PATH} flags={} quests={}",
+                j.flags.len(), j.active_order.len());
+            Some(j)
+        }
+        Err(e) => {
+            eprintln!("QUEST_LOAD parse error path={QUEST_SAVE_PATH} err={e}");
+            None
+        }
+    }
+}
+
+// =============================================================================
 // Plugin
 // =============================================================================
 
@@ -379,27 +430,10 @@ impl Plugin for QuestPlugin {
             .init_resource::<KillLog>()
             .add_message::<DialogueUiEvent>()
             .add_systems(Startup, cache_story_data)
-            .add_systems(PostStartup, (init_journal, spawn_npcs, spawn_objective_tracker).run_if(playing))
+            .add_systems(PostStartup, (init_journal, spawn_npcs, spawn_objective_tracker, try_load_saved_journal).run_if(playing))
             .add_systems(
                 Update,
                 (
-                    // Position inside a tuple is NOT run order in Bevy — the schedule
-                    // is free to reorder anything it hasn't been told about. Three
-                    // orderings here are load-bearing, so all three are explicit:
-                    //
-                    //  1. `quest_demo` writes real `ButtonInput<KeyCode>` presses, so
-                    //     it must land BEFORE every system that reads the keyboard
-                    //     this frame — `just_pressed` is cleared in the next PreUpdate,
-                    //     so a press that arrives after its reader is lost for good.
-                    //  2. `npc_interact` opens the dialogue that `resolve_dialogue_actions`
-                    //     then walks, so they chain.
-                    //  3. A Husk's whole dead-but-not-yet-despawned life is one
-                    //     window inside one frame: `player_combat` drops its HP to
-                    //     0 and `husk_ai` despawns it a system later. Reading it
-                    //     needs BOTH bounds — `.before(husk_ai)` alone lets the
-                    //     schedule park the read ahead of `player_combat`, where
-                    //     the Health is still the previous frame's, and the kill is
-                    //     silently never counted.
                     quest_demo
                         .before(npc_interact)
                         .before(combat::gather_input)
@@ -414,6 +448,10 @@ impl Plugin for QuestPlugin {
                     spawn_garren,
                     update_objective_tracker,
                     render_objective_tracker,
+                    campfire_rest,
+                    lore_interact,
+                    check_block_place_triggers,
+                    check_lore_read_triggers,
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),
             );
@@ -482,6 +520,14 @@ fn init_journal(mut journal: ResMut<QuestJournal>, story: Res<StoryDataRes>) {
         println!("QUEST_INIT start={}", data.start_quest);
     }
     println!("QUEST_INIT quests_loaded={}", data.quests.len());
+}
+
+/// If a saved journal exists on disk, overwrite the freshly-initialised journal
+/// with it — the player continues from their last campfire rest.
+fn try_load_saved_journal(mut journal: ResMut<QuestJournal>) {
+    if let Some(saved) = load_quest_journal() {
+        *journal = saved;
+    }
 }
 
 // =============================================================================
@@ -944,9 +990,14 @@ fn check_approach_triggers(
         if approached.contains(&obj.id) { continue; }
 
         let Some(pos) = obj.position else { continue; };
-        let target = Vec3::new(pos.x, pos.y, pos.z);
         let radius = obj.radius.unwrap_or(4.0);
-        let dist = ptf.translation.distance(target);
+        // `approach` / `approach_entity` use horizontal (x,z) distance only —
+        // y is ignored per the schema (docs/act1-script.md §8: "the player walks,
+        // so a high-mounted target such as the gate sigil at y=12 is reached by
+        // standing beneath it at ground level").
+        let dx = ptf.translation.x - pos.x;
+        let dz = ptf.translation.z - pos.z;
+        let dist = (dx * dx + dz * dz).sqrt();
 
         if dist <= radius {
             approached.insert(obj.id.clone());
@@ -1048,6 +1099,172 @@ fn render_objective_tracker(
 ) {
     if let Ok(mut text) = q.single_mut() {
         text.0 = obj.lines.join("\n");
+    }
+}
+
+// =============================================================================
+// Campfire rest point (site of grace) — save journal + heal + reset enemies
+// =============================================================================
+
+fn campfire_rest(
+    keys: Res<ButtonInput<KeyCode>>,
+    player_q: Query<&Transform, With<FlyCam>>,
+    journal: Res<QuestJournal>,
+    mut died: MessageWriter<combat::PlayerDied>,
+    mut commands: Commands,
+    prompts: Query<Entity, With<CampfirePrompt>>,
+) {
+    let Ok(ptf) = player_q.single() else { return };
+    let dx = ptf.translation.x - CAMPFIRE_POS.0;
+    let dz = ptf.translation.z - CAMPFIRE_POS.1;
+    let dist = (dx * dx + dz * dz).sqrt();
+
+    for e in prompts.iter() { commands.entity(e).despawn_recursive(); }
+
+    if dist <= CAMPFIRE_REST_RANGE {
+        commands.spawn((
+            Text::new("[E] Rest at campfire"),
+            TextFont { font_size: bevy::text::FontSize::from(18.0), ..default() },
+            TextColor(Color::srgba(0.9, 0.75, 0.4, 0.9)),
+            Node { position_type: PositionType::Absolute, bottom: Val::Px(100.0),
+                left: Val::Percent(50.0),
+                margin: UiRect { left: Val::Px(-100.0), ..default() }, ..default() },
+            CampfirePrompt,
+        ));
+        if keys.just_pressed(KeyCode::KeyE) {
+            if let Err(e) = save_quest_journal(&journal) {
+                eprintln!("CAMPFIRE_REST save failed: {e}");
+            }
+            died.write(combat::PlayerDied);
+            println!("CAMPFIRE_REST save + enemy reset fired");
+        }
+    }
+}
+
+// =============================================================================
+// Lore item interaction — environmental storytelling
+// =============================================================================
+
+fn lore_interact(
+    keys: Res<ButtonInput<KeyCode>>,
+    player_q: Query<&Transform, With<FlyCam>>,
+    story: Res<StoryDataRes>,
+    mut dialogue: ResMut<DialogueState>,
+    mut commands: Commands,
+    prompts: Query<Entity, With<LorePrompt>>,
+) {
+    let Ok(ptf) = player_q.single() else { return };
+    let data = story_data(&story);
+
+    for e in prompts.iter() { commands.entity(e).despawn_recursive(); }
+
+    let nearest = data.lore_items.iter()
+        .filter_map(|li| {
+            let dx = ptf.translation.x - li.world_position.x;
+            let dz = ptf.translation.z - li.world_position.z;
+            let d = (dx * dx + dz * dz).sqrt();
+            (d <= 3.0).then_some((li, d))
+        })
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    if let Some((li, _)) = nearest {
+        commands.spawn((
+            Text::new(format!("[E] Read {}", li.name)),
+            TextFont { font_size: bevy::text::FontSize::from(16.0), ..default() },
+            TextColor(Color::srgba(0.8, 0.85, 0.9, 0.9)),
+            Node { position_type: PositionType::Absolute, bottom: Val::Px(140.0),
+                left: Val::Percent(50.0),
+                margin: UiRect { left: Val::Px(-120.0), ..default() }, ..default() },
+            LorePrompt,
+        ));
+        if keys.just_pressed(KeyCode::KeyE) && !dialogue.open {
+            dialogue.speaker = li.id.clone();
+            dialogue.speaker_display = li.name.clone();
+            dialogue.lines = vec![li.subtitle.clone(), li.text.clone()];
+            dialogue.choices = Vec::new();
+            dialogue.current_line = 0;
+            dialogue.open = true;
+            dialogue.dialogue_id = li.id.clone();
+            dialogue.quest_id = String::new();
+            dialogue.choosing = false;
+            dialogue.pending_action = None;
+            if let Some(ref dlg_id) = li.triggers_dialogue {
+                dialogue.pending_action = Some(DialogueAction {
+                    action_type: DialogueActionType::OpenDialogue(dlg_id.clone()),
+                });
+            }
+            println!("LORE_READ id={} name=\"{}\"", li.id, li.name);
+        }
+    }
+}
+
+// =============================================================================
+// Block-place trigger — complete place_block objectives on R key near target
+// =============================================================================
+
+fn check_block_place_triggers(
+    keys: Res<ButtonInput<KeyCode>>,
+    player_q: Query<&Transform, With<FlyCam>>,
+    mut journal: ResMut<QuestJournal>,
+    story: Res<StoryDataRes>,
+) {
+    if !keys.just_pressed(KeyCode::KeyR) { return; }
+    let Ok(ptf) = player_q.single() else { return };
+    let data = story_data(&story);
+
+    for qdef in &data.quests {
+        let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
+        if prog.status != QuestStatus::Active { continue; }
+        let Some(obj) = qdef.objectives.get(prog.current_objective) else { continue };
+        if obj.kind != "place_block" { continue; }
+        if prog.completed_objectives.contains(&obj.id) { continue; }
+        let Some(pos) = obj.position else { continue; };
+        let radius = obj.radius.unwrap_or(4.0);
+        let dx = ptf.translation.x - pos.x;
+        let dz = ptf.translation.z - pos.z;
+        if (dx * dx + dz * dz).sqrt() <= radius {
+            prog.completed_objectives.push(obj.id.clone());
+            prog.current_objective += 1;
+            println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (place_block)", qdef.id, obj.id);
+            let all_done = qdef.objectives.iter().filter(|o| !o.optional)
+                .all(|o| prog.completed_objectives.contains(&o.id));
+            if all_done { complete_quest(&mut journal, &qdef.id, data); }
+        }
+    }
+}
+
+// =============================================================================
+// Lore-read trigger — complete interact objectives on E key near lore item
+// =============================================================================
+
+fn check_lore_read_triggers(
+    keys: Res<ButtonInput<KeyCode>>,
+    player_q: Query<&Transform, With<FlyCam>>,
+    mut journal: ResMut<QuestJournal>,
+    story: Res<StoryDataRes>,
+) {
+    if !keys.just_pressed(KeyCode::KeyE) { return; }
+    let Ok(ptf) = player_q.single() else { return };
+    let data = story_data(&story);
+
+    for qdef in &data.quests {
+        let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
+        if prog.status != QuestStatus::Active { continue; }
+        let Some(obj) = qdef.objectives.get(prog.current_objective) else { continue };
+        if obj.kind != "interact" { continue; }
+        if prog.completed_objectives.contains(&obj.id) { continue; }
+        let Some(li) = data.lore_items.iter().find(|li| li.id == obj.target) else { continue; };
+        let dx = ptf.translation.x - li.world_position.x;
+        let dz = ptf.translation.z - li.world_position.z;
+        if (dx * dx + dz * dz).sqrt() <= 3.0 {
+            prog.completed_objectives.push(obj.id.clone());
+            prog.current_objective += 1;
+            println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (interact lore=\"{}\")",
+                qdef.id, obj.id, li.name);
+            let all_done = qdef.objectives.iter().filter(|o| !o.optional)
+                .all(|o| prog.completed_objectives.contains(&o.id));
+            if all_done { complete_quest(&mut journal, &qdef.id, data); }
+        }
     }
 }
 
@@ -1334,27 +1551,97 @@ fn quest_demo(
         return;
     }
 
-    // ---- phase 4: read the journal back and grade ------------------------------
-    // These two lines are assertions, not self-awarded credit: they print whatever
-    // the live journal says, FAIL included. Everything that put the journal in this
-    // state was the engine reacting to keys the demo pressed.
+    // ---- phase 4: complete q4 (build + read 2 lore items) ----------------------
+    // o1_build: walk to (50,9), press R (place_block). o2_ledger: walk to (46,24),
+    // press E (interact lore_village_ledger). o3_offering: walk to (33,14), press E.
     if demo.phase == 4 {
-        if phase_t < 1.0 { return; }
-        let q3_done = journal.quests.get("q3_gatekeeper")
+        let q4_done = journal.quests.get("q4_what_walls_remember")
             .map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
-        let q4_open = journal.quests.get("q4_what_walls_remember")
-            .map(|p| p.status != QuestStatus::Locked).unwrap_or(false);
-        demo.q3_completed = q3_done;
-        demo.q4_unlocked = q4_open;
-        println!("QUEST_COMPLETE q3_gatekeeper => {}", if q3_done { "PASS" } else { "FAIL" });
-        println!("QUEST_NEXT_OPEN q4_what_walls_remember => {}", if q4_open { "PASS" } else { "FAIL" });
-        let ok = q3_done && q4_open;
-        println!("QUEST_PROOF {} => {}",
-            if ok { "ALL GATES PASS" } else { "SOME GATES FAILED" },
-            if ok { "PASS" } else { "FAIL" });
-        if ok { exit.write(AppExit::Success); } else { exit.write(AppExit::from_code(1)); }
-        // 100, not 99: 99 is the fatal sink below, and landing in it would print
-        // QUEST_FATAL over a clean pass if the app takes another frame to close.
+        if q4_done {
+            hands_off!();
+            println!("QUEST_COMPLETE q4_what_walls_remember => PASS (all objectives done)");
+            enter!(5);
+            return;
+        }
+        let cur = journal.quests.get("q4_what_walls_remember")
+            .map(|p| p.current_objective).unwrap_or(0);
+        match cur {
+            0 => { let (tx, tz) = (50.0, 9.0);
+                let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
+                    tap(&mut demo, &mut key_input, KeyCode::KeyR, t); }
+                else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                if phase_t > 25.0 { hands_off!();
+                    println!("QUEST_STAGE_COMPLETE q4 o1_build => FAIL (timeout)"); demo.phase = 99; } }
+            1 => { let (tx, tz) = (46.0, 24.0);
+                let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
+                    tap(&mut demo, &mut key_input, KeyCode::KeyE, t); }
+                else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                if phase_t > 30.0 { hands_off!();
+                    println!("QUEST_STAGE_COMPLETE q4 o2_ledger => FAIL (timeout)"); demo.phase = 99; } }
+            2 => { let (tx, tz) = (33.0, 14.0);
+                let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
+                    tap(&mut demo, &mut key_input, KeyCode::KeyE, t); }
+                else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                if phase_t > 30.0 { hands_off!();
+                    println!("QUEST_STAGE_COMPLETE q4 o3_offering => FAIL (timeout)"); demo.phase = 99; } }
+            _ => { hands_off!(); enter!(5); }
+        }
+        return;
+    }
+
+    // ---- phase 5: complete q5 (sigil → gate → cliffhanger) --------------------
+    if demo.phase == 5 {
+        let q5_done = journal.quests.get("q5_sigil_that_knew_you")
+            .map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+        if q5_done { hands_off!(); println!("QUEST_COMPLETE q5_sigil_that_knew_you => PASS");
+            let act1 = journal.flags.contains("act1_complete");
+            println!("QUEST_FLAG act1_complete => {}", if act1 { "PASS" } else { "FAIL" });
+            enter!(6); return; }
+        let stage5 = journal.quests.get("q5_sigil_that_knew_you")
+            .map(|p| p.current_objective).unwrap_or(0);
+        if stage5 < 2 {
+            if ptf.translation.x < 35.0 && ptf.translation.z < 3.0 {
+                steer(&mut key_input, 0.0, 0.0, 1.0);
+            } else if ptf.translation.x > 36.0 || ptf.translation.z > 8.0 {
+                steer(&mut key_input, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, WAYPOINT_TOL);
+            } else { steer(&mut key_input, 0.0, -1.0, 0.0); }
+            if phase_t > 40.0 { hands_off!();
+                println!("QUEST_STAGE_COMPLETE q5 gate => FAIL (timeout at z={:.1})", ptf.translation.z);
+                demo.phase = 99; }
+            return;
+        }
+        if dialogue.open && dialogue.dialogue_id == "dlg_maren_cliffhanger" {
+            if dialogue.choosing { tap(&mut demo, &mut key_input, KeyCode::Digit1, t); }
+            else { tap(&mut demo, &mut key_input, KeyCode::Enter, t); }
+        }
+        if phase_t > 25.0 { hands_off!();
+            println!("QUEST_STAGE_COMPLETE q5 cliffhanger => FAIL (timeout)"); demo.phase = 99; }
+        return;
+    }
+
+    // ---- phase 6: grade full Act 1 chain ---------------------------------------
+    if demo.phase == 6 {
+        if phase_t < 1.0 { return; }
+        let q1 = journal.quests.get("q1_embers").map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+        let q2 = journal.quests.get("q2_voice_in_stone").map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+        let q3 = journal.quests.get("q3_gatekeeper").map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+        let q4 = journal.quests.get("q4_what_walls_remember").map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+        let q5 = journal.quests.get("q5_sigil_that_knew_you").map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+        let act1 = journal.flags.contains("act1_complete");
+        demo.q3_completed = q3; demo.q4_unlocked = q4;
+        for (id, ok) in &[("q1_embers", q1), ("q2_voice_in_stone", q2), ("q3_gatekeeper", q3),
+            ("q4_what_walls_remember", q4), ("q5_sigil_that_knew_you", q5)] {
+            println!("QUEST_COMPLETE {id} => {}", if *ok { "PASS" } else { "FAIL" });
+        }
+        println!("QUEST_FLAG act1_complete => {}", if act1 { "PASS" } else { "FAIL" });
+        let all_ok = q1 && q2 && q3 && q4 && q5 && act1;
+        println!("QUEST_PROOF Act 1 full chain {} => {}",
+            if all_ok { "ALL GATES PASS" } else { "SOME GATES FAILED" },
+            if all_ok { "PASS" } else { "FAIL" });
+        if all_ok { exit.write(AppExit::Success); } else { exit.write(AppExit::from_code(1)); }
         enter!(100);
         return;
     }
