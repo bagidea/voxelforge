@@ -1119,7 +1119,7 @@ fn campfire_rest(
     let dz = ptf.translation.z - CAMPFIRE_POS.1;
     let dist = (dx * dx + dz * dz).sqrt();
 
-    for e in prompts.iter() { commands.entity(e).despawn_recursive(); }
+    for e in prompts.iter() { commands.entity(e).despawn(); }
 
     if dist <= CAMPFIRE_REST_RANGE {
         commands.spawn((
@@ -1156,7 +1156,7 @@ fn lore_interact(
     let Ok(ptf) = player_q.single() else { return };
     let data = story_data(&story);
 
-    for e in prompts.iter() { commands.entity(e).despawn_recursive(); }
+    for e in prompts.iter() { commands.entity(e).despawn(); }
 
     let nearest = data.lore_items.iter()
         .filter_map(|li| {
