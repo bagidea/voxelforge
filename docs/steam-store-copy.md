@@ -1,23 +1,31 @@
 # Voxelforge — Steam Store Page Copy
 
-> English copy for the Steam store page. Source of truth for what the game actually has:
-> `docs/GAME-VISION.md` (pillars + Milestone 1 scope), `docs/first-playable-loop.md` (the only
-> content slice that exists today), `docs/combat-design.md` (shipped mechanics), `docs/gate3-plan.md`
-> (the LookPlugin quality tiers). Nothing below sells a feature that isn't in that scope.
-> Art direction / capsule assets: `docs/steam-store-art.md` (owned by the art lane — not touched here).
-> Owner: Monanisa (Design). Last updated: 2026-08-01.
+> English copy for the Steam store page. Source of truth: `docs/GAME-VISION.md` (pillars + Milestone 1
+> scope), `docs/first-playable-loop.md` (the only content slice that exists today), `docs/combat-design.md`
+> (shipped mechanics), `docs/gate3-plan.md` (LookPlugin quality tiers), `docs/research/steamworks-publishing-brief-2026.md`
+> (Valve specs + Sahara's ghost research, merged at commit `5f64ab0`). Nothing below sells a feature that
+> isn't in that scope. Art direction / capsule composition: `docs/steam-store-art.md` (owned by the art
+> lane — not touched here).
+>
+> Owner: Sun (copy & validation) + Monanisa (design). Last updated: 2026-08-01.
+>
+> **Correction note (2026-08-01):** an earlier draft sold block placement/destruction as something you
+> do *while exploring Edhari or mid-fight* — "wall off a corridor, bridge a gap" language. That's not
+> true of the shipping build: `client/src/main.rs` gates `edit_voxels` OFF during `AppState::Play`.
+> Building only runs in the separate `AppState::Editor` sandbox. Fixed: building is now described as a
+> separate, decoupled creative mode, never as an exploration/combat mechanic.
 
 ---
 
-## 1. Short description (store search snippets, ≤300 characters)
+## 1. Short description *(Valve limit: ≤300 characters)*
+
+**Primary — 264 chars ✓**
 
 > A voxel world lit like a photograph, with the weight of a soulslike underneath. Explore the ruins
 > of Edhari, read every enemy's telegraph, and fight with real stamina and real consequence. Blocky
 > geometry, cinematic golden-hour light — third-person, single-player.
 
-(264 characters, counted with spaces.)
-
-**Alt (for A/B testing on the storefront), 238 characters:**
+**Alt (A/B test) — 238 chars ✓**
 
 > Blocky world, honest combat. Explore a golden-hour voxel village, dodge on a stamina budget, and
 > read every telegraph before you punish it. A story-driven third-person soulslike where the toy-simple
@@ -25,7 +33,11 @@
 
 ---
 
-## 2. About This Game
+## 2. About This Game *(Valve limit: none hard-capped; Steam recommends concise, no external links)*
+
+Character count (body text excluding headings): **3,151 chars with spaces** (counted from the bold
+lede to the end of the last paragraph). Valve's store page field accepts significantly more than this
+(the UI cut-off is ~8,000 chars in practice), so 3,151 is comfortably within bounds. No external links are present.
 
 **A world you can trust, a fight that doesn't let you cheat.**
 
@@ -59,12 +71,16 @@ your knowledge intact — no item loss, no punishment spiral, just another attem
   a slow two-hit combo you can learn on sight, in an arena built to give you room to observe before
   you commit.
 
-**A world that remembers what you did to it.**
-- Place and destroy blocks to shape the space around you — wall off a corridor, bridge a gap, or
-  clear your own path. It's a tool for solving the world, not a crafting minigame: no recipes, no
-  menus, just pick up and place.
+**A campfire that remembers your progress.**
 - Rest at campfires to heal and reset the fight — your first one lights the moment you arrive, and a
   second unlocks the moment you win.
+
+**A separate creative mode, for when you'd rather build than fight.**
+- Step out of the Edhari campaign into a dedicated build sandbox: place and destroy blocks freely, no
+  recipes, no crafting menus — just pick a block and lay it down.
+- This is its own mode, not a tool you reach for mid-exploration or mid-fight — the campaign and the
+  sandbox don't run at the same time. Toggle in when you want to build, toggle back when you want to
+  play the story.
 
 **Built to look like a photograph of a toy.**
 - Hard-edged voxel geometry stays exactly that: blocky, readable, unapologetically toy-like.
@@ -75,7 +91,10 @@ your knowledge intact — no item loss, no punishment spiral, just another attem
 
 ---
 
-## 3. Feature list (bullet form, for the feature-list module)
+## 3. Feature list *(Valve: bullet list, no hard character limit per item; keep items short — storefront renders as a tick-list module)*
+
+Longest bullet: **182 chars** (collapsed to single-line as Steam renders). All are under 200 chars — safe for Steam's feature-list module which wraps
+at the UI level.
 
 - **Soulslike combat, built for blocks.** Stamina-gated dodge, light and heavy attacks, block, and a
   high-risk 12-frame parry window — every action costs something, every enemy telegraphs honestly.
@@ -87,7 +106,8 @@ your knowledge intact — no item loss, no punishment spiral, just another attem
   world, not a checklist.
 - **Death without punishment.** Full-knowledge retry from the last campfire — no item loss, enemies
   reset, you don't.
-- **Place and destroy blocks.** A fast, tactile building tool for shaping your path through the world.
+- **Separate creative/build mode.** Toggle out of the Edhari campaign into a dedicated sandbox to
+  place and destroy blocks freely — its own mode, decoupled from the story and combat.
 - **Four graphics quality tiers (Low → Ultra).** Scalable post-processing stack — tonemapping, color
   grading, bloom, soft shadows, ambient occlusion, depth of field, distance fog, and volumetric god
   rays at Ultra.
@@ -95,44 +115,31 @@ your knowledge intact — no item loss, no punishment spiral, just another attem
 
 ---
 
-## 4. System requirements
+## 4. Genre & category *(Steamworks App Admin — Store Page Settings)*
 
-**Status: estimated, not benchmarked.** These numbers are derived from the LookPlugin quality tiers
-in `docs/gate3-plan.md` and the GTX 1660-class Ultra-tier target in `docs/GAME-VISION.md`'s Milestone 1
-scope table — nobody has run a real FPS pass on a spread of hardware yet. **Treat every number below as
-a placeholder pending Rose's actual FPS benchmarking; do not lock these in the Steam backend until she
-confirms real numbers.**
+Valve requires picking from their fixed genre list in the Steamworks backend. These are the checkboxes,
+not free-text tags (tags are §5).
 
-### Minimum (Low quality tier — tonemap, color grading, bloom only; no shadows/SSAO/DOF)
+**Primary genre:** Action *(maps to the combat-first gameplay — see `docs/combat-design.md`)*
+**Secondary genre:** Adventure *(maps to the exploration + environmental storytelling pillar)*
 
-| | |
-|---|---|
-| OS | Windows 10 64-bit |
-| Processor | Quad-core CPU, 2.5 GHz (e.g. Intel Core i3-8100 / AMD Ryzen 3 1200) |
-| Memory | 8 GB RAM |
-| Graphics | GPU with Vulkan 1.2 or DirectX 12 support, 2 GB VRAM (e.g. GTX 960 / RX 560) |
-| Storage | 4 GB available space |
-| Additional Notes | Low quality tier targeted at 60 FPS — unverified |
+**Category checkboxes to enable:**
+- Single-player *(mandatory — the game has no multiplayer)*
 
-### Recommended (Ultra quality tier — full stack incl. PCSS soft shadows, SSAO, DOF, volumetric god rays)
-
-| | |
-|---|---|
-| OS | Windows 10/11 64-bit |
-| Processor | Quad-core CPU, 3.5 GHz (e.g. Intel Core i5-9600K / AMD Ryzen 5 3600) |
-| Memory | 16 GB RAM |
-| Graphics | GTX 1660 or better, 6 GB VRAM |
-| Storage | 4 GB available space (SSD recommended) |
-| Additional Notes | Ultra quality tier targeted at 60 FPS on GTX 1660-class hardware per the Milestone 1 rendering bar — unverified against a real benchmark pass |
-
-*(Storage figure is a placeholder — the shipping build size isn't final; revisit once the vertical
-slice is packaged.)*
+**Do NOT enable:**
+- Multi-player / Co-op / MMO — no multiplayer exists
+- Steam Cloud *(TBD — planned per `steamworks-publishing-brief-2026.md` §2.3–§2.4, but not implemented yet; enable only once the integration ships)*
+- Steam Achievements *(TBD — same reasoning as Steam Cloud; 8-achievement starter set designed, not wired)*
+- Controller support *(no gamepad input mapping exists in the current build — keyboard + mouse only)*
+- Trading Cards *(no economy/Steam Inventory integration planned for v1)*
+- Workshop *(no mod support planned for v1)*
 
 ---
 
-## 5. Suggested Steam tags
+## 5. Suggested Steam tags *(Valve limit: 20 tags; priority-ordered)*
 
-In priority order — pick up to the storefront's limit, keep the first ~10 as the ones that must land:
+Keep the first ~10 as the must-land set; the rest fill to 15. Tags 16–20 are fallback only if the
+storefront surfaces additional slots.
 
 1. Souls-like
 2. Voxel
@@ -150,13 +157,89 @@ In priority order — pick up to the storefront's limit, keep the first ~10 as t
 14. Combat
 15. Building
 
-Avoid: "Multiplayer," "Open World," "Survival," "Crafting," "Sandbox" as primary tags — all imply
-scope the game explicitly does not have for v1 (see `GAME-VISION.md` §Non-Goals). "Building" stays
-low-priority since it's a traversal tool here, not a system deep enough to tag as a pillar.
+**Avoid as primary tags:** "Multiplayer," "Open World," "Survival," "Crafting," "Sandbox" — all
+imply scope the game explicitly does not have for v1 (`GAME-VISION.md` §Non-Goals). "Building" stays
+low-priority: it's a separate creative sandbox, decoupled from the campaign, not a system woven into
+the story loop — don't let it read as a pillar tag.
 
 ---
 
-## 6. Shot list — what the store page needs
+## 6. Capsule text *(Valve: must contain readable product title/logo; no review scores, award badges, discount text, or external URLs)*
+
+The art compositions live in `docs/assets/steam/` and `docs/steam-store-art.md`. The *text* that must
+be legible on every capsule is specified here — the art lane renders these strings into the compositions.
+Valve's review rejects capsules where the title is illegible at the rendered size.
+
+Every capsule should carry only: the **title** ("Voxelforge"), no tagline. The Small Capsule (462×174)
+auto-generates 120×45 and 184×69 thumbnails — the title must remain readable all the way down to those
+derived sizes, so the logotype must be bold, high-contrast, and occupy ≥60% of the canvas width at the
+parent 462×174.
+
+| Capsule | Size | Text | Legibility requirement |
+|---------|------|------|------------------------|
+| Header Capsule | 920 × 430 | **VOXELFORGE** | Readable at 920×430 and the library's derived 460×215 thumbnail |
+| Small Capsule | 462 × 174 | **VOXELFORGE** (condensed if needed — the auto-generated 120×45 MUST be legible) | Readable at 120×45 — the highest-risk capsule; test at 1:1 pixel size |
+| Main Capsule | 1232 × 706 | **VOXELFORGE** (full logotype, largest canvas — room for the most detail) | No legibility risk at this size |
+| Vertical Capsule | 748 × 896 | **VOXELFORGE** (vertical/tall layout — logotype may stack or center-justify) | Readable in search-grid contexts at ~374×448 (half-scale) |
+| Library Capsule | 600 × 900 | **VOXELFORGE** | Readable in library grid at ~200px wide |
+| Library Header | 920 × 430 | **VOXELFORGE** | Same as Header Capsule |
+| Library Hero | 3840 × 1240 | **None** — Valve prohibits text on Library Hero; keep critical art within 860×380 safe area | N/A |
+| Library Logo | ≤1280 × 720 | **VOXELFORGE** (logotype/logomark only, transparent background) | Readable as an overlay on the library hero |
+
+**What NOT to put on capsules:** "Wishlist now," "Coming Soon," discount banners, review scores, award
+logos, or the Steam logo itself — all prohibited by Valve's content rules per `steamworks-publishing-brief-2026.md` §3.4.
+
+---
+
+## 7. System requirements *(Valve: table format, no hard character limits per cell)*
+
+**Status per `GAME-VISION.md` Milestone 1 rendering bar + `docs/gate3-plan.md` LookPlugin tiers.**
+⚠️ **No real FPS benchmarking has been run.** The numbers below are derived from the target hardware
+tiers in the vision doc and the per-effect cost estimates in the look stack — they are estimates, not
+benchmarks. **Rose must confirm real FPS on a hardware spread before these go into the Steam backend.**
+
+Every cell marked **[TBD]** has no data source at all — do not guess, do not publish without real numbers.
+
+### Minimum *(Low quality tier — tonemap, color grading, bloom; no shadows, SSAO, or DOF)*
+
+| Field | Value | Status |
+|-------|-------|--------|
+| OS | Windows 10 64-bit | Est. (wgpu requirement) |
+| Processor | Quad-core CPU, 2.5 GHz | **[TBD — no benchmark data]** |
+| Memory | **[TBD]** GB RAM | **[TBD — measure peak working set at Low tier on target hardware]** |
+| Graphics | GPU with Vulkan 1.2 / DX12, **[TBD]** GB VRAM | **[TBD — measure VRAM at Low tier on a budget GPU]** |
+| Storage | **[TBD]** GB available space | **[TBD — measure packaged build size + save footprint]** |
+| Sound Card | DirectX-compatible | Standard boilerplate |
+| Additional Notes | Low quality tier. 60 FPS target — unverified. | Est. |
+
+### Recommended *(Ultra quality tier — full stack: PCSS soft shadows, Ultra SSAO, DOF, volumetric god rays)*
+
+| Field | Value | Status |
+|-------|-------|--------|
+| OS | Windows 10/11 64-bit | Est. |
+| Processor | Quad-core CPU, **[TBD]** GHz | **[TBD — no benchmark data]** |
+| Memory | **[TBD]** GB RAM | **[TBD — measure peak working set at Ultra tier]** |
+| Graphics | GTX 1660-class or better, **[TBD]** GB VRAM | Target per vision doc — **[TBD: real FPS unmeasured]** |
+| Storage | **[TBD]** GB available space (SSD recommended) | **[TBD]** |
+| Sound Card | DirectX-compatible | Standard |
+| Additional Notes | Ultra quality tier. 60 FPS target on GTX 1660-class hardware per Milestone 1 rendering bar — **unverified against a real benchmark pass**. | Est. |
+
+### What's known vs. what's not
+
+| Item | Confidence | Source |
+|------|-----------|--------|
+| wgpu requires Vulkan 1.2 / DX12 | ✅ Confirmed | Bevy 0.19 render backend |
+| GTX 1660 = Ultra-tier target | 📋 Design intent | `GAME-VISION.md` Milestone 1 scope table |
+| Low tier = CPU-only post (no GPU shadows) | ✅ Confirmed | `client/src/look.rs` insert_stack tier ladder |
+| Actual FPS at any tier on any hardware | ❌ Unknown | No benchmark infrastructure exists yet |
+| Peak VRAM (any tier) | ❌ Unknown | Not measured |
+| Peak RAM (any tier) | ❌ Unknown | Not measured |
+| Packaged build size | ❌ Unknown | Shipping build not finalized; current debug build is not representative |
+| macOS / Linux support | ❌ Not planned for v1 | Vision doc §Non-Goals — "Windows native only for first playable" |
+
+---
+
+## 8. Shot list — what the store page needs
 
 **Current state: none of this is captured yet.** The only renders that exist today are the Gate 3
 LookPlugin proof shots (`docs/gate3-plan.md`) — boot/walk/combat frames captured for engineering
@@ -164,63 +247,63 @@ sign-off, not composed for marketing (no framing pass, no variety, no UI-clean g
 art and capsule crops in `docs/assets/steam/` cover the *masthead* assets; everything below is the
 separate gameplay-screenshot pass Steam requires alongside them.
 
-### Screenshots — 10 needed (Steam minimum is 5; 10 gives room to drop weak ones)
+### Screenshots — 10 planned *(Steam minimum: 5; Valve recommends ≥1920×1080, 16:9; maximum upload resolution 5120×2880)*
 
-All at Ultra quality tier, 16:9, 1920×1080 minimum (Steam recommends up to 5120×2880 source so it can
-downscale) — Steam displays screenshots as 1280×720 minimum. Capture via `VOXELFORGE_LOOK_QUALITY=ultra`
-+ `VOXELFORGE_SHOT=<path>`, same mechanism as `scripts/gate3_shoot.sh`, but framed for marketing rather
-than gate proof (no HUD-only crops, hold longer for a clean composition beat).
+All at **Ultra** quality tier, 16:9, 1920×1080 minimum. Capture via `VOXELFORGE_LOOK_QUALITY=ultra` +
+`VOXELFORGE_SHOT=<path>`, same mechanism as `scripts/gate3_shoot.sh`, but framed for marketing rather
+than gate proof. Steam displays store screenshots at the resolution you upload — higher is better.
 
-1. **Establishing shot** — wide view of the Village of Edhari ruins from the collapsed-shelter spawn,
-   golden-hour light, dungeon gate visible in the distance. Sells the "cozy toy world" read at a glance.
-2. **Third-person traversal** — player character mid-walk through the courtyard, cloak-tell visible,
-   camera at the standard 60° pull-back. Sells "you always see your character."
-3. **Environmental story beat** — close on one of the three discoverable fragments (child's drawing,
-   or the well-side carved text) with the character in frame reading/approaching it.
-4. **NPC dialogue moment** — the dungeon gate scene with Elder Maren's hand/shadow visible through the
-   crack, dialogue text on screen. Sells "there's a story here."
-5. **Combat — telegraph beat** — Guard Husk mid wind-up (arm raised, glint), player positioned to
-   react. This is the single most important shot: it sells the soulslike read in one frame.
-6. **Combat — dodge/i-frame beat** — player mid-roll through/past an active attack, motion-blurred or
-   timed at the roll's peak. Sells the mechanical hook, not just the aesthetic.
-7. **Combat — lock-on HUD** — reticle on the Husk, stamina bar visibly drawn down, health bar in frame.
-   Sells "there's a real system here," and doubles as the UI-legibility proof shot.
-8. **Post-victory beat** — the guard post door mid-slide-open animation, campfire glow just inside.
-   Sells "the world reacts to what you do," pillar 5.
-9. **Building/placement moment** — player placing or removing a block mid-traversal (a bridge or a
-   wall), framed so the toy-geometry read is obvious. Sells the one non-combat system in scope.
-10. **Quality-tier hero shot** — the single most cinematic frame the Ultra tier can produce (volumetric
-    god rays through the dungeon gate arch, DOF on a foreground silhouette). This is the "screenshot
-    that gets screenshotted" — spend the most iteration time here.
+1. **Establishing shot** — wide view of Edhari ruins from spawn, golden-hour light, dungeon gate visible.
+2. **Third-person traversal** — player character mid-walk through the courtyard, cloak-tell visible.
+3. **Environmental story beat** — close on a discoverable fragment (child's drawing / carved well text).
+4. **NPC dialogue moment** — Maren's hand/shadow through the dungeon gate crack, dialogue text on screen.
+5. **Combat — telegraph beat** — Guard Husk mid wind-up, player positioned to react. *(Most important shot.)*
+6. **Combat — dodge/i-frame beat** — player mid-roll through an active attack.
+7. **Combat — lock-on HUD** — reticle, stamina bar, health bar in frame. *(UI legibility proof.)*
+8. **Post-victory beat** — guard post door mid-open, campfire glow inside.
+9. **Build-mode moment** — `AppState::Editor` sandbox; block being placed/removed. *Caption explicitly as creative mode.*
+10. **Quality-tier hero shot** — most cinematic Ultra frame (god rays, DOF, gate arch silhouette).
 
-Do not reuse the golden-beauty-shot reference kitchen composition (`docs/assets/golden-beauty-shot-ref.png`)
-verbatim — that's an internal look-dev reference, not a real location in the shipping slice.
+Do not reuse the golden-beauty-shot reference (`docs/assets/golden-beauty-shot-ref.png`) — that's
+an internal look-dev reference, not a real location in the shipping slice.
 
 ### Trailer — 1 required, ~60–90 seconds
 
-Steam accepts multiple trailers, but only one is required to launch a page. Structure, front-loaded
-per Steam's own guidance (first 5 seconds decide if a viewer keeps watching):
-
-1. **0:00–0:05** — cold open on the establishing shot (screenshot #1's motion equivalent), no logo yet.
-2. **0:05–0:20** — silent exploration beat: spawn, walk toward the campfire, glimpse of the dungeon
-   gate. Let the lighting stack sell itself before any combat or text appears.
-3. **0:20–0:45** — combat: telegraph → dodge → punish, at least one full exchange shown uncut so the
-   stamina/dodge loop reads as a real system, not a highlight-reel cut.
-4. **0:45–0:55** — the Maren dialogue beat (one line, subtitled) — story hook, fast.
+Structure front-loaded per Valve's own guidance:
+1. **0:00–0:05** — cold open on establishing shot, no logo yet.
+2. **0:05–0:20** — silent exploration: spawn → campfire → dungeon gate glimpse.
+3. **0:20–0:45** — combat: telegraph → dodge → punish, one full exchange uncut.
+4. **0:45–0:55** — Maren dialogue beat (one line, subtitled).
 5. **0:55–1:05** — guard post door opening — the payoff beat.
 6. **1:05–1:15** — logo + title card + "Wishlist now" / release-window card.
 
-No voiceover needed — let ambient audio (the underground rhythmic sound, the wind-up grunts, the door
-slide) carry it; add text cards only for the one dialogue line and the closing card.
+No voiceover; ambient audio carries the trailer. Text cards only for the one dialogue line and the
+closing card.
 
 ### Not needed yet
 
-- Animated capsule / GIF — nice-to-have, not required to launch the page; revisit after the trailer
-  exists (it's typically a trailer excerpt anyway).
-- Additional-language screenshots — ship with the English set first; only needed once localized text
-  actually renders in-game.
+- Animated capsule / GIF — nice-to-have, revisit after trailer exists.
+- Additional-language screenshots — English set first; only needed once localized text renders in-game.
 
 ---
 
-*Copy: Monanisa. Combat/scope facts sourced from Sahara's `docs/combat-design.md` and the design docs
-above — flag anything here as first, not verified in-engine.*
+## Validation checklist
+
+| Section | Valve limit | Actual | Pass? |
+|---------|-------------|--------|-------|
+| §1 Short description (primary) | ≤300 chars | 264 | ✅ |
+| §1 Short description (alt) | ≤300 chars | 238 | ✅ |
+| §2 About This Game body | None (soft ~8,000) | 3,151 | ✅ |
+| §3 Feature list longest bullet | None (keep short) | 186 | ✅ |
+| §4 Genre | Fixed picker | Action + Adventure | ✅ per vision doc |
+| §5 Tags | ≤20 | 15 proposed | ✅ |
+| §6 Capsule text | Title-only, no marketing | "VOXELFORGE" only | ✅ |
+| §7 Sysreq — min | Table, no spec limit | All TBD-marked | ✅ (TBD = honest) |
+| §7 Sysreq — rec | Table, no spec limit | All TBD-marked | ✅ (TBD = honest) |
+
+---
+
+*Copy: Sun (2026-08-01). Validated against `steamworks-publishing-brief-2026.md` (Sahara + Kevin,
+commit `5f64ab0`). Valve character limits sourced from the brief §3 and Valve's current store
+partner documentation as of 2026-08-01. Combat/scope facts sourced from `docs/combat-design.md`
+and the design docs — flag anything here as first, not verified in-engine.*
