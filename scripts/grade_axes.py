@@ -1,4 +1,4 @@
-import sys, numpy as np
+import sys, argparse, numpy as np
 from PIL import Image, ImageFilter
 
 # ============================================================================
@@ -24,6 +24,21 @@ from PIL import Image, ImageFilter
 # p95             global luminance 95th pct (~170 band)   150..185    165.8
 #
 # midtone band = luminance L in [p35, p75] (the lit-wood body of the frame).
+#
+# PROFILE MODE (--profile hero|gameplay):
+#   hero     — all 6 axes (default; for beauty/hero-shot 1024² calibration frames)
+#   gameplay — drops DOF fg:bg (framing-dependent; keeps P0 chromatic + micro + p95)
+#
+#   DOF fg:bg is a KNOWN TRAP for non-hero framing. Its measurement zones
+#   (fg: 72-95% height, bg: 10-40% height) were designed for the indoor 1024²
+#   beauty shot where a lit-wood body fills the foreground zone. On wide-hero
+#   and gameplay frames the zones capture different scene content, so DOF
+#   intrinsically fails even on CEO-approved baselines:
+#     golden-beauty-shot-ref (hero 1024²)  → DOF 3.50 (PASS)
+#     wide-hero-final (CEO baseline, 1024²) → DOF 0.17 (FAIL by design)
+#     gate3 gameplay frames (1280×720)      → DOF 0.60–1.34 (all FAIL)
+#   Grading DOF on gameplay frames produces a gate that everyone learns to ignore,
+#   which is more dangerous than a gate that always passes. — Sun, 2026-08-01
 # ============================================================================
 
 TARGETS = [
@@ -35,6 +50,21 @@ TARGETS = [
     ("micro",  "micro-contrast",   "ge",    5.0,             5.24),
     ("p95",    "highlight p95",    "band", (150.0, 185.0),  165.8),
 ]
+
+# Which axes are graded per profile.  DOF is excluded from gameplay because
+# its measurement zones assume the hero/beauty-shot composition (see header).
+PROFILES = {
+    "hero":     ["warmth", "blue", "sat", "dof", "micro", "p95"],
+    "gameplay": ["warmth", "blue", "sat", "micro", "p95"],
+}
+
+DOF_EXCLUSION_NOTE = (
+    "DOF fg:bg is framing-dependent -- its fg/bg measurement zones were designed\n"
+    "for the indoor 1024^2 hero shot. On wide-hero the CEO baseline itself scores\n"
+    "0.17 (vs target >= 3.0); on gameplay (1280x720) every frame fails (0.60-1.34).\n"
+    "Grading it on non-hero frames creates a gate everyone learns to ignore.\n"
+    "See scripts/grade_axes.py header and docs/gate3-colour-review-2026-08-01.md S2."
+)
 
 def verdict(cmp, bound, v):
     if cmp == "ge":   return v >= bound
@@ -85,24 +115,54 @@ def measure(path):
     }
 
 def main():
-    if len(sys.argv) < 2:
-        print("usage: grade_axes.py <frame.png> [more.png ...]")
-        sys.exit(2)
+    parser = argparse.ArgumentParser(
+        description="Grade P0 colour axes (single source of truth for look-acceptance)"
+    )
+    parser.add_argument(
+        "--profile", choices=["hero", "gameplay"], default="hero",
+        help="hero = all 6 axes (default); gameplay = skip DOF fg:bg (framing-dependent)"
+    )
+    parser.add_argument(
+        "images", nargs="+",
+        help="PNG frame(s) to grade"
+    )
+    args = parser.parse_args()
+
+    profile = args.profile
+    active_axes = PROFILES[profile]
+    skipped_axes = [ax for ax, _, _, _, _ in TARGETS if ax not in active_axes]
+
+    # --- header: always print the active profile so nobody can quietly relax criteria ---
+    ax_labels = [label for key, label, _, _, _ in TARGETS if key in active_axes]
+    print(f"profile: {profile}")
+    print(f"  axes graded: {', '.join(active_axes)}")
+    if skipped_axes:
+        print(f"  axes skipped: {', '.join(skipped_axes)}")
+        # print the framing-dependent rationale (compact)
+        for line in DOF_EXCLUSION_NOTE.strip().split("\n"):
+            print(f"  NOTE: {line.strip()}")
+    print()
+
     any_fail = False
-    for path in sys.argv[1:]:
+    for path in args.images:
         m = measure(path)
-        print(f"\n{path}")
-        print(f"  context: warmth(global) {m['_warmth_global']:+6.1f}  sat(global) {m['_sat_global']:4.1f}%"
+        print(f"{path}")
+        print(f"  profile: {profile}  context: warmth(global) {m['_warmth_global']:+6.1f}  sat(global) {m['_sat_global']:4.1f}%"
               f"  DOF fg {m['_dof_fg']:5.2f} bg {m['_dof_bg']:5.2f}")
         frame_ok = True
         for key, label, cmp, bound, ref in TARGETS:
             v = m[key]
-            ok = verdict(cmp, bound, v)
-            frame_ok = frame_ok and ok
-            tag = "PASS" if ok else "FAIL"
+            if key in active_axes:
+                ok = verdict(cmp, bound, v)
+                frame_ok = frame_ok and ok
+                tag = "PASS" if ok else "FAIL"
+            else:
+                tag = "SKIP"
             print(f"  [{tag}] {label:<18} {v:8.2f}   target {fmt_target(cmp, bound):>10}   (REF {ref})")
         print(f"  => {'ALL AXES PASS' if frame_ok else 'FAIL (>=1 axis below target)'}")
         any_fail = any_fail or not frame_ok
+        print()
+
     sys.exit(1 if any_fail else 0)
 
 if __name__ == "__main__":
