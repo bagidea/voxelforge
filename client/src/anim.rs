@@ -28,10 +28,116 @@
 //! Ownership: this file + `scene.rs`. `combat.rs` is read-only from here — the rig
 //! observes its state, never writes it.
 
+use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
 use crate::combat::{self, CombatState, Enemy, Health, HuskState, PlayerCombat};
 use crate::{Cfg, FlyCam, EYE_HEIGHT};
+
+// ===========================================================================
+// Animation timing events — the message stream anim fires for other lanes.
+// ===========================================================================
+//
+// anim.rs is the ONLY writer of these. They carry the *visual timing* of each
+// move — the exact frame the rig reaches a phase — NOT the gameplay resolution.
+// That is combat.rs's own `ImpactEvent` / `DodgeEvent` / `StaggerEvent`, which
+// fire only when a hit actually lands / a roll is actually paid for / poise
+// breaks. The split is deliberate and documented in docs/anim-events.md:
+//
+//   * combat's events answer "did it connect / count?"   — gameplay truth.
+//   * these events answer "where is the body in the move?" — sync the VFX spark,
+//     the SFX whoosh and the camera pop to the PICTURE, hit or whiff.
+//
+// Every timing below is anchored to the SAME constants combat publishes
+// (`LIGHT_ACTIVE`, `DODGE_IFRAMES`, `PARRY_WINDOW`, ...) via `player_beat` /
+// `husk_beat`, so an anim event and the gameplay window that shares it cannot
+// drift apart. Subscribe without touching this file:
+//   ```ignore
+//   fn on_contact(mut swings: MessageReader<anim::AnimSwing>) {
+//       for s in swings.read() {
+//           if s.phase == anim::SwingPhase::Contact { /* spawn the spark */ }
+//       }
+//   }
+//   ```
+
+/// Which leg of an attack the rig is in: anticipation -> contact -> follow-through.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SwingPhase {
+    /// Wind-up: the blade is cocked back (the telegraph). `beat.t < active.0`.
+    Windup,
+    /// Contact: the hitbox is open and the blade is at its fastest. This is the
+    /// frame a spark / impact SFX keys off — fired once on entry, hit or whiff.
+    Contact,
+    /// Follow-through: the swing has spent its energy and is recovering.
+    Recover,
+}
+
+/// The rig reached an attack phase. `combo` is 1..=3 for chained lights, 0 for a
+/// heavy / charged / husk swing (see `player_beat` / `husk_beat`).
+#[derive(Clone, Copy, Debug)]
+pub struct AnimSwing {
+    pub actor: Actor,
+    pub phase: SwingPhase,
+    pub combo: u8,
+}
+impl Message for AnimSwing {}
+
+/// Which edge of the dodge i-frame window the rig crossed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DodgePhase {
+    /// The roll began — i-frames are now live (`beat.t` entered the i-frame band).
+    IframeStart,
+    /// The i-frames expired; the recovery leg (still tumbling, no longer safe).
+    IframeEnd,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AnimDodge {
+    pub actor: Actor,
+    pub phase: DodgePhase,
+}
+impl Message for AnimDodge {}
+
+/// Which edge of the parry receive window the rig crossed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ParryPhase {
+    /// The guard flashed into the parry pose — the receive window is open.
+    Open,
+    /// The window closed; a late input is now a plain block, not a deflect.
+    Close,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AnimParry {
+    pub actor: Actor,
+    pub phase: ParryPhase,
+}
+impl Message for AnimParry {}
+
+/// A flinch / hit-reaction fired — additive recoil on the rig the frame HP
+/// dropped. Pairs with, but is separate from, combat's `StaggerEvent` (poise
+// break): every stagger is a hit, not every hit is a stagger.
+#[derive(Clone, Copy, Debug)]
+pub struct AnimHit {
+    pub actor: Actor,
+}
+impl Message for AnimHit {}
+
+/// Which foot struck the ground. Twice per stride cycle, alternating — the audio
+/// lane's footfall sync. Only fires while actually locomoting (the stride phase
+/// is advanced by distance travelled, so a standing body emits none).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Foot {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AnimFootstep {
+    pub actor: Actor,
+    pub foot: Foot,
+}
+impl Message for AnimFootstep {}
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -79,7 +185,15 @@ pub struct AnimPlugin;
 
 impl Plugin for AnimPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, init_rig_assets).add_systems(
+        // The animation-timing message stream other lanes subscribe to. anim.rs
+        // is the sole writer (see the events section + docs/anim-events.md).
+        app.add_message::<AnimSwing>()
+            .add_message::<AnimDodge>()
+            .add_message::<AnimParry>()
+            .add_message::<AnimHit>()
+            .add_message::<AnimFootstep>()
+            .add_systems(Startup, init_rig_assets)
+            .add_systems(
             Update,
             (
                 // Rigs are attached the frame after their actor appears (the player
@@ -174,6 +288,38 @@ pub struct Rig {
     parry_t: f32,
     /// Death progress, 0 → 1. Reset when the actor comes back alive.
     death: f32,
+    // --- animation-event edge state (see the events section above) -----------
+    /// The swing phase this rig was in last frame, so a phase change fires its
+    /// `AnimSwing` exactly once on the frame it crosses.
+    prev_swing: Option<SwingPhase>,
+    /// Was the rig inside the dodge i-frame window last frame?
+    in_iframe: bool,
+    /// Was the rig inside the parry receive window last frame?
+    in_parry: bool,
+    /// Stride phase at the previous frame, for footstep crossing detection.
+    prev_phase: f32,
+}
+
+/// Native-only screenshot hook — see `pose_override()` and docs/anim-events.md
+/// capture section. Set with VOXELFORGE_ANIM_POSE=attack|dodge|parry.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OverridePose {
+    Attack,
+    Dodge,
+    Parry,
+}
+
+/// Read VOXELFORGE_ANIM_POSE once (cached). Returns None on wasm and in every
+/// normal play session, so gameplay is untouched — this only ever redirects the
+/// player rig's pose for an isolated capture run.
+fn pose_override() -> Option<OverridePose> {
+    static LOCK: std::sync::OnceLock<Option<OverridePose>> = std::sync::OnceLock::new();
+    *LOCK.get_or_init(|| match std::env::var("VOXELFORGE_ANIM_POSE").ok().as_deref() {
+        Some("attack") | Some("swing") | Some("strike") => Some(OverridePose::Attack),
+        Some("dodge") | Some("roll") => Some(OverridePose::Dodge),
+        Some("parry") | Some("guard") => Some(OverridePose::Parry),
+        _ => None,
+    })
 }
 
 /// A detached Husk body. `husk_ai` despawns the real enemy on the frame its HP hits
@@ -551,6 +697,10 @@ fn build_rig(
         parry: 0.0,
         parry_t: 0.0,
         death: 0.0,
+        prev_swing: None,
+        in_iframe: false,
+        in_parry: false,
+        prev_phase: 0.0,
     };
     (root, rig)
 }
@@ -697,6 +847,11 @@ fn animate_rigs(
         (Without<Joint>, Without<FlyCam>, Without<Enemy>, Without<Corpse>),
     >,
     mut joint_q: Query<&mut Transform, JointFilter>,
+    mut swings: MessageWriter<AnimSwing>,
+    mut dodges: MessageWriter<AnimDodge>,
+    mut parries: MessageWriter<AnimParry>,
+    mut hits: MessageWriter<AnimHit>,
+    mut steps: MessageWriter<AnimFootstep>,
 ) {
     let dt = time.delta_secs().clamp(1.0 / 240.0, 1.0 / 15.0);
     let elapsed = time.elapsed_secs();
@@ -739,6 +894,15 @@ fn animate_rigs(
                 continue;
             };
 
+        // Capture hook: hold one move's canonical frame on the player rig so a
+        // PNG of that pose can be grabbed (see docs/anim-events.md capture).
+        let mut beat = beat;
+        if rig.actor == Actor::Player {
+            if let Some(op) = pose_override() {
+                beat = override_beat(op);
+            }
+        }
+
         // ---- speed, stride phase, facing ------------------------------------
         let moved = Vec3::new(pos.x - rig.prev_pos.x, 0.0, pos.z - rig.prev_pos.z);
         rig.prev_pos = pos;
@@ -779,6 +943,9 @@ fn animate_rigs(
             if cur < rig.prev_hp - 0.001 && rig.prev_hp != f32::MAX && cur > 0.0 {
                 rig.hit = HIT_TIME;
                 rig.hit_side = -rig.hit_side;
+                // Flinch event: the rig took a knock this frame (distinct from a
+                // poise-break StaggerEvent — every stagger is a hit, not vice versa).
+                hits.write(AnimHit { actor: rig.actor });
             }
             // A respawn refills HP; clear the death fall with it.
             if cur > rig.prev_hp + 0.001 {
@@ -805,6 +972,54 @@ fn animate_rigs(
         if beat.action == Action::Dead || rig.death > 0.0 {
             rig.death = (rig.death + dt / 0.85).min(1.0);
         }
+
+        // =====================================================================
+        // Animation-timing events — edge-detected, one message per crossing.
+        // (See the events section header + docs/anim-events.md for the contract.)
+        // =====================================================================
+        // Swing: Windup -> Contact -> Recover, each fired once on entry.
+        let cur_swing = swing_phase_of(&beat);
+        if cur_swing != rig.prev_swing {
+            if let Some(phase) = cur_swing {
+                swings.write(AnimSwing { actor: rig.actor, phase, combo: beat.combo });
+            }
+            rig.prev_swing = cur_swing;
+        }
+
+        // Dodge i-frame window is the first IFRAMES/(IFRAMES+RECOVERY) of beat.t.
+        let iframe_end = combat::DODGE_IFRAMES / (combat::DODGE_IFRAMES + combat::DODGE_RECOVERY);
+        let now_iframe = beat.action == Action::Dodge && beat.t < iframe_end;
+        if now_iframe && !rig.in_iframe {
+            dodges.write(AnimDodge { actor: rig.actor, phase: DodgePhase::IframeStart });
+        } else if !now_iframe && rig.in_iframe {
+            dodges.write(AnimDodge { actor: rig.actor, phase: DodgePhase::IframeEnd });
+        }
+        rig.in_iframe = now_iframe;
+
+        // Parry receive window is the first PARRY_WINDOW_FRAC of beat.t.
+        let now_parry = beat.action == Action::Parry && beat.t < PARRY_WINDOW_FRAC;
+        if now_parry && !rig.in_parry {
+            parries.write(AnimParry { actor: rig.actor, phase: ParryPhase::Open });
+        } else if !now_parry && rig.in_parry {
+            parries.write(AnimParry { actor: rig.actor, phase: ParryPhase::Close });
+        }
+        rig.in_parry = now_parry;
+
+        // Footfalls: twice per stride cycle (one per foot), only while actually
+        // locomoting and free of a committed action. Phase advances by distance
+        // travelled, so a planted body crosses no boundary and stays silent.
+        if speed > IDLE_SPEED
+            && matches!(beat.action, Action::None | Action::Guard)
+            && pose_override().is_none()
+        {
+            if phase_crossed(rig.prev_phase, rig.phase, std::f32::consts::PI) {
+                steps.write(AnimFootstep { actor: rig.actor, foot: Foot::Left });
+            }
+            if phase_crossed(rig.prev_phase, rig.phase, 0.0) {
+                steps.write(AnimFootstep { actor: rig.actor, foot: Foot::Right });
+            }
+        }
+        rig.prev_phase = rig.phase;
 
         // =====================================================================
         // Pose
@@ -1701,6 +1916,56 @@ fn player_beat(pc: &PlayerCombat) -> Beat {
     }
 }
 
+/// Which swing phase a [`Beat`] is in, or None when it is not attacking. The
+/// CONTACT band is exactly `beat.active` — the same window combat opens its
+/// hitbox across — so the `AnimSwing(Contact)` event lands inside the gameplay
+/// active frames, never beside them.
+fn swing_phase_of(beat: &Beat) -> Option<SwingPhase> {
+    if beat.action != Action::Swing {
+        return None;
+    }
+    Some(if beat.t < beat.active.0 {
+        SwingPhase::Windup
+    } else if beat.t < beat.active.1 {
+        SwingPhase::Contact
+    } else {
+        SwingPhase::Recover
+    })
+}
+
+/// The canonical frame of a move, for the capture hook (VOXELFORGE_ANIM_POSE).
+/// Each held pose sits at the moment that move reads most clearly on a still:
+///
+///   * Attack  — the CONTACT frame (mid-LIGHT_ACTIVE): blade mid-strike.
+///   * Dodge   — beat.t = 0.5: a quarter-turned tuck, unmistakably a roll.
+///   * Parry   — the centre of the receive window: guard flashed up to deflect.
+fn override_beat(p: OverridePose) -> Beat {
+    match p {
+        OverridePose::Attack => {
+            let a0 = combat::LIGHT_ACTIVE.0 / combat::LIGHT_TIME;
+            let a1 = combat::LIGHT_ACTIVE.1 / combat::LIGHT_TIME;
+            Beat {
+                action: Action::Swing,
+                t: 0.5 * (a0 + a1),
+                active: (a0, a1),
+                combo: 1,
+            }
+        }
+        OverridePose::Dodge => Beat {
+            action: Action::Dodge,
+            t: 0.5,
+            active: (0.3, 0.6),
+            combo: 0,
+        },
+        OverridePose::Parry => Beat {
+            action: Action::Parry,
+            t: 0.5 * PARRY_WINDOW_FRAC,
+            active: (0.0, PARRY_WINDOW_FRAC),
+            combo: 0,
+        },
+    }
+}
+
 /// Map [`HuskState`] onto a [`Beat`]. The Husk's overhead is one continuous arc
 /// stretched across four AI states: Telegraph winds it, Swing lands it, Gap re-cocks
 /// it for the second hit, Recover puts it away.
@@ -1806,6 +2071,18 @@ fn wrap_tau(a: f32) -> f32 {
     } else {
         x
     }
+}
+
+/// Did the stride `phase` advance past `target` this frame? `phase` only ever
+/// moves forward (it is advanced by distance travelled), so this is a one-sided
+/// crossing test — used to fire a footfall exactly once per foot per cycle.
+#[inline]
+fn phase_crossed(prev: f32, cur: f32, target: f32) -> bool {
+    let delta = wrap_tau(cur - prev);
+    if delta <= 0.0 {
+        return false;
+    }
+    wrap_tau(target - prev) < delta
 }
 
 #[inline]
@@ -1942,5 +2219,101 @@ mod tests {
         let from = 3.10_f32;
         let to = -3.10_f32;
         assert!(wrap_pi(to - from).abs() < 0.1);
+    }
+
+    // ---- animation-event timing (docs/anim-events.md contract) -------------
+
+    fn beat(action: Action, t: f32, active: (f32, f32)) -> Beat {
+        Beat { action, t, active, combo: 1 }
+    }
+
+    #[test]
+    fn swing_phase_splits_anticipation_contact_followthrough() {
+        let active = (0.34, 0.63);
+        assert_eq!(swing_phase_of(&beat(Action::Swing, 0.10, active)), Some(SwingPhase::Windup));
+        assert_eq!(swing_phase_of(&beat(Action::Swing, 0.50, active)), Some(SwingPhase::Contact));
+        assert_eq!(swing_phase_of(&beat(Action::Swing, 0.90, active)), Some(SwingPhase::Recover));
+        assert_eq!(swing_phase_of(&beat(Action::Swing, active.0, active)), Some(SwingPhase::Contact));
+        assert_eq!(swing_phase_of(&beat(Action::Swing, active.1, active)), Some(SwingPhase::Recover));
+        assert_eq!(swing_phase_of(&beat(Action::None, 0.5, active)), None);
+    }
+
+    #[test]
+    fn light_contact_band_lands_inside_the_gameplay_hitbox() {
+        let a0 = combat::LIGHT_ACTIVE.0 / combat::LIGHT_TIME;
+        let a1 = combat::LIGHT_ACTIVE.1 / combat::LIGHT_TIME;
+        let active = (a0, a1);
+        assert_eq!(swing_phase_of(&beat(Action::Swing, a0, active)), Some(SwingPhase::Contact));
+        assert_eq!(swing_phase_of(&beat(Action::Swing, a1 - 1e-4, active)), Some(SwingPhase::Contact));
+        assert_eq!(swing_phase_of(&beat(Action::Swing, a0 - 1e-3, active)), Some(SwingPhase::Windup));
+    }
+
+    #[test]
+    fn attack_event_fires_each_phase_exactly_once() {
+        let active = (0.34, 0.63);
+        let mut seen = Vec::new();
+        let mut prev: Option<SwingPhase> = None;
+        let n = 400;
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let cur = swing_phase_of(&beat(Action::Swing, t, active));
+            if cur != prev {
+                if let Some(p) = cur {
+                    seen.push(p);
+                }
+                prev = cur;
+            }
+        }
+        assert_eq!(seen, vec![SwingPhase::Windup, SwingPhase::Contact, SwingPhase::Recover]);
+    }
+
+    #[test]
+    fn dodge_iframe_window_matches_combat() {
+        let iframe_end = combat::DODGE_IFRAMES / (combat::DODGE_IFRAMES + combat::DODGE_RECOVERY);
+        let in_band = beat(Action::Dodge, iframe_end - 1e-4, (0.3, 0.6));
+        let past = beat(Action::Dodge, iframe_end + 1e-4, (0.3, 0.6));
+        assert!(in_band.action == Action::Dodge && in_band.t < iframe_end);
+        assert!(past.action == Action::Dodge && !(past.t < iframe_end));
+        assert!((iframe_end - 10.0 / 22.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn parry_window_matches_combat() {
+        let expect = combat::PARRY_WINDOW / crate::dodge_parry::PARRY_STATE_LEN;
+        assert!((PARRY_WINDOW_FRAC - expect).abs() < 1e-4);
+        let ob = override_beat(OverridePose::Parry);
+        assert!(ob.t > 0.0 && ob.t < PARRY_WINDOW_FRAC);
+    }
+
+    #[test]
+    fn override_beat_holds_each_canonical_frame() {
+        let a = override_beat(OverridePose::Attack);
+        assert_eq!(a.action, Action::Swing);
+        let a0 = combat::LIGHT_ACTIVE.0 / combat::LIGHT_TIME;
+        let a1 = combat::LIGHT_ACTIVE.1 / combat::LIGHT_TIME;
+        assert!(a.t > a0 && a.t < a1);
+        assert_eq!(swing_phase_of(&a), Some(SwingPhase::Contact));
+        assert_eq!(override_beat(OverridePose::Dodge).t, 0.5);
+    }
+
+    #[test]
+    fn phase_crossed_fires_once_per_foot_per_cycle() {
+        let tau = std::f32::consts::TAU;
+        let mut left = 0;
+        let mut right = 0;
+        let mut prev = 0.0f32;
+        for _ in 1..=60 {
+            let cur = wrap_tau(prev + tau / 60.0);
+            if phase_crossed(prev, cur, std::f32::consts::PI) {
+                left += 1;
+            }
+            if phase_crossed(prev, cur, 0.0) {
+                right += 1;
+            }
+            prev = cur;
+        }
+        assert_eq!(left, 1);
+        assert_eq!(right, 1);
+        assert!(!phase_crossed(1.0, 1.0, std::f32::consts::PI));
     }
 }
