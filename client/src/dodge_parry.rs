@@ -124,6 +124,22 @@ pub struct DodgeParryState {
     /// was *spent* is not a window that *expired*; only the second one is
     /// evidence about the window's length, so only the second one is logged.
     parry_consumed: bool,
+    /// How many of each *outcome* this run has actually produced, bumped at the
+    /// same points the `FEEL_*` lines are written.
+    ///
+    /// These count OUTCOMES; [`DodgeProbe::drove`] counts the keystrokes the
+    /// probe supplied, and the two are not the same number — a driven late
+    /// parry that meets a feint, a whiff, or a husk that died first produces no
+    /// `FailedParry` at all. The probe reads these to decide when it is done,
+    /// which is the only reason they exist: ending the run on a stopwatch while
+    /// the gate grades outcomes is what made this proof flaky (one run in three
+    /// finished with the player untouched and failed gate 3 on a good build).
+    pub saw_iframe_close: u32,
+    pub saw_dodge_negate: u32,
+    pub saw_parry_expire: u32,
+    pub saw_parry_land: u32,
+    pub saw_parry_fail: u32,
+    pub saw_riposte: u32,
 }
 
 // ===========================================================================
@@ -190,6 +206,7 @@ pub fn watch_windows(
                 opened, frame, dp.iframe_open_for, DODGE_IFRAME_FRAMES
             );
         }
+        dp.saw_iframe_close += 1;
         dp.iframe_open_at = None;
         dp.iframe_open_for = 0;
     }
@@ -218,6 +235,7 @@ pub fn watch_windows(
                     opened, frame, dp.parry_open_for, PARRY_WINDOW_FRAMES
                 );
             }
+            dp.saw_parry_expire += 1;
         }
         dp.parry_consumed = false;
         // Only count staleness while the *state* is still Parry — that is the
@@ -268,6 +286,7 @@ pub fn resolve_defence(
 ) {
     match outcome {
         EnemyHitOutcome::Dodged => {
+            dp.saw_dodge_negate += 1;
             if feel.enabled {
                 println!(
                     "FEEL_DODGE_NEGATE frame={} frames_left={} booked={} dmg_denied={:.1} hp={:.1}",
@@ -276,6 +295,7 @@ pub fn resolve_defence(
             }
         }
         EnemyHitOutcome::Parried => {
+            dp.saw_parry_land += 1;
             // §2.5's posture damage, applied *by the parry* — where the doc puts
             // it — instead of by whichever later swing happened to connect.
             let before = ep.cur;
@@ -354,6 +374,7 @@ shove={:.3} hitstop={:.3} riposte_window={:.3}",
             }
         }
         EnemyHitOutcome::FailedParry => {
+            dp.saw_parry_fail += 1;
             if feel.enabled {
                 println!(
                     "FEEL_PARRY_FAIL frame={} open_frame={} booked={} late_by={} \
@@ -387,13 +408,16 @@ pub fn take_riposte(pc: &mut PlayerCombat, enemy: Entity) -> bool {
 /// with the numbers it actually applied — not with what they should have been.
 pub fn log_riposte(
     feel: &FeelLog,
-    dp: &DodgeParryState,
+    dp: &mut DodgeParryState,
     target: Entity,
     mult: f32,
     dmg: f32,
     weight: ImpactWeight,
     hp_left: f32,
 ) {
+    // Counted before the log gate: the riposte happened whether or not anyone
+    // asked for the feel log, and the probe's stop condition reads the count.
+    dp.saw_riposte += 1;
     if !feel.enabled {
         return;
     }
@@ -418,9 +442,43 @@ knockback={:.3} kick={:.3} hp={:.1}",
 
 /// Wall-clock the probe lets the scene settle before touching anything.
 const PROBE_START: f32 = 2.0;
-/// Wall-clock the probe runs to. Long enough for several Husk combos so every
-/// case in the cycle below gets more than one chance to fire.
-const PROBE_END: f32 = 45.0;
+/// Wall-clock backstop. The probe normally stops the moment the run has
+/// produced every outcome `scripts/prove_dodge_parry.sh` grades — see
+/// [`evidence_complete`] — and this only catches a run where something never
+/// fires at all, so the process still exits and prints its closing line
+/// instead of being killed by the harness timeout with no verdict at all.
+///
+/// It replaced a hard `PROBE_END = 45.0`, which was the bug: the probe's
+/// triggers ride Husk state transitions, whose pacing varies with the rhythm
+/// roll (`straight` / `feint` / `delayed`, hold 0.42–1.55 s), so a fixed
+/// stopwatch cut a different number of cases each run. One run in three ended
+/// with the player never having been hit, and gate 3 (IFRAME_EDGE, "the window
+/// has an edge") failed on a build that was fine. A gate that passes two runs
+/// in three is not evidence about the build.
+const PROBE_CAP: f32 = 100.0;
+
+/// Gate 1 wants two closed i-frame windows before it will believe the count is
+/// stable; every other gate needs one of its own outcome. Mirrored here so the
+/// probe stops on exactly what the grader is about to ask for.
+const NEED_IFRAME_CLOSE: u32 = 2;
+
+/// Has this run produced every outcome the gate grades?
+///
+/// Note what is counted: outcomes the shipping systems *observed*, taken from
+/// [`DodgeParryState`], plus the player having actually been hit. `drove` (the
+/// probe's own keystroke count) is checked too, for gate 12's coverage line,
+/// but it is deliberately not enough on its own — driving a late parry into a
+/// feint books a `drove` and produces no evidence whatsoever.
+fn evidence_complete(dp: &DodgeParryState, probe: &DodgeProbe, player_hp: f32) -> bool {
+    dp.saw_iframe_close >= NEED_IFRAME_CLOSE
+        && dp.saw_dodge_negate >= 1
+        && dp.saw_parry_expire >= 1
+        && dp.saw_parry_land >= 1
+        && dp.saw_parry_fail >= 1
+        && dp.saw_riposte >= 1
+        && player_hp < combat::HP_PLAYER
+        && probe.drove.iter().all(|&n| n >= 1)
+}
 /// How close the probe stands. Inside `MELEE_RANGE` so the Husk commits, and
 /// inside the player's own reach so the riposte can land.
 const PROBE_REACH: f32 = 1.6;
@@ -499,18 +557,26 @@ pub fn dodge_parry_probe(
     }
     fly.walking = true;
 
-    if t >= PROBE_END {
+    // Stop on evidence, not on the clock. `stop=cap` in the closing line means
+    // the backstop fired with something still missing — the gates below will
+    // say which, and they are meant to fail when they do.
+    let enough = evidence_complete(&dp, &probe, php.cur);
+    if enough || t >= PROBE_CAP {
         for k in [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD,
                   KeyCode::KeyX, KeyCode::Space, KeyCode::KeyV] {
             keys.reset(k);
         }
         probe.done = true;
         println!(
-            "DODGE_PROBE done t={t:.1}s frame={} husks_spawned={} \
+            "DODGE_PROBE done t={t:.1}s frame={} stop={} husks_spawned={} \
 drove_dodge_on_time={} drove_dodge_late={} drove_parry_on_time={} drove_parry_late={} \
-player_hp={:.0}",
-            dp.frame, probe.spawned, probe.drove[0], probe.drove[1], probe.drove[2],
-            probe.drove[3], php.cur
+saw_iframe_close={} saw_dodge_negate={} saw_parry_expire={} saw_parry_land={} \
+saw_parry_fail={} saw_riposte={} player_hp={:.0}",
+            dp.frame,
+            if enough { "evidence" } else { "cap" },
+            probe.spawned, probe.drove[0], probe.drove[1], probe.drove[2], probe.drove[3],
+            dp.saw_iframe_close, dp.saw_dodge_negate, dp.saw_parry_expire,
+            dp.saw_parry_land, dp.saw_parry_fail, dp.saw_riposte, php.cur
         );
         exit.write(AppExit::Success);
         return;

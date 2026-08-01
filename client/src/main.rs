@@ -1294,11 +1294,18 @@ fn block_name(b: BlockId) -> &'static str {
 /// Is the world-space voxel (wx,wy,wz) solid? Only the y=0 chunk layer exists in
 /// Phase 0, so anything outside 0..CHUNK vertically is empty air.
 fn solid_at(world: &World, wx: i32, wy: i32, wz: i32) -> bool {
+    solid_at_chunks(&world.chunks, wx, wy, wz)
+}
+
+/// Same as [`solid_at`] but works on a raw chunk map so tests can drive it without
+/// constructing a full `World` (the material handle requires a running Bevy App).
+#[inline]
+fn solid_at_chunks(chunks: &HashMap<(i32, i32), ChunkSlot>, wx: i32, wy: i32, wz: i32) -> bool {
     if wy < 0 || wy >= CHUNK {
         return false;
     }
     let key = (wx.div_euclid(CHUNK), wz.div_euclid(CHUNK));
-    let Some(slot) = world.chunks.get(&key) else {
+    let Some(slot) = chunks.get(&key) else {
         return false;
     };
     slot.data
@@ -1331,6 +1338,12 @@ const TURN_RATE: f32 = 12.0; // how fast the avatar turns to face its movement (
 /// Does the player body — camera (eye) at `eye` — overlap any solid voxel? A tiny
 /// epsilon inset stops a body that merely *touches* a block face from sticking.
 fn body_collides(world: &World, eye: Vec3) -> bool {
+    body_collides_chunks(&world.chunks, eye)
+}
+
+/// Same as [`body_collides`] but works on a raw chunk map so tests can drive it.
+#[inline]
+fn body_collides_chunks(chunks: &HashMap<(i32, i32), ChunkSlot>, eye: Vec3) -> bool {
     const E: f32 = 1.0e-3;
     let min = Vec3::new(eye.x - PLAYER_HALF_W, eye.y - EYE_HEIGHT, eye.z - PLAYER_HALF_W);
     let max = Vec3::new(
@@ -1344,7 +1357,7 @@ fn body_collides(world: &World, eye: Vec3) -> bool {
     for vx in x0..=x1 {
         for vy in y0..=y1 {
             for vz in z0..=z1 {
-                if solid_at(world, vx, vy, vz) {
+                if solid_at_chunks(chunks, vx, vy, vz) {
                     return true;
                 }
             }
@@ -1357,12 +1370,17 @@ fn body_collides(world: &World, eye: Vec3) -> bool {
 /// below it, so a step-up lands flush on the ledge instead of hovering above it.
 /// Returns the input unchanged if nothing solid is within reach (mid-air).
 fn settle_down(world: &World, eye: Vec3, max: f32) -> Vec3 {
+    settle_down_chunks(&world.chunks, eye, max)
+}
+
+/// Same as [`settle_down`] but works on a raw chunk map so tests can drive it.
+fn settle_down_chunks(chunks: &HashMap<(i32, i32), ChunkSlot>, eye: Vec3, max: f32) -> Vec3 {
     const STEP: f32 = 0.05;
     let mut y = eye.y;
     let mut dropped = 0.0;
     while dropped < max {
         let below = Vec3::new(eye.x, y - STEP, eye.z);
-        if body_collides(world, below) {
+        if body_collides_chunks(chunks, below) {
             break;
         }
         y -= STEP;
@@ -1376,8 +1394,18 @@ fn settle_down(world: &World, eye: Vec3, max: f32) -> Vec3 {
 /// body by STEP_HEIGHT, move it forward, and settle it flush onto the step.
 /// A wall taller than one block (or a low ceiling) leaves the body put.
 fn step_axis(world: &World, p: Vec3, horiz: Vec3, can_step: bool) -> Vec3 {
+    step_axis_chunks(&world.chunks, p, horiz, can_step)
+}
+
+/// Same as [`step_axis`] but works on a raw chunk map so tests can drive it.
+fn step_axis_chunks(
+    chunks: &HashMap<(i32, i32), ChunkSlot>,
+    p: Vec3,
+    horiz: Vec3,
+    can_step: bool,
+) -> Vec3 {
     let flat = p + horiz;
-    if !body_collides(world, flat) {
+    if !body_collides_chunks(chunks, flat) {
         return flat;
     }
     if !can_step {
@@ -1387,7 +1415,7 @@ fn step_axis(world: &World, p: Vec3, horiz: Vec3, can_step: bool) -> Vec3 {
     let lift = STEP_HEIGHT + STEP_CLEAR;
     let up = Vec3::new(p.x, p.y + lift, p.z);
     let up_fwd = up + horiz;
-    if body_collides(world, up) || body_collides(world, up_fwd) {
+    if body_collides_chunks(chunks, up) || body_collides_chunks(chunks, up_fwd) {
         // Corner escape: the up check's AABB trailing edge can floor into a wall
         // the player is walking *away* from, falsely blocking the step-up when
         // the body is near a building corner. Retry with a forward bias of
@@ -1402,8 +1430,8 @@ fn step_axis(world: &World, p: Vec3, horiz: Vec3, can_step: bool) -> Vec3 {
         if bias != Vec3::ZERO {
             let up2 = up + bias;
             let up_fwd2 = up_fwd + bias;
-            if !body_collides(world, up2) && !body_collides(world, up_fwd2) {
-                let landed = settle_down(world, up_fwd2, lift);
+            if !body_collides_chunks(chunks, up2) && !body_collides_chunks(chunks, up_fwd2) {
+                let landed = settle_down_chunks(chunks, up_fwd2, lift);
                 if landed.y < up_fwd2.y {
                     return landed;
                 }
@@ -1412,7 +1440,7 @@ fn step_axis(world: &World, p: Vec3, horiz: Vec3, can_step: bool) -> Vec3 {
         return p; // ledge too tall or a ceiling in the way — stay blocked
     }
     // Only a ledge (solid within a step below) counts — never climb into open air.
-    let landed = settle_down(world, up_fwd, lift);
+    let landed = settle_down_chunks(chunks, up_fwd, lift);
     if landed.y >= up_fwd.y {
         return p; // nothing to rest on — that was a gap, not a step
     }
@@ -2352,5 +2380,224 @@ fn screenshot_once(
     }
     if bench.took_shot && now > 4.4 {
         exit.write(AppExit::Success);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// tests — corner-escape & step-up physics (no Bevy App needed)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::prelude::Entity;
+    use std::collections::HashMap;
+    use voxelforge_sim::block::BlockId;
+    use voxelforge_sim::chunk::{ChunkData, ChunkPos};
+
+    /// Build a chunk slot whose `entity` is a placeholder (never rendered).
+    fn slot_empty(pos: ChunkPos) -> ChunkSlot {
+        ChunkSlot {
+            data: ChunkData::empty(pos),
+            entity: Entity::PLACEHOLDER,
+            quads: 0,
+        }
+    }
+
+    /// Place a single solid block into a chunk map, creating the chunk on demand.
+    fn place(chunks: &mut HashMap<(i32, i32), ChunkSlot>, wx: i32, wy: i32, wz: i32, id: BlockId) {
+        let cx = wx.div_euclid(CHUNK);
+        let cz = wz.div_euclid(CHUNK);
+        let slot = chunks
+            .entry((cx, cz))
+            .or_insert_with(|| slot_empty(ChunkPos::new(cx, 0, cz)));
+        slot.data.set(wx.rem_euclid(CHUNK), wy, wz.rem_euclid(CHUNK), id);
+    }
+
+    /// Fill a column from y=0..=height (inclusive) at (wx,wz) with STONE.
+    fn wall_column(
+        chunks: &mut HashMap<(i32, i32), ChunkSlot>,
+        wx: i32,
+        wz: i32,
+        height: i32,
+    ) {
+        for wy in 0..=height {
+            place(chunks, wx, wy, wz, BlockId::STONE);
+        }
+    }
+
+    /// Build a wall of `STONE` blocks along one axis.
+    /// `axis` = 'x' → wall runs in Z direction at a fixed X (`fixed`); each block
+    /// is placed at (`fixed`, 0..=height, z0..z1).
+    /// `axis` = 'z' → wall runs in X direction at a fixed Z.
+    fn wall(
+        chunks: &mut HashMap<(i32, i32), ChunkSlot>,
+        axis: char,
+        fixed: i32,
+        z0: i32,
+        z1: i32,
+        height: i32,
+    ) {
+        match axis {
+            'x' => {
+                for z in z0..=z1 {
+                    wall_column(chunks, fixed, z, height);
+                }
+            }
+            'z' => {
+                for x in z0..=z1 {
+                    wall_column(chunks, x, fixed, height);
+                }
+            }
+            _ => panic!("axis must be 'x' or 'z'"),
+        }
+    }
+
+    // ── helpers that mirror the production call chain for compact assertions ──
+
+    /// Run `move_body` on a raw chunk map (no `World` needed).
+    fn move_body_chunks(
+        chunks: &HashMap<(i32, i32), ChunkSlot>,
+        eye: Vec3,
+        delta: Vec3,
+        can_step: bool,
+    ) -> (Vec3, bool) {
+        let mut p = eye;
+        p = step_axis_chunks(chunks, p, Vec3::new(delta.x, 0.0, 0.0), can_step);
+        p = step_axis_chunks(chunks, p, Vec3::new(0.0, 0.0, delta.z), can_step);
+        let ty = Vec3::new(p.x, p.y + delta.y, p.z);
+        let mut grounded = false;
+        if body_collides_chunks(chunks, ty) {
+            if delta.y < 0.0 {
+                grounded = true;
+            }
+        } else {
+            p = ty;
+        }
+        (p, grounded)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 1 — corner escape: moving away from a wall that falsely blocks `up`
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Layout (top-down, Y axis up):
+    //
+    //    ██                ██ = stone wall at x = 0  (z 0..5, height 2)
+    //    ██  P →             P  = player eye ≈ (1.0, 1.62, 1.0)
+    //    ██  ■                ■  = ground block at (1, 0, 1)
+    //    ██
+    //
+    // Body spans x∈{0,1}, z∈{0,1} at eye.x=1.0.  The wall at x=0 is BEHIND
+    // the player (trailing edge).  Walking +X is blocked by the ground block
+    // at (1,0,1) which triggers the step-up path.  The `up` check at the
+    // lifted position still touches x=0 (the wall behind), which is a FALSE
+    // collision.  Without corner-escape the body pins.  With it, the forward
+    // bias shifts the trailing x-edge past x=0 so `up2` clears the wall,
+    // and the body steps onto the block at (1,0,1).
+    #[test]
+    fn corner_escape_unblocks_behind_wall() {
+        let mut chunks: HashMap<(i32, i32), ChunkSlot> = HashMap::new();
+
+        // Wall at x=0 (z 0..5, height 2) — the "false blocker" behind the player.
+        wall(&mut chunks, 'x', 0, 0, 5, 2);
+        // Ground block at (1, 0, 1) — blocks the flat move & becomes the step-up ledge.
+        place(&mut chunks, 1, 0, 1, BlockId::STONE);
+
+        // Player eye at (1.0, 1.62, 1.0). Body AABB x[0.701, 1.299] → {0,1};
+        // z[0.701, 1.299] → {0,1}.  The wall at x=0, z=1 blocks `up`.
+        let eye = Vec3::new(1.0, 1.62, 1.0);
+
+        // Move +X 0.5 — the corner-escape bias (+0.3 X) must unstick the body.
+        let result = step_axis_chunks(&chunks, eye, Vec3::new(0.5, 0.0, 0.0), true);
+
+        // Body must have moved forward (stepped onto the ledge).
+        assert!(
+            result.x > eye.x + 0.1,
+            "corner-escape failed — body did not move forward\n  eye={eye:?} → result={result:?}",
+        );
+    }
+
+    // Same setup but with diagonal input (+X, +Z).  `move_body` calls
+    // step_axis for X then Z; corner-escape frees the body from the corner
+    // so at least one axis can move — without it both axes pin.
+    #[test]
+    fn corner_escape_diagonal_unblocks() {
+        let mut chunks: HashMap<(i32, i32), ChunkSlot> = HashMap::new();
+
+        // Two wall columns meeting at (0, 0) — a tight building corner.
+        wall_column(&mut chunks, 0, 0, 2); // column at x=0, z=0
+        // Ground block for the X-axis step-up ledge.
+        place(&mut chunks, 1, 0, 1, BlockId::STONE);
+
+        let eye = Vec3::new(1.0, 1.62, 1.0);
+        let (result, _grounded) = move_body_chunks(&chunks, eye, Vec3::new(0.5, 0.0, 0.5), true);
+
+        // The body must have moved overall (not pinned at the corner).
+        assert!(
+            (result.x - eye.x).abs() > 0.01 || (result.z - eye.z).abs() > 0.01,
+            "corner-escape failed — body pinned with diagonal input\n  eye={eye:?} → result={result:?}",
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 2 — false-pass prevention: bias does NOT tunnel through a wall
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // The corner-escape bias must NOT let the body phase through a solid wall.
+    // A 3-block-tall wall at x = 1 (height 3 → can't step over) blocks flat.
+    // A false block at (0, 1, 0) behind the player triggers the corner-escape
+    // path, but the bias (+0.3 X) can't push the body's trailing x-edge past
+    // x=0 → up2 still collides with the false block → step_axis returns p.
+    #[test]
+    fn bias_into_wall_is_blocked() {
+        let mut chunks: HashMap<(i32, i32), ChunkSlot> = HashMap::new();
+
+        // Tall wall at x = 1 (z = -1..1, height 3 — cannot step over).
+        wall(&mut chunks, 'x', 1, -1, 1, 3);
+        // False block at (0, 1, 0) — triggers corner-escape by blocking `up`,
+        // but persists in `up2` because bias (+0.3) can't shift past x=0.
+        place(&mut chunks, 0, 1, 0, BlockId::STONE);
+
+        // Body at eye.x=0.5: AABB x∈{0} only, so (0, 1, 0) blocks `up`.
+        let eye = Vec3::new(0.5, 1.62, 0.0);
+        // horiz.x=0.5 brings flat into x=1 wall → flat blocked.
+        let result = step_axis_chunks(&chunks, eye, Vec3::new(0.5, 0.0, 0.0), true);
+
+        // Must NOT tunnel through — the body stays at the original position.
+        assert_eq!(
+            result, eye,
+            "false-pass: body tunnelled through a wall\n  eye={eye:?} → result={result:?}",
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Test 3 — single-wall normal step-up (original behaviour unchanged)
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // A lone 1-block-tall ledge at x = 1 (y=0 only).  The player walks +X into
+    // it and auto-steps onto the block.  This is the classic step-up path; the
+    // corner-escape logic must not interfere.
+    #[test]
+    fn single_wall_normal_step_up() {
+        let mut chunks: HashMap<(i32, i32), ChunkSlot> = HashMap::new();
+
+        // One-block ledge at x=1 (z=-1..1, height 0 → y=0 only, step-uppable).
+        wall(&mut chunks, 'x', 1, -1, 1, 0);
+
+        let eye = Vec3::new(0.5, 1.62, 0.0);
+        let result = step_axis_chunks(&chunks, eye, Vec3::new(0.5, 0.0, 0.0), true);
+
+        // Must have stepped UP onto the ledge (y increased).
+        assert!(
+            result.y > eye.y + 0.1,
+            "normal step-up failed — body did not climb the ledge\n  eye={eye:?} → result={result:?}",
+        );
+
+        // Must have moved forward in X.
+        assert!(
+            result.x > eye.x + 0.1,
+            "normal step-up failed — no forward movement\n  eye={eye:?} → result={result:?}",
+        );
     }
 }

@@ -1043,7 +1043,9 @@ pub fn player_combat(
     mut staggers: MessageWriter<StaggerEvent>,
     mut dodges: MessageWriter<DodgeEvent>,
     feel: Res<FeelLog>,
-    dp: Res<crate::dodge_parry::DodgeParryState>,
+    // ResMut, not Res: `log_riposte` tallies the riposte it just wrote so the
+    // dodge/parry probe can stop on evidence instead of a stopwatch.
+    mut dp: ResMut<crate::dodge_parry::DodgeParryState>,
     mut player_q: Query<
         (Entity, &mut Transform, &mut PlayerCombat, &mut Stamina, &Health, &mut Poise),
         (With<FlyCam>, Without<Enemy>),
@@ -1249,7 +1251,7 @@ pub fn player_combat(
             }
             if riposte {
                 crate::dodge_parry::log_riposte(
-                    &feel, &dp, enemy, mult, dmg * mult, weight, ehp.cur,
+                    &feel, &mut dp, enemy, mult, dmg * mult, weight, ehp.cur,
                 );
             }
         }
