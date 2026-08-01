@@ -5,7 +5,10 @@
 > **Confirmation pass 2026-08-01 (Flamingo), §6 below:** re-measured from disk. **F1 is closed — verified.** **F3 is only partly closed**: 3 of the 4 named assets exist, the **Library header 920×430 is still missing**, and all three "new" assets are derived crops of the same 1024² masters rather than the fresh compositions F3 asked for. F4/F5/F9/F10 reproduce unchanged.
 > Subject: `docs/assets/steam/` — 4 capsules + 2 key-art masters, produced per `docs/steam-store-art.md`.
 > Method: every claim below is measured, not eyeballed. Scripts: `scripts/_review_steam_capsules.py`,
-> `scripts/_review_steam_safearea.py`. Proof images: `docs/assets/steam/review/`.
+> `scripts/_review_steam_safearea.py`. **These scripts are intentionally not in git** — `.gitignore:139`
+> ignores `/scripts/_*.py` as one-shot review scripts, so they exist on the reviewer's disk only. Don't go
+> looking for them in the tree; re-derive from the numbers here, or re-author them. Proof images:
+> `docs/assets/steam/review/`.
 > Spec source: Steamworks **Store Graphical Assets** + **Steam Library Assets** docs, fetched 2026-08-01
 > (this closes the open item in `steam-store-art.md` §7: "confirm final px sizes against the Valve spec").
 > No game code, no engine run, no art file was modified by this review.
@@ -28,7 +31,7 @@ Scorecard: **5 PASS · 10 FIX**, of which **4 are hard submission blockers**.
 
 | # | Finding | Evidence |
 |---|---|---|
-| P1 | **All four shipped capsules are dimensionally exact and undistorted.** 460×215, 616×353, 600×900, 3840×1240 — every one is a pixel-exact match to its target, and each crop band's aspect is within 0.15% of the target aspect, so nothing is squashed. | §1 of the measure run: `EXACT-MATCH` on all four; ar 2.1395 / 1.7450 / 0.6667 / 3.0968 |
+| P1 | **All four shipped capsules are dimensionally exact and undistorted.** 460×215, 616×353, 600×900, 3840×1240 — every one is a pixel-exact match to its target, and every source crop band's aspect lands within the accepted squash tolerance of **≤ 0.25%** against its slot aspect: worst case **0.202%** (the hero), source = integer crop bounds. That is a PASS in practice, not a zero — at 0.202% a 100px feature drifts 0.2px, which is invisible. | §1 of the measure run: `EXACT-MATCH` on all four; slot ar 2.1395 / 1.7450 / 0.6667 / 3.0968. Band-vs-slot distortion measured per file in **§6.1** (0.033–0.202%) |
 | P2 | **The library capsule is the strongest asset in the set — it survives to thumbnail.** Full-body Auren, and the ember pouch acts as the focal dot. Legible at 150×225, 100×150, and still readable at 64×96. | `review/sim-library-tiny.png` |
 | P3 | **The value structure is genuine key art.** Squint to 40px and kill colour: a strong dark hero mass reads against a bright open sky, with clean figure/ground separation. That's the hard part of key art and it's already solved. | `review/squint-value-test.png`; squint-std 59–68 across capsules |
 | P4 | **Highlights are not clipped anywhere.** 0.00% of pixels above L250 in every file — the filmic/ACES discipline from look-bible §2 #10 held. | §3: `blown(L>250)=0.00%` on all six files |
@@ -240,6 +243,10 @@ Three statements in that doc should be updated when this is actioned:
 Re-measured **from the files on disk**, not from this document. Runs:
 `scripts/_review_steam_capsules.py` (updated to the new filenames — the old ones it pointed at were
 deleted by `6376138`), `scripts/_review_steam_safearea.py`, `scripts/_review_steam_confirm.py` (new).
+**None of these three are in git, by design** — `.gitignore:139` (`/scripts/_*.py`) treats `_`-prefixed
+Python as one-shot review scratch, the same convention as `/scripts/_*.sh`. The edits this pass made to
+`_review_steam_capsules.py` (the band-vs-slot aspect measurement in §6.1) therefore live on disk only and
+will not appear in any commit — that is expected, not a lost change.
 Spec re-fetched live from `partner.steamgames.com/doc/store/assets/{standard,libraryassets}` on the
 same day rather than trusted from the commit message.
 
@@ -291,6 +298,12 @@ Worst case **0.202%** (the hero), not 0.000%. Source: integer crop bounds — a 
 3.09677 exactly, and `crop_vertical()` truncates its band width with `int()`. At 0.202% a 100px feature
 drifts 0.2px, which is invisible, so this still **passes in practice** — but it is a tolerance, not a
 zero, and it must not be quoted as proof of anything beyond "the bands were chosen sanely".
+
+**The tolerance this review accepts is ≤ 0.25%**, and it is what P1 (§1) now stands on. It is set just
+above the measured worst case rather than at a round number pulled from nowhere: integer crop bounds are
+the only error source, so the ceiling is a property of the crop maths, not of taste. The rule for whoever
+re-crops later: if a band exceeds 0.25%, it is no longer rounding — go find the real cause before shipping
+it. (A band authored at target aspect — F7 — removes the error entirely.)
 
 **F1 is closed.** The header/main doubling is exact (920×430 = 2×460×215, 1232×706 = 2×616×353,
 ar 2.13953 and 1.74504 both unchanged), so the commit message's claim holds under measurement.
