@@ -46,7 +46,9 @@ use std::collections::HashMap;
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::{ChunkData, ChunkPos, CHUNK_SIZE as CHUNK};
 use voxelforge_sim::worldgen::{self, terrain_block, terrain_height};
-use voxel::{atlas_material, build_atlas, build_block_materials, greedy_mesh_chunk_split};
+use voxel::{
+    atlas_material, build_atlas, build_block_materials, greedy_mesh_chunk, greedy_mesh_chunk_split,
+};
 
 use editor::AppState;
 
@@ -928,10 +930,15 @@ fn setup(
 /// is the whole point. On the atlas path a greedy-merged 12×3 quad samples a
 /// single atlas tile stretched across twelve blocks; here the UVs are measured
 /// in blocks, so the tile repeats 12×3 times at real texel density.
+///
+/// `VOXELFORGE_ATLAS_MESH=1` pins near chunks back on the old single-atlas mesh.
+/// It exists so the fix can be photographed against itself: same binary, same
+/// seed, same map, same camera, same frame — the ONLY difference is the mesher.
+/// Read once, because this sits inside every chunk re-mesh.
 pub(crate) fn remesh_chunk_entity(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    block_materials: &[Handle<StandardMaterial>],
+    world: &World,
     entity: Entity,
     chunk: &ChunkData,
 ) -> usize {
@@ -939,14 +946,25 @@ pub(crate) fn remesh_chunk_entity(
     // children are gone before the new ones land.
     commands.entity(entity).despawn_children();
 
+    if atlas_mesh_forced() {
+        let (mesh, quads) = greedy_mesh_chunk(chunk);
+        commands.spawn((
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(world.material.clone()),
+            ChildOf(entity),
+        ));
+        return quads;
+    }
+
     let mut quads = 0usize;
     for (id, mesh, n) in greedy_mesh_chunk_split(chunk) {
         // A block id past the table can only come from a corrupt map file. The
         // atlas path renders it as the clamped edge tile rather than a hole, so
         // do the same here — a wrong texture beats missing geometry.
-        let material = block_materials
+        let material = world
+            .block_materials
             .get(id.0 as usize)
-            .unwrap_or(&block_materials[BlockId::STONE.0 as usize]);
+            .unwrap_or(&world.block_materials[BlockId::STONE.0 as usize]);
         quads += n;
         commands.spawn((
             Mesh3d(meshes.add(mesh)),
@@ -955,6 +973,22 @@ pub(crate) fn remesh_chunk_entity(
         ));
     }
     quads
+}
+
+/// The A/B lever documented on [`remesh_chunk_entity`]. `OnceLock` because the
+/// answer cannot change mid-run and every chunk edit would otherwise pay for an
+/// env lookup.
+fn atlas_mesh_forced() -> bool {
+    static FORCED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FORCED.get_or_init(|| {
+        let on = std::env::var("VOXELFORGE_ATLAS_MESH").is_ok_and(|v| v != "0");
+        if on {
+            println!("MESH_PATH atlas (VOXELFORGE_ATLAS_MESH) — pre-fix reference render");
+        } else {
+            println!("MESH_PATH split (one mesh + material per block type)");
+        }
+        on
+    })
 }
 
 /// Spawn the parent entity every chunk hangs its per-type meshes off.
@@ -982,7 +1016,7 @@ fn spawn_chunk(
     // Generate chunk data from the shared sim crate (same code path as the server).
     let chunk = ChunkData::generate(ChunkPos::new(x, 0, z));
     let entity = spawn_chunk_parent(commands, x, z);
-    let quads = remesh_chunk_entity(commands, meshes, &world.block_materials, entity, &chunk);
+    let quads = remesh_chunk_entity(commands, meshes, world, entity, &chunk);
     world.total_quads += quads;
     world.chunks.insert(
         (x, z),
@@ -1008,7 +1042,7 @@ fn spawn_empty_chunk(
     }
     let chunk = ChunkData::empty(ChunkPos::new(x, 0, z));
     let entity = spawn_chunk_parent(commands, x, z);
-    let quads = remesh_chunk_entity(commands, meshes, &world.block_materials, entity, &chunk);
+    let quads = remesh_chunk_entity(commands, meshes, world, entity, &chunk);
     world.total_quads += quads;
     world.chunks.insert((x, z), ChunkSlot { data: chunk, entity, quads });
 }
@@ -1026,9 +1060,9 @@ fn remesh_chunk(
     };
     let entity = slot.entity;
     let was = slot.quads;
-    // `&world.block_materials` and `&slot.data` are both immutable borrows of
-    // `world`, so they coexist; the mutable updates come after they expire.
-    let quads = remesh_chunk_entity(commands, meshes, &world.block_materials, entity, &slot.data);
+    // `world` and `&slot.data` are both shared reborrows of the same `&mut`, so
+    // they coexist; the mutable updates come after they expire.
+    let quads = remesh_chunk_entity(commands, meshes, world, entity, &slot.data);
 
     let delta = quads as isize - was as isize;
     if let Some(slot) = world.chunks.get_mut(&key) {

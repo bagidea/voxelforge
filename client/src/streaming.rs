@@ -228,7 +228,7 @@ fn build_lod_children(
     lod: u8,
 ) -> usize {
     if lod == 0 {
-        return crate::remesh_chunk_entity(commands, meshes, &world.block_materials, entity, chunk);
+        return crate::remesh_chunk_entity(commands, meshes, world, entity, chunk);
     }
     let (mesh, quads) = lod1_mesh(chunk);
     commands.entity(entity).despawn_children();
