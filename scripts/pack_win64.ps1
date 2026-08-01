@@ -22,7 +22,7 @@
                             MISSING = panic on the first --play frame
     maps\*.json             scene.rs boots maps\edhari.json (CWD-relative); the
                             others are loadable from the editor
-    run-voxelforge.cmd      launcher that pins CWD to the exe dir (see section 4)
+    run-voxelforge.cmd      launcher: passes --play and pins CWD (see section 4)
 
   Deliberately NOT packed: *.pdb (debug symbols), assets\story\*.py + *.log
   (dev validators), maps\FORMAT.md (dev doc), the server exe (the client is fully
@@ -123,19 +123,32 @@ foreach ($entry in $packList) {
 }
 
 # -- 2. Launcher + runtime ---------------------------------------------------
-# The client mixes two path roots: bevy_asset resolves `assets\` against the EXE
-# directory, but quest.rs / scene.rs / import.rs use std::fs against the CURRENT
-# WORKING DIRECTORY. Steam and Explorer both launch with CWD = the exe folder, so
-# they agree - but a shortcut with a different "Start in" silently breaks the
-# std::fs half. This launcher removes that whole class of bug.
+# The launcher does TWO things, and both are required for a player to get a game:
+#
+#   1. --play. read_cfg (client\src\main.rs:153) only sets `play` when the process
+#      sees the `--play` flag or VOXELFORGE_PLAY. A bare double-click therefore
+#      boots the EDITOR sandbox on procedural terrain, not Edhari. The Steam
+#      launch option needs the same argument - see docs\ship-layout.md section 4.
+#   2. cd /d. The client mixes two path roots: bevy_asset resolves `assets\`
+#      against the EXE directory, but quest.rs / scene.rs / import.rs / main.rs
+#      use std::fs against the CURRENT WORKING DIRECTORY. Steam and Explorer both
+#      launch with CWD = the exe folder, so they agree - but a shortcut with a
+#      different "Start in" silently breaks the std::fs half.
 $launcher = @'
 @echo off
-rem Voxelforge launcher - pins the working directory to this folder.
-rem The client reads maps\ and assets\story\ relative to the CWD, so launching
-rem from anywhere else (a shortcut with a different "Start in", a drag-and-drop)
-rem would boot into procedural terrain and then panic on the story load.
+rem Voxelforge launcher - starts the GAME, from this folder.
+rem --play is what puts the client in game mode; without it the exe opens the
+rem editor sandbox (client\src\main.rs read_cfg).
+rem cd /d pins the working directory: the client reads maps\ and assets\story\
+rem relative to the CWD, so launching from anywhere else (a shortcut with a
+rem different "Start in", a drag-and-drop) would boot into procedural terrain
+rem and then panic on the story load.
+rem No `start`: the exe is a console-subsystem binary, so `start` would open a
+rem SECOND console for it and detach its stdout into a window that vanishes the
+rem instant the game dies. Calling it directly keeps one console, keeps the
+rem output, and lets cleanroom_test.ps1 read what the launcher actually booted.
 cd /d "%~dp0"
-start "" "%~dp0voxelforge.exe" %*
+"%~dp0voxelforge.exe" --play %*
 '@
 Set-Content -Path (Join-Path $Out "run-voxelforge.cmd") -Value $launcher -Encoding ASCII
 
