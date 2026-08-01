@@ -1388,6 +1388,27 @@ fn step_axis(world: &World, p: Vec3, horiz: Vec3, can_step: bool) -> Vec3 {
     let up = Vec3::new(p.x, p.y + lift, p.z);
     let up_fwd = up + horiz;
     if body_collides(world, up) || body_collides(world, up_fwd) {
+        // Corner escape: the up check's AABB trailing edge can floor into a wall
+        // the player is walking *away* from, falsely blocking the step-up when
+        // the body is near a building corner. Retry with a forward bias of
+        // PLAYER_HALF_W that shifts the trailing edge past the voxel boundary
+        // so only voxels in the movement direction are tested. (Without this,
+        // both X and Z get independently blocked at a corner — the body pins.)
+        let bias = Vec3::new(
+            if horiz.x != 0.0 { horiz.x.signum() * PLAYER_HALF_W } else { 0.0 },
+            0.0,
+            if horiz.z != 0.0 { horiz.z.signum() * PLAYER_HALF_W } else { 0.0 },
+        );
+        if bias != Vec3::ZERO {
+            let up2 = up + bias;
+            let up_fwd2 = up_fwd + bias;
+            if !body_collides(world, up2) && !body_collides(world, up_fwd2) {
+                let landed = settle_down(world, up_fwd2, lift);
+                if landed.y < up_fwd2.y {
+                    return landed;
+                }
+            }
+        }
         return p; // ledge too tall or a ceiling in the way — stay blocked
     }
     // Only a ledge (solid within a step below) counts — never climb into open air.
