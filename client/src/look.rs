@@ -51,10 +51,34 @@ use serde::{Deserialize, Serialize};
 /// rounds recorded in `hero.rs`. They are named here so a future tuning pass has
 /// one place to edit and so a diff against `hero.rs` stays readable.
 mod grade {
-    /// Chromaticity push toward red. The voxel materials tonemap slightly cool
-    /// through AcesFitted; this is what pulled measured midtone-B down to the
-    /// golden's range.
-    pub const TEMPERATURE: f32 = 0.10;
+    /// Chromaticity push toward red — the ONE knob that must not be copied from
+    /// `hero.rs` unchanged, because it is scene-dependent in a way the others
+    /// are not.
+    ///
+    /// WHY IT IS 0.02 HERE AND 0.10 THERE (magenta-cast fix, 2026-08-01). Bevy
+    /// turns `temperature` into a full 3×3 chromatic-adaptation matrix, not a
+    /// per-channel gain: `white_point_xy = D65_XY + (-temperature, tint)`, then
+    /// `LMS_TO_RGB * diag(D65_LMS / white_point_lms) * RGB_TO_LMS`
+    /// (`bevy_render::view`). Its off-diagonal terms bleed G and B *into* R, so
+    /// the redder it pushes, the more it multiplies whatever is blue in the
+    /// frame. `scripts/wb_matrix.py` reproduces that matrix on the CPU: at 0.10
+    /// the authored sky `main.rs` clears to — srgb 135/184/235, ordering
+    /// `B > G > R` — comes out of the white balance as 211/169/210, i.e.
+    /// **`R > B > G`. That is the magenta.** The same script pins the two
+    /// crossings on that sky: red passes green at ≈0.048 (B>G>R → B>R>G — still
+    /// blue; green is the leg it passes, not blue) and red passes *blue* — the
+    /// real magenta onset, R>B>G — at **≈0.099**. The old "flips ≈0.045"
+    /// conflated the two; 0.045 is only where R>G begins, not where the frame
+    /// goes magenta. 0.02 sits ~5× under the true onset (0.099 / 0.02).
+    ///
+    /// `hero.rs` never saw this because its scene has no sky: it clears to
+    /// near-black (0.05, 0.03, 0.02) and every lit surface is already amber, so
+    /// a red push there only deepens an ordering that was `R > G > B` to begin
+    /// with. Byte-identical constants, opposite result — which is exactly why
+    /// the warmth the outdoor frame needs is now carried by [`KEY_COLOR`] and
+    /// [`AMBIENT_COLOR`] (light, which the flat sky clear does not receive)
+    /// instead of by a global matrix (which it does).
+    pub const TEMPERATURE: f32 = 0.02;
     /// AcesFitted flattens saturation (~80% vs the golden's 96%); this puts the
     /// punch back across the whole frame.
     pub const POST_SATURATION: f32 = 1.02;
@@ -69,6 +93,81 @@ mod grade {
     /// panes — back into band, while leaving bounce-lit shade and midtones alone.
     /// Lighting can't do this, because "less light" moves shadows down too.
     pub const HIGHLIGHT_GAIN: f32 = 0.64;
+
+    /// Golden-hour key colour for the sun, in sRGB. `main.rs` spawns the
+    /// directional light with Bevy's default WHITE because that is the neutral
+    /// the gameplay/editor/bench lanes want; the *look* lane is the thing that
+    /// decides the hour of the day, so the tint lands here.
+    ///
+    /// This is where the frame's warmth is supposed to come from. Warmth from a
+    /// light is chromatically honest: it multiplies the surfaces the light
+    /// reaches (so sunlit stone reads `R > G > B`, which is gate G6) and it
+    /// leaves the `ClearColor` sky alone, because a flat clear is not a lit
+    /// surface. Warmth from [`TEMPERATURE`] cannot tell the two apart, which is
+    /// the whole magenta bug. Ordering is `R > G > B` with the green leg kept
+    /// clearly above blue — Look Bible §4's amber, not the fire-red `hero.rs`
+    /// documents collapsing into.
+    ///
+    /// Illuminance is NOT touched — that is `main.rs`'s 9000 lux and a gameplay
+    /// decision. Only the hue changes.
+    pub const KEY_COLOR: [f32; 3] = [1.00, 0.86, 0.66];
+
+    /// Warm bounce fill, in sRGB — the same idea as [`KEY_COLOR`] for the
+    /// camera's `AmbientLight`, and the axis that actually moves the *midtone*
+    /// numbers (`grade_axes.py` warmth R−B / blue B are measured on the midtone
+    /// band, which is open shade and bounce, not the sunlit wedge).
+    ///
+    /// Milder than `hero.rs`'s honey (0.784, 0.541, 0.180): that is an interior
+    /// whose every wall is a bounce surface, this is an outdoor scene where the
+    /// ambient is standing in for sky light. Brightness is left at `main.rs`'s
+    /// 380 lux.
+    pub const AMBIENT_COLOR: [f32; 3] = [0.98, 0.78, 0.52];
+}
+
+/// Live override for the grade knobs — `VOXELFORGE_LOOK_GRADE=temp,sat,mid,hi_gain`.
+///
+/// The same no-recompile sweep hook `hero.rs` carries as `VOXELFORGE_GRADE`, and
+/// here for a sharper reason: the value of [`grade::TEMPERATURE`] that keeps the
+/// authored sky's `B > G > R` ordering alive *through* AcesFitted and the
+/// sectional curve is an empirical search, and a release rebuild per candidate is
+/// minutes. Unset — the shipped path, and every gate run — returns the constants
+/// byte-for-byte. Malformed input falls back to the constants rather than
+/// panicking mid-frame: this is a debug hook, not a config file.
+fn grade_knobs() -> (f32, f32, f32, f32) {
+    let d = (
+        grade::TEMPERATURE,
+        grade::POST_SATURATION,
+        grade::MIDTONE_CONTRAST,
+        grade::HIGHLIGHT_GAIN,
+    );
+    let Ok(raw) = std::env::var("VOXELFORGE_LOOK_GRADE") else {
+        return d;
+    };
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    match v[..] {
+        [t, s, m, g] => (t, s, m, g),
+        _ => d,
+    }
+}
+
+/// Live override for the two light colours — `VOXELFORGE_LOOK_LIGHT=kr,kg,kb,ar,ag,ab`
+/// (key RGB then ambient RGB, sRGB 0..1). Same sweep-without-rebuild rationale as
+/// [`grade_knobs`]; unset returns [`grade::KEY_COLOR`] / [`grade::AMBIENT_COLOR`].
+fn light_colors() -> (Color, Color) {
+    let k = grade::KEY_COLOR;
+    let a = grade::AMBIENT_COLOR;
+    let d = (
+        Color::srgb(k[0], k[1], k[2]),
+        Color::srgb(a[0], a[1], a[2]),
+    );
+    let Ok(raw) = std::env::var("VOXELFORGE_LOOK_LIGHT") else {
+        return d;
+    };
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    match v[..] {
+        [kr, kg, kb, ar, ag, ab] => (Color::srgb(kr, kg, kb), Color::srgb(ar, ag, ab)),
+        _ => d,
+    }
 }
 
 /// Render-quality tier for the look stack.
@@ -202,6 +301,7 @@ fn look_enabled(cfg: Option<Res<crate::Cfg>>) -> bool {
 /// the base layer (grade + tonemap + bloom, the look's identity) is inserted
 /// first and the `match` only adds the effects that tier earns.
 fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
+    let (temperature, post_saturation, midtone_contrast, highlight_gain) = grade_knobs();
     // Base layer — present at every tier, the parts that make the frame read
     // "Voxelforge" at all: filmic tonemap, the golden grade, warm bloom. MSAA
     // stays off because voxel edges are 90° and axis-aligned (no jaggies to
@@ -215,8 +315,8 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
         // regression). Shadows keep their bounce fill instead of clipping.
         ColorGrading {
             global: ColorGradingGlobal {
-                temperature: grade::TEMPERATURE,
-                post_saturation: grade::POST_SATURATION,
+                temperature,
+                post_saturation,
                 ..default()
             },
             shadows: ColorGradingSection {
@@ -224,12 +324,12 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
                 ..default()
             },
             midtones: ColorGradingSection {
-                contrast: grade::MIDTONE_CONTRAST,
+                contrast: midtone_contrast,
                 ..default()
             },
             highlights: ColorGradingSection {
                 contrast: grade::HIGHLIGHT_CONTRAST,
-                gain: grade::HIGHLIGHT_GAIN,
+                gain: highlight_gain,
                 ..default()
             },
         },
@@ -395,11 +495,19 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
 fn apply_look_to_cameras(
     mut commands: Commands,
     quality: Res<LookQuality>,
-    q: Query<(Entity, Option<&LookApplied>), With<Camera3d>>,
+    mut q: Query<(Entity, Option<&LookApplied>, Option<&mut AmbientLight>), With<Camera3d>>,
 ) {
-    for (cam, applied) in &q {
+    for (cam, applied, ambient) in &mut q {
         if applied.is_some_and(|a| a.0 == *quality) {
             continue;
+        }
+        // Tint the camera's bounce fill warm, brightness untouched. This is the
+        // midtone half of the warmth that used to come out of the white-balance
+        // matrix — see `grade::AMBIENT_COLOR`. `Option<&mut _>` because a camera
+        // without its own `AmbientLight` (the editor's) is not this lane's to
+        // give one to; it just doesn't get the tint.
+        if let Some(mut ambient) = ambient {
+            ambient.color = light_colors().1;
         }
         let mut e = commands.entity(cam);
         e.remove::<LookStack>();
@@ -430,6 +538,11 @@ fn apply_look_to_sun(
         // High and Ultra opt the light into the volumetric pass; Medium/Low don't.
         let pcss = matches!(*quality, LookQuality::Ultra);
         let volumetric = matches!(*quality, LookQuality::High | LookQuality::Ultra);
+        // Golden-hour key. `illuminance` and `shadow_maps_enabled` stay exactly
+        // as main.rs set them — only the hue is the look lane's call. This is
+        // what makes sunlit surfaces order `R > G > B` (G6) without a global
+        // matrix that would drag the sky along with them.
+        dl.color = light_colors().0;
         // `soft_shadow_size` only exists when Bevy's PCSS flag is compiled in.
         // It's in this crate's default features, but a `--no-default-features`
         // build is a real configuration and shouldn't fail to compile over a
