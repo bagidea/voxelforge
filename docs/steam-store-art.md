@@ -4,7 +4,9 @@
 > This doc locks the **art direction for the store page**, not the in-game beauty shot. Source of truth for
 > mood/palette/characters: `docs/look-bible.md` + `docs/character-bible.md`. No new art direction invented here —
 > every choice below is a reapplication of those two docs to a marketing surface.
-> Owner: Monanisa (Design). Last updated: 2026-08-01 (capsule sizes corrected to Valve's current spec — see §6).
+> Owner: Monanisa (Design). Last updated: 2026-08-01 (capsule sizes corrected to Valve's current spec — see
+> §6; §8 adds the upload compliance table — Director scope for this pass: store capsules only, Library
+> Hero on hold pending Gate 3).
 
 ---
 
@@ -160,6 +162,48 @@ points at the old 460×215/616×353 filenames — re-point it at the new filenam
 - [ ] Still open: at least 5 gameplay screenshots at ≥1920×1080 16:9 — these have to come from a real
   build capture (see `docs/steam-store-copy.md` §6 shot list), not from this crop pipeline, and this
   pass did not touch the game binary to get them.
+
+## 8. Steam upload compliance table
+
+> **2026-08-01 (Monanisa) — Director scope for this pass: store capsules only. Library Hero is
+> explicitly ON HOLD — do not regenerate, do not re-crop, do not touch, pending the Gate 3 in-engine
+> re-shoot (`docs/steam-art-review-2026-08-01.md` §4 Option C).** Every size below is a fresh
+> `PIL.Image.open(...).size` read off disk, not a re-statement of the commit message. Spec source:
+> `docs/research/steamworks-publishing-brief-2026.md` §3.4, itself cross-checked against
+> `partner.steamgames.com/doc/store/assets/{standard,libraryassets}` directly.
+
+### Store capsules (this pass's scope)
+
+| File | Size on disk (verified) | Steam slot | Required? | Status |
+|---|---|---|---|---|
+| `header-capsule-920x430.png` | 920×430 | Header Capsule | Required | ✅ Compliant |
+| `small-capsule-462x174.png` | 462×174 | Small Capsule | Required | ✅ Compliant |
+| `main-capsule-1232x706.png` | 1232×706 | Main Capsule | Required | ✅ Compliant |
+| `vertical-capsule-748x896.png` | 748×896 | Vertical Capsule | Required | ✅ Compliant |
+| `page-background-1438x810.png` | 1438×810 | Page Background | Optional | ✅ Compliant (delivered anyway) |
+| *(none yet)* | — | Screenshots ≥1920×1080, 16:9, ×5 | Required | ❌ Missing — needs a real build capture (`docs/steam-store-copy.md` §6); this pass's machine constraints forbid opening `voxelforge.exe`/GPU use, so it cannot be produced here |
+
+### Library assets (adjacent slots, referenced for completeness — not re-touched this pass)
+
+| File | Size on disk (verified) | Steam slot | Required? | Status |
+|---|---|---|---|---|
+| `library-capsule-600x900.png` | 600×900 | Library Capsule | Required | ✅ Compliant, unchanged since commit `6376138` |
+| `header-capsule-920x430.png` (reused) | 920×430 | Library Header Capsule | Required | ✅ Compliant — Steamworks App Admin defaults this slot to the Store Header Capsule when not set separately (§6 note above); no extra file needed |
+| `library-hero-3840x1240.png` | 3840×1240 | Library Hero | Required | ⛔ **ON HOLD, not submission-ready.** Dimension is correct, but the critical-art safe area is the **centre 860×380 band** (not the full 3840×1240 frame), and Auren's head sits above/outside that band — 0% vertical overlap per Flamingo's measured F4. It is also a 3.75× Lanczos upscale off a 1024px master (F5), which measures as soft. Director decision: leave exactly as-is until the Gate 3 in-engine re-shoot: no regeneration, no re-crop, no grade pass. |
+| *(none yet)* | — | Library Logo | Required | ❌ Missing — no logotype exists yet for any asset (F2). Out of scope for this pass. |
+
+### Not capsules — flagged for awareness only, not delivered this pass
+
+| Asset | Size | Note |
+|---|---|---|
+| Shortcut Icon | 256×256 `.ico`/`.png` | Client icon, not a store/library capsule — untouched |
+| App Icon | 184×184 `.jpg` | Client icon, not a store/library capsule — untouched |
+
+**Bottom line:** every capsule size Valve requires for the store page (Header, Small, Main, Vertical,
+optional Page Background) is on disk today at the exact required pixel dimensions, byte-verified. The
+only store-page gap is the screenshot set, which is blocked on a real build capture outside this pass's
+scope. Library Hero and Library Logo remain the two hard blockers before this asset set is
+submission-ready, and both are intentionally not touched here per Director's hold.
 
 ---
 
