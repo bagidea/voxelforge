@@ -125,3 +125,19 @@ _*.json
 # Wait-poller scripts (bare while/sleep loops that only make sense inside
 # a live agent session — never committed as source).
 /scripts/_*.sh
+
+# ── Gate-3 shoot logs (generated per run, ~dozens of *.log + *.txt) ──
+/_gate3_logs/
+
+# Rose lane probe script (one-shot rustc/cl.exe toolchain check)
+/scripts/_rose_probe_build.cmd
+
+# Quarantine: orphaned external-crate files pending owner identification
+/_quarantine_steamworks/
+
+# One-shot review scripts (Python / PowerShell) — same convention as scripts/_*.sh
+/scripts/_*.py
+/scripts/_*.ps1
+
+# Steam capsule review proof images (Flamingo, 2026-08-01)
+/docs/assets/steam/review/
