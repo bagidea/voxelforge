@@ -1,6 +1,7 @@
 //! Voxelforge client — Phase 0 go/no-go spike (Rust + Bevy 0.19 + wgpu).
 //!
-//! Proves: chunk gen → greedy mesh → texture-atlas StandardMaterial → fly
+//! Proves: chunk gen → greedy mesh (split per block type) → per-type
+//! StandardMaterial with a repeating tile → fly
 //! camera, native only (wgpu/DX12/Vulkan) — Steam is the target. Ships a built-in
 //! ramp benchmark that spawns more chunks every couple seconds and reports the
 //! largest chunk count that still holds >= 60 FPS.
@@ -45,7 +46,7 @@ use std::collections::HashMap;
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::{ChunkData, ChunkPos, CHUNK_SIZE as CHUNK};
 use voxelforge_sim::worldgen::{self, terrain_block, terrain_height};
-use voxel::{build_atlas, greedy_mesh_chunk};
+use voxel::{atlas_material, build_atlas, build_block_materials, greedy_mesh_chunk_split};
 
 use editor::AppState;
 
@@ -194,9 +195,11 @@ fn read_cfg() -> Cfg {
 
 // ---------------------------------------------------------------------------
 
-/// One live chunk: its editable voxel data, the entity carrying its mesh, and
-/// the quad count it currently contributes (kept in sync so the HUD total is
-/// correct after edits re-mesh a chunk).
+/// One live chunk: its editable voxel data, the entity that *parents* its mesh
+/// children, and the quad count it currently contributes (kept in sync so the
+/// HUD total is correct after edits re-mesh a chunk).
+///
+/// `entity` carries no mesh of its own — see [`remesh_chunk_entity`].
 pub(crate) struct ChunkSlot {
     pub(crate) data: ChunkData,
     pub(crate) entity: Entity,
@@ -205,7 +208,13 @@ pub(crate) struct ChunkSlot {
 
 #[derive(Resource)]
 pub(crate) struct World {
+    /// The one shared atlas material. Only the far LOD still wears it — see
+    /// `streaming::build_lod_children`.
     pub(crate) material: Handle<StandardMaterial>,
+    /// One material per block type, indexed by `BlockId.0`. This is what the
+    /// split mesher's children wear, and it is why a merged quad now repeats its
+    /// tile per block instead of stretching one atlas cell across it.
+    pub(crate) block_materials: Vec<Handle<StandardMaterial>>,
     /// Keyed by (chunk_x, chunk_z) — only the y=0 layer is spawned in Phase 0.
     pub(crate) chunks: HashMap<(i32, i32), ChunkSlot>,
     pub(crate) total_quads: usize,
@@ -637,17 +646,17 @@ fn setup(
     // Seed the terrain generator before any chunk queries happen.
     worldgen::set_seed(cfg.seed);
 
+    // Two texture paths, on purpose. The atlas is now only the FAR LOD's
+    // material (`atlas_material` instead of the old hand-rolled 0.95/0.1 chalk,
+    // so the far ring is lit closer to the near ring and the LOD line is less of
+    // a seam). Near chunks are meshed per block type and wear `block_materials`.
     let atlas = images.add(build_atlas());
-    let material = materials.add(StandardMaterial {
-        base_color_texture: Some(atlas),
-        perceptual_roughness: 0.95,
-        metallic: 0.0,
-        reflectance: 0.1,
-        ..default()
-    });
+    let material = materials.add(atlas_material(atlas));
+    let block_materials = build_block_materials(&mut images, &mut materials);
 
     let mut world = World {
         material,
+        block_materials,
         chunks: HashMap::new(),
         total_quads: 0,
     };
@@ -909,6 +918,57 @@ fn setup(
     bench.phase_start = 0.0;
 }
 
+/// Rebuild a chunk entity's drawable children — one child mesh per block type,
+/// each wearing that type's own tile texture (sampled `Repeat`) and its own
+/// surface response. Returns the chunk's total quad count.
+///
+/// The chunk entity itself carries no mesh; it is the transform/visibility
+/// parent. Unloading, frustum culling and the editor still address a chunk as
+/// ONE entity, while the draw calls underneath it are one per material — which
+/// is the whole point. On the atlas path a greedy-merged 12×3 quad samples a
+/// single atlas tile stretched across twelve blocks; here the UVs are measured
+/// in blocks, so the tile repeats 12×3 times at real texel density.
+pub(crate) fn remesh_chunk_entity(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    block_materials: &[Handle<StandardMaterial>],
+    entity: Entity,
+    chunk: &ChunkData,
+) -> usize {
+    // Queued before the spawns below, and command queues are FIFO, so the old
+    // children are gone before the new ones land.
+    commands.entity(entity).despawn_children();
+
+    let mut quads = 0usize;
+    for (id, mesh, n) in greedy_mesh_chunk_split(chunk) {
+        // A block id past the table can only come from a corrupt map file. The
+        // atlas path renders it as the clamped edge tile rather than a hole, so
+        // do the same here — a wrong texture beats missing geometry.
+        let material = block_materials
+            .get(id.0 as usize)
+            .unwrap_or(&block_materials[BlockId::STONE.0 as usize]);
+        quads += n;
+        commands.spawn((
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(material.clone()),
+            ChildOf(entity),
+        ));
+    }
+    quads
+}
+
+/// Spawn the parent entity every chunk hangs its per-type meshes off.
+fn spawn_chunk_parent(commands: &mut Commands, x: i32, z: i32) -> Entity {
+    commands
+        .spawn((
+            Transform::from_xyz((x * CHUNK) as f32, 0.0, (z * CHUNK) as f32),
+            // Explicit because this entity has no `Mesh3d` to imply it, and the
+            // children only inherit visibility through a parent that has it.
+            Visibility::default(),
+        ))
+        .id()
+}
+
 fn spawn_chunk(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -921,15 +981,9 @@ fn spawn_chunk(
     }
     // Generate chunk data from the shared sim crate (same code path as the server).
     let chunk = ChunkData::generate(ChunkPos::new(x, 0, z));
-    let (mesh, quads) = greedy_mesh_chunk(&chunk);
+    let entity = spawn_chunk_parent(commands, x, z);
+    let quads = remesh_chunk_entity(commands, meshes, &world.block_materials, entity, &chunk);
     world.total_quads += quads;
-    let entity = commands
-        .spawn((
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(world.material.clone()),
-            Transform::from_xyz((x * CHUNK) as f32, 0.0, (z * CHUNK) as f32),
-        ))
-        .id();
     world.chunks.insert(
         (x, z),
         ChunkSlot {
@@ -953,15 +1007,9 @@ fn spawn_empty_chunk(
         return;
     }
     let chunk = ChunkData::empty(ChunkPos::new(x, 0, z));
-    let (mesh, quads) = greedy_mesh_chunk(&chunk);
+    let entity = spawn_chunk_parent(commands, x, z);
+    let quads = remesh_chunk_entity(commands, meshes, &world.block_materials, entity, &chunk);
     world.total_quads += quads;
-    let entity = commands
-        .spawn((
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(world.material.clone()),
-            Transform::from_xyz((x * CHUNK) as f32, 0.0, (z * CHUNK) as f32),
-        ))
-        .id();
     world.chunks.insert((x, z), ChunkSlot { data: chunk, entity, quads });
 }
 
@@ -973,15 +1021,20 @@ fn remesh_chunk(
     meshes: &mut Assets<Mesh>,
     commands: &mut Commands,
 ) {
-    let Some(slot) = world.chunks.get_mut(&key) else {
+    let Some(slot) = world.chunks.get(&key) else {
         return;
     };
-    let (mesh, quads) = greedy_mesh_chunk(&slot.data);
-    let delta = quads as isize - slot.quads as isize;
-    slot.quads = quads;
     let entity = slot.entity;
+    let was = slot.quads;
+    // `&world.block_materials` and `&slot.data` are both immutable borrows of
+    // `world`, so they coexist; the mutable updates come after they expire.
+    let quads = remesh_chunk_entity(commands, meshes, &world.block_materials, entity, &slot.data);
+
+    let delta = quads as isize - was as isize;
+    if let Some(slot) = world.chunks.get_mut(&key) {
+        slot.quads = quads;
+    }
     world.total_quads = (world.total_quads as isize + delta).max(0) as usize;
-    commands.entity(entity).insert(Mesh3d(meshes.add(mesh)));
 }
 
 /// Stamp every block a map file lists into an already-spawned (empty) world, then
@@ -1658,12 +1711,9 @@ pub(crate) fn set_world_voxel(
         voxel.z.rem_euclid(CHUNK),
         block,
     );
-    let (mesh, quads) = greedy_mesh_chunk(&slot.data);
-    let delta = quads as isize - slot.quads as isize;
-    slot.quads = quads;
-    let entity = slot.entity;
-    world.total_quads = (world.total_quads as isize + delta).max(0) as usize;
-    commands.entity(entity).insert(Mesh3d(meshes.add(mesh)));
+    // Same tail as every other bulk edit — one re-mesh path, so a click and a map
+    // load can't drift apart in how they rebuild a chunk's children.
+    remesh_chunk(world, key, meshes, commands);
     true
 }
 

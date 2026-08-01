@@ -5,7 +5,9 @@
 //!
 //! * **Async terrain gen** — `ChunkData::generate` runs on background threads
 //!   via `std::thread::spawn` + `mpsc`; the main thread only pays for meshing.
-//! * **LOD 0** (near) — standard `greedy_mesh_chunk` (full 32³ resolution).
+//! * **LOD 0** (near) — `greedy_mesh_chunk_split` at full 32³ resolution: one
+//!   child mesh per block type, each with its own repeating tile material (see
+//!   [`build_lod_children`]).
 //! * **LOD 1** (far) — downsample 2×2×2 → 1 block, re-greedy-mesh at 16³,
 //!   then scale vertices ×2.  ~1/8 the quads, visually coarser.
 //! * **Frustum culling** — toggle `Visibility` per chunk each frame against
@@ -16,8 +18,10 @@
 //! ## Integration
 //!
 //! Add one line in `main()`:  `.add_plugins(streaming::StreamingPlugin)`
-//! The plugin reads `crate::World`, `crate::FlyCam`, and spawns entities with
-//! `Mesh3d` + `MeshMaterial3d` (same atlas material the existing chunks use).
+//! The plugin reads `crate::World`, `crate::FlyCam`, and spawns one parent
+//! entity per chunk (`Transform` + `Visibility` + `StreamedChunk`) whose
+//! children carry the `Mesh3d` + `MeshMaterial3d` — exactly the shape
+//! `crate::spawn_chunk` builds.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{mpsc, Mutex};
@@ -202,12 +206,38 @@ fn lod1_mesh(chunk: &ChunkData) -> (Mesh, usize) {
     (mesh, quads)
 }
 
-/// Mesh a chunk at the requested LOD level.
-fn mesh_at_lod(chunk: &ChunkData, lod: u8) -> (Mesh, usize) {
-    match lod {
-        0 => greedy_mesh_chunk(chunk),
-        _ => lod1_mesh(chunk),
+/// Fill a chunk entity with the drawable children for one LOD level, replacing
+/// whatever it had. Returns the chunk's quad count.
+///
+/// **LOD 0 uses the split mesher** — one child per block type, each with its own
+/// tile sampled `Repeat` — so near chunks get per-block texel density instead of
+/// one atlas tile stretched across a merged quad.
+///
+/// **LOD 1 deliberately stays on the single atlas mesh.** A far chunk has already
+/// had each 2×2×2 region collapsed to its dominant block, so there is no
+/// per-block detail left for a repeating tile to resolve; and multiplying a far
+/// chunk's draw calls by the number of block types present is exactly the cost
+/// the LOD exists to avoid. The tile stretching that is visible up close is not
+/// visible at `lod_transition` chunks away.
+fn build_lod_children(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    world: &crate::World,
+    entity: Entity,
+    chunk: &ChunkData,
+    lod: u8,
+) -> usize {
+    if lod == 0 {
+        return crate::remesh_chunk_entity(commands, meshes, &world.block_materials, entity, chunk);
     }
+    let (mesh, quads) = lod1_mesh(chunk);
+    commands.entity(entity).despawn_children();
+    commands.spawn((
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(world.material.clone()),
+        ChildOf(entity),
+    ));
+    quads
 }
 
 // ---------------------------------------------------------------------------
@@ -365,20 +395,21 @@ fn drain_completed(
             }
         };
 
-        let (mesh, quads) = mesh_at_lod(&ready.data, lod);
-
+        // The chunk entity is the transform/visibility parent only — the meshes
+        // hang off it as children (one per block type at LOD 0), which is what
+        // keeps `frustum_cull` and `unload_chunk` addressing one entity.
         let entity = commands
             .spawn((
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(world_res.material.clone()),
                 Transform::from_xyz(
                     (key.0 * CHUNK_SIZE) as f32,
                     0.0,
                     (key.1 * CHUNK_SIZE) as f32,
                 ),
+                Visibility::default(),
                 StreamedChunk { key, lod },
             ))
             .id();
+        let quads = build_lod_children(commands, meshes, world_res, entity, &ready.data, lod);
 
         // Add to World.chunks so the HUD and editor see it.
         world_res.chunks.entry(key).or_insert(crate::ChunkSlot {
@@ -442,16 +473,15 @@ fn switch_lod(
     };
     let entity = slot.entity;
 
-    let (mesh, quads) = mesh_at_lod(&slot.data, new_lod);
+    // Swaps the entity's children in place — the entity, and therefore every
+    // handle held on it (`chunk_entities`, `ChunkSlot::entity`), survives.
+    let quads = build_lod_children(commands, meshes, world_res, entity, &slot.data, new_lod);
 
     // Update quad tracking in-place.
     if let Some(slot_mut) = world_res.chunks.get_mut(&key) {
         slot_mut.quads = quads;
     }
     world_res.total_quads = world_res.chunks.values().map(|s| s.quads).sum();
-
-    // Swap the mesh on the existing entity.
-    commands.entity(entity).insert(Mesh3d(meshes.add(mesh)));
 
     // Update tracking.
     state.chunk_entities.insert(key, (entity, new_lod));

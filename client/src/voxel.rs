@@ -9,11 +9,12 @@
 //! ## Two meshing paths
 //!
 //! [`greedy_mesh_chunk`] is the original: one mesh, one atlas material, one draw
-//! call per chunk. `main.rs` uses it today. Its limitation is structural — a
-//! merged quad spanning N blocks still gets ONE atlas tile stretched across it,
-//! so the texture cannot repeat per block.
+//! call per chunk. Only the far LOD (`streaming::build_lod_children`) still uses
+//! it. Its limitation is structural — a merged quad spanning N blocks still gets
+//! ONE atlas tile stretched across it, so the texture cannot repeat per block.
 //!
-//! [`greedy_mesh_chunk_split`] is the fix: one mesh **per block type**, each with
+//! [`greedy_mesh_chunk_split`] is the fix, and what the near/editable world is
+//! meshed with (`main::remesh_chunk_entity`): one mesh **per block type**, each with
 //! its own single-tile texture sampled with `ImageAddressMode::Repeat` and UVs
 //! measured in blocks. A 12×3 merged quad then samples the tile 12×3 times — real
 //! per-block texel density, and no atlas neighbourhood to bleed from at all. It
@@ -194,6 +195,29 @@ pub fn atlas_material(atlas: Handle<Image>) -> StandardMaterial {
         reflectance: 0.18,
         ..default()
     }
+}
+
+/// Every block type's material, indexed by `BlockId.0` — the split path's table.
+///
+/// Built once at startup rather than on demand, because the sites that re-mesh a
+/// chunk (an editor click, a map load, the streaming tick) hold `&mut World` and
+/// `Assets<Mesh>` but have no business also borrowing `Assets<Image>` and
+/// `Assets<StandardMaterial>`. Seventeen 16×16 tiles is a few KB of texture; the
+/// alternative is threading two more asset borrows through every edit path.
+///
+/// Index 0 is AIR — never meshed, so its entry is only there to keep the table
+/// indexable by raw block id.
+pub fn build_block_materials(
+    images: &mut Assets<Image>,
+    materials: &mut Assets<StandardMaterial>,
+) -> Vec<Handle<StandardMaterial>> {
+    (0..N_TILES as u8)
+        .map(|id| {
+            let id = BlockId(id);
+            let tile = images.add(build_block_texture(id));
+            materials.add(block_material(id, tile))
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
