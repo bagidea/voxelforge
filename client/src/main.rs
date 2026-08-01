@@ -286,13 +286,22 @@ pub(crate) struct FlyCam {
 }
 
 /// The orbit camera — rides a spring-arm/boom behind + above the avatar (Roblox
-/// style). Mouse drives `yaw`/`pitch`; `dist` is the boom length, pulled in by
-/// `camera_boom` when a wall would otherwise clip between camera and avatar.
+/// style). Mouse drives `yaw`/`pitch`; `dist` is the boom length actually in use
+/// this frame, pulled in from `want_dist` by `camera_boom` when a wall would
+/// otherwise clip between camera and avatar.
 #[derive(Component)]
 pub(crate) struct OrbitCam {
     pub(crate) yaw: f32,
     pub(crate) pitch: f32,
     pub(crate) dist: f32,
+    /// The boom length the camera is *trying* to hold — [`BOOM_DIST`] in play.
+    ///
+    /// Separate from `dist` because `dist` is overwritten every frame with the
+    /// collision-shortened result, so it can't also be the request: a value
+    /// written into it is gone by the next frame. The look lane sets this from
+    /// `VOXELFORGE_LOOK_CAM` to frame a proof shot (a long boom for a vista, a
+    /// short one for a character close-up) without a second camera path.
+    pub(crate) want_dist: f32,
 }
 
 #[derive(Component)]
@@ -786,19 +795,54 @@ fn setup(
             ));
         });
 
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_translation(eye + Vec3::new(0.0, PIVOT_UP, BOOM_DIST)),
-        OrbitCam {
-            yaw: orbit_yaw,
-            pitch: orbit_pitch,
-            dist: BOOM_DIST,
-        },
-        AmbientLight {
-            brightness: 380.0,
-            ..default()
-        },
-    ));
+    // ---- Gameplay camera + the look stack (Flamingo's block) -----------------
+    //
+    // `VOXELFORGE_LOOK_CAM=yaw_deg,pitch_deg,dist` re-poses the boom at spawn.
+    // Unset ⇒ exactly the pose this camera has always had. It exists so a look
+    // proof can be shot from a chosen angle (vista / close-up / interior) through
+    // the REAL gameplay camera rather than through a second, look-only camera
+    // that would prove nothing about what the player sees.
+    let (orbit_yaw, orbit_pitch, boom) = match env_floats::<3>("VOXELFORGE_LOOK_CAM") {
+        Some([y, p, d]) => (y.to_radians(), p.to_radians(), d),
+        None => (orbit_yaw, orbit_pitch, BOOM_DIST),
+    };
+    let cam = commands
+        .spawn((
+            Camera3d::default(),
+            Transform::from_translation(eye + Vec3::new(0.0, PIVOT_UP, boom)),
+            OrbitCam {
+                yaw: orbit_yaw,
+                pitch: orbit_pitch,
+                dist: boom,
+                want_dist: boom,
+            },
+            // Warm bounce fill. `look::apply_look_to_cameras` re-colours and
+            // re-powers this for the live hour; these are the neutral values the
+            // editor/bench lanes (where the look lane is off) keep.
+            AmbientLight {
+                brightness: 380.0,
+                ..default()
+            },
+        ))
+        .id();
+    // THE LOOK. This camera used to spawn bare — a `Camera3d::default()` with no
+    // tonemapper, no exposure, no grade, no bloom, no AO, no haze — and the whole
+    // post stack arrived (or didn't) from `LookPlugin` one Update later. Dressing
+    // it here means the camera-spawn site states what the camera looks like, and
+    // the very first frames of a session are already graded.
+    //
+    // `look::base_camera_look()` is the tier-INDEPENDENT half (tonemap, grade,
+    // exposure, emissive-only bloom, distance haze); `LookPlugin` layers TAA /
+    // SSAO / shadow filter / god rays on top per `LookQuality` and owns the F7
+    // runtime swap. Both come out of the same functions in look.rs, so this is
+    // not a second copy of the look — see that module's header.
+    //
+    // Gated on `look::enabled_for` (the same predicate the plugin's systems use)
+    // so the bench, the editor and every other lane's screenshot proof keep
+    // rendering the frame they were graded against. See docs/look-contract.md.
+    if look::enabled_for(&cfg) {
+        commands.entity(cam).insert(look::base_camera_look());
+    }
 
     // HUD.
     commands.spawn((
@@ -1280,9 +1324,10 @@ pub(crate) fn fly_camera(
     // a wall would come between the camera and the avatar (so it never clips).
     let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
     let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
+    let want = orbit.want_dist;
     let dist = match world.as_deref() {
-        Some(world) => camera_boom(world, pivot, back, BOOM_DIST),
-        None => BOOM_DIST,
+        Some(world) => camera_boom(world, pivot, back, want),
+        None => want,
     };
     orbit.dist = dist;
     ctf.translation = pivot + back * dist;
