@@ -243,6 +243,15 @@ deleted by `6376138`), `scripts/_review_steam_safearea.py`, `scripts/_review_ste
 Spec re-fetched live from `partner.steamgames.com/doc/store/assets/{standard,libraryassets}` on the
 same day rather than trusted from the commit message.
 
+**Scope of the comparison — read this before trusting a "unchanged" below.** The baseline this pass
+compares against is **the numbers written in §2 of this document**, not the earlier proof images.
+`docs/assets/steam/review/` is gitignored (`.gitignore:143`) and the review scripts overwrite it in
+place, so re-running them destroyed the previous PNGs before anything could be diffed against them —
+there is no image-to-image proof that the old and new sheets agree, only that the measurements
+re-derive to the same figures. Every "reproduces unchanged" in §6.3 therefore means *the metric came
+back at the same value*, not *the proof image is byte-identical*. If image-level regression proof is
+wanted later, the fix is to un-ignore that folder or write each run into a timestamped subfolder.
+
 ### 6.1 Dimensions — every shipped file vs Valve's current spec
 
 | File | Measured | Valve requires | Verdict |
@@ -257,9 +266,31 @@ same day rather than trusted from the commit message.
 | *(none)* | — | **920 × 430 library header** | ❌ MISSING |
 | *(none)* | — | **1280 × 720 library logo, transparent** | ❌ MISSING |
 
-Aspect distortion is **0.000%** on all seven — nothing is squashed. All seven are `mode=RGB`
-(fine for capsules; the missing library logo is the one that must ship with an alpha channel).
-Proof sheet: `docs/assets/steam/review/capsule-set-confirmation.png`.
+All seven are `mode=RGB` (fine for capsules; the missing library logo is the one that must ship with
+an alpha channel). Proof sheet: `docs/assets/steam/review/capsule-set-confirmation.png`.
+
+**Correction — the aspect-distortion number.** An earlier draft of this section reported *"aspect
+distortion 0.000% on all seven"*. That figure was tautological and has been withdrawn: it compared the
+shipped file's own `w/h` against the same slot's `ew/eh`, and every file EXACT-MATCHes its slot, so it
+could only ever return 0. It measured nothing. Squash/stretch actually happens one step earlier — in
+the Lanczos call in `make_steam_capsules.py`, which forces a band of the square master into the slot's
+aspect. The honest metric is that **band's** ar vs the target ar (`scripts/_review_steam_capsules.py`
+now measures this; the bands are the real ones, proven by C1's maxdiff = 0 re-derivation):
+
+| File | source band | band ar | slot ar | squash |
+|---|---|---|---|---|
+| `main-capsule-1232x706` | 1024 × 587 (y130–717) | 1.74446 | 1.74504 | 0.033% |
+| `page-background-1438x810` | 1024 × 577 (y135–712) | 1.77470 | 1.77531 | 0.034% |
+| `header-capsule-920x430` | 1024 × 479 (y140–619) | 2.13779 | 2.13953 | 0.082% |
+| `small-capsule-462x174` | 1024 × 386 (y187–573) | 2.65285 | 2.65517 | 0.087% |
+| `library-capsule-600x900` | 682 × 1024 (centred) | 0.66602 | 0.66667 | 0.098% |
+| `vertical-capsule-748x896` | 854 × 1024 (centred) | 0.83398 | 0.83482 | 0.100% |
+| `library-hero-3840x1240` | 1024 × 330 (y330–660) | 3.10303 | 3.09677 | **0.202%** |
+
+Worst case **0.202%** (the hero), not 0.000%. Source: integer crop bounds — a 330px-tall band can't hit
+3.09677 exactly, and `crop_vertical()` truncates its band width with `int()`. At 0.202% a 100px feature
+drifts 0.2px, which is invisible, so this still **passes in practice** — but it is a tolerance, not a
+zero, and it must not be quoted as proof of anything beyond "the bands were chosen sanely".
 
 **F1 is closed.** The header/main doubling is exact (920×430 = 2×460×215, 1232×706 = 2×616×353,
 ar 2.13953 and 1.74504 both unchanged), so the commit message's claim holds under measurement.
@@ -313,8 +344,11 @@ severe, but both are new soft spots that only disappear with F7 (author masters 
 ### 6.4 Verdict of the confirmation pass
 
 **Dimensionally the set is now correct and I would sign off on `6376138` for what it claims to be — a
-dimensions-only fix.** Scorecard moves **5 PASS · 10 FIX → 7 PASS · 9 FIX**: F1 closes, aspect fidelity
-and pipeline honesty (C1's maxdiff = 0) are new passes. But the set is still **not submittable**: two
+dimensions-only fix.** Scorecard moves **5 PASS · 10 FIX → 7 PASS · 9 FIX**, from exactly two moves:
+**F1 closes** (FIX → PASS), and **C1 pipeline honesty** (maxdiff = 0) enters as a genuinely new PASS
+that wasn't on the original 15-item board. "Aspect fidelity" is deliberately **not** a third pass —
+it is F1 measured a second way, and counting it would inflate the board (see the correction in §6.1;
+the real source→slot distortion is 0.033–0.202%, not 0.000%). But the set is still **not submittable**: two
 required slots are empty, no asset carries a logotype, and the hero fails the safe area. The order in
 §4 is unchanged — F2 (logo) first, because C1 proves every asset is still waiting on it.
 
