@@ -97,8 +97,7 @@ your knowledge intact — no item loss, no punishment spiral, just another attem
 
 ## 3. Feature list *(Valve: bullet list, no hard character limit per item; keep items short — storefront renders as a tick-list module)*
 
-Longest bullet: **197 chars** (collapsed to single-line as Steam renders). All are under 200 chars — safe for Steam's feature-list module which wraps
-at the UI level.
+Longest bullet: **197 chars** (collapsed to single-line as Steam renders — character count, inclusive of `**` markers, spaces, and joined line-breaks, same method as §2). All are under 200 chars — safe for Steam's feature-list module which wraps at the UI level.
 
 - **Soulslike combat, built for blocks.** Stamina-gated dodge, light and heavy attacks, block, and a
   high-risk 12-frame parry window — every action costs something, every enemy telegraphs honestly.
@@ -113,8 +112,8 @@ at the UI level.
 - **Separate creative/build mode.** Toggle out of the Edhari campaign into a dedicated sandbox to
   place and destroy blocks freely — its own mode, decoupled from the story and combat.
 - **Four graphics quality tiers (Low → Ultra).** Scalable post-processing — tonemapping, color
-  grading, bloom, soft shadows, ambient occlusion, depth of field, distance fog, volumetric god
-  rays at Ultra.
+  grading, bloom, soft shadows, ambient occlusion, depth of field, distance fog, god rays at
+  Ultra.
 - **Native desktop build.** Built in Rust on Bevy/wgpu — no browser runtime, no plugin required.
 
 ---
