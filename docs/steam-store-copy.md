@@ -35,9 +35,13 @@
 
 ## 2. About This Game *(Valve limit: none hard-capped; Steam recommends concise, no external links)*
 
-Character count (body text excluding headings): **3,151 chars with spaces** (counted from the bold
-lede to the end of the last paragraph). Valve's store page field accepts significantly more than this
-(the UI cut-off is ~8,000 chars in practice), so 3,151 is comfortably within bounds. No external links are present.
+Character count (body text): **3,151 chars** — counted from the first character of `**A world…`
+to the last character before `---`, inclusive of `**` markers, spaces, and newlines between lines,
+exclusive of the trailing blank line's newline. **Method:** character count (not byte count) via
+`String.length` on the raw body text joined with `\n`. If you count differently (collapsed whitespace,
+bytes, markdown-rendered visible text), you will get a different number — stick to this method for
+consistency across reviews. Valve's store page field accepts significantly more than this (the UI
+cut-off is ~8,000 chars in practice), so 3,151 is comfortably within bounds. No external links are present.
 
 **A world you can trust, a fight that doesn't let you cheat.**
 
@@ -93,7 +97,7 @@ your knowledge intact — no item loss, no punishment spiral, just another attem
 
 ## 3. Feature list *(Valve: bullet list, no hard character limit per item; keep items short — storefront renders as a tick-list module)*
 
-Longest bullet: **182 chars** (collapsed to single-line as Steam renders). All are under 200 chars — safe for Steam's feature-list module which wraps
+Longest bullet: **197 chars** (collapsed to single-line as Steam renders). All are under 200 chars — safe for Steam's feature-list module which wraps
 at the UI level.
 
 - **Soulslike combat, built for blocks.** Stamina-gated dodge, light and heavy attacks, block, and a
@@ -108,8 +112,8 @@ at the UI level.
   reset, you don't.
 - **Separate creative/build mode.** Toggle out of the Edhari campaign into a dedicated sandbox to
   place and destroy blocks freely — its own mode, decoupled from the story and combat.
-- **Four graphics quality tiers (Low → Ultra).** Scalable post-processing stack — tonemapping, color
-  grading, bloom, soft shadows, ambient occlusion, depth of field, distance fog, and volumetric god
+- **Four graphics quality tiers (Low → Ultra).** Scalable post-processing — tonemapping, color
+  grading, bloom, soft shadows, ambient occlusion, depth of field, distance fog, volumetric god
   rays at Ultra.
 - **Native desktop build.** Built in Rust on Bevy/wgpu — no browser runtime, no plugin required.
 
@@ -294,7 +298,7 @@ closing card.
 | §1 Short description (primary) | ≤300 chars | 264 | ✅ |
 | §1 Short description (alt) | ≤300 chars | 238 | ✅ |
 | §2 About This Game body | None (soft ~8,000) | 3,151 | ✅ |
-| §3 Feature list longest bullet | None (keep short) | 186 | ✅ |
+| §3 Feature list longest bullet | None (keep short) | 197 | ✅ |
 | §4 Genre | Fixed picker | Action + Adventure | ✅ per vision doc |
 | §5 Tags | ≤20 | 15 proposed | ✅ |
 | §6 Capsule text | Title-only, no marketing | "VOXELFORGE" only | ✅ |
