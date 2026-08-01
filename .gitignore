@@ -141,3 +141,13 @@ _*.json
 
 # Steam capsule review proof images (Flamingo, 2026-08-01)
 /docs/assets/steam/review/
+
+# ── Per-lane shoot/sweep scratch dirs (2026-08-01) ───────────
+# One dir per lane, same rationale as the `target-<lane>/` block above: they
+# hold the PNG + .log evidence a sweep produced (e.g. `_poppy_colour_sweep/`
+# is 32 frames + logs behind the magenta fix). Keep the evidence on disk —
+# it is what a re-review reads — just never track ~30 MB of throwaway renders.
+/_poppy_*/
+/_rose_*/
+# Kevin's CARGO_TARGET_DIR — the `target-<lane>` convention above missed the name.
+/target-kevin/
