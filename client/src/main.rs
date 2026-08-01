@@ -25,6 +25,7 @@ mod mapfile;
 mod quest;
 mod scene;
 mod settings_menu;
+mod streaming;
 mod vfx;
 mod vfx_bridge;
 mod voxel;
@@ -196,18 +197,18 @@ fn read_cfg() -> Cfg {
 /// One live chunk: its editable voxel data, the entity carrying its mesh, and
 /// the quad count it currently contributes (kept in sync so the HUD total is
 /// correct after edits re-mesh a chunk).
-struct ChunkSlot {
-    data: ChunkData,
-    entity: Entity,
-    quads: usize,
+pub(crate) struct ChunkSlot {
+    pub(crate) data: ChunkData,
+    pub(crate) entity: Entity,
+    pub(crate) quads: usize,
 }
 
 #[derive(Resource)]
 pub(crate) struct World {
-    material: Handle<StandardMaterial>,
+    pub(crate) material: Handle<StandardMaterial>,
     /// Keyed by (chunk_x, chunk_z) — only the y=0 layer is spawned in Phase 0.
     pub(crate) chunks: HashMap<(i32, i32), ChunkSlot>,
-    total_quads: usize,
+    pub(crate) total_quads: usize,
 }
 
 /// Two ways to be in the world: PLAY (walk/fly + single edits) and EDIT (free-fly
@@ -442,6 +443,7 @@ fn main() {
             ))
             .add_plugins(look::LookPlugin)
             .add_plugins(settings_menu::SettingsPlugin)
+            .add_plugins(streaming::StreamingPlugin)
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
             .insert_resource(Editor {
@@ -676,13 +678,24 @@ fn setup(
         // Author-from-scratch flow: one blank 32³ chunk the demo fills, then saves.
         spawn_empty_chunk(&mut commands, &mut meshes, &mut world, 0, 0);
         side = 1;
-    } else {
-        side = if bench.active { bench.side } else { cfg.grid as i32 };
+    } else if bench.active {
+        // Bench ramp manages its own grid — spawn the initial side exactly as before.
+        side = bench.side;
         for z in 0..side {
             for x in 0..side {
                 spawn_chunk(&mut commands, &mut meshes, &mut world, x, z);
             }
         }
+    } else {
+        // Streaming: seed a small ring around the origin so the player has ground
+        // underfoot; the streaming plugin loads/unloads the rest as they move.
+        let r = 3i32;
+        for z in -r..=r {
+            for x in -r..=r {
+                spawn_chunk(&mut commands, &mut meshes, &mut world, x, z);
+            }
+        }
+        side = 1; // Player spawns near origin; streaming fills the world outward.
     }
 
     // Sun.

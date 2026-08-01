@@ -5638,6 +5638,7 @@ name = "voxelforge"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_camera",
  "bevy_egui",
  "dot_vox",
  "serde",
