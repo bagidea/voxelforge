@@ -2,6 +2,7 @@
 
 > Reviewer: Flamingo (Design). Date: 2026-08-01.  
 > **Update 2026-08-01 (Kevin):** Commit `6376138` resolved **F1** (upload sizes fixed to 920×430/1232×706/462×174/748×896/1438×810) and **F3** (small capsule, vertical capsule, page background all created). F2, F4–F10 remain open — see §4 options.
+> **Confirmation pass 2026-08-01 (Flamingo), §6 below:** re-measured from disk. **F1 is closed — verified.** **F3 is only partly closed**: 3 of the 4 named assets exist, the **Library header 920×430 is still missing**, and all three "new" assets are derived crops of the same 1024² masters rather than the fresh compositions F3 asked for. F4/F5/F9/F10 reproduce unchanged.
 > Subject: `docs/assets/steam/` — 4 capsules + 2 key-art masters, produced per `docs/steam-store-art.md`.
 > Method: every claim below is measured, not eyeballed. Scripts: `scripts/_review_steam_capsules.py`,
 > `scripts/_review_steam_safearea.py`. Proof images: `docs/assets/steam/review/`.
@@ -233,6 +234,91 @@ Three statements in that doc should be updated when this is actioned:
    is not met.
 3. §4 — the reserved logo zones are described as delivered. Measured, all four are BUSY. The promise and
    the artwork disagree.
+
+## 6. Confirmation pass — 2026-08-01, after commit `6376138`
+
+Re-measured **from the files on disk**, not from this document. Runs:
+`scripts/_review_steam_capsules.py` (updated to the new filenames — the old ones it pointed at were
+deleted by `6376138`), `scripts/_review_steam_safearea.py`, `scripts/_review_steam_confirm.py` (new).
+Spec re-fetched live from `partner.steamgames.com/doc/store/assets/{standard,libraryassets}` on the
+same day rather than trusted from the commit message.
+
+### 6.1 Dimensions — every shipped file vs Valve's current spec
+
+| File | Measured | Valve requires | Verdict |
+|---|---|---|---|
+| `header-capsule-920x430.png` | 920 × 430 | 920 × 430 | ✅ PASS |
+| `small-capsule-462x174.png` | 462 × 174 | 462 × 174 | ✅ PASS |
+| `main-capsule-1232x706.png` | 1232 × 706 | 1232 × 706 | ✅ PASS |
+| `vertical-capsule-748x896.png` | 748 × 896 | 748 × 896 | ✅ PASS |
+| `page-background-1438x810.png` | 1438 × 810 | 1438 × 810 (optional) | ✅ PASS |
+| `library-capsule-600x900.png` | 600 × 900 | 600 × 900 | ✅ PASS |
+| `library-hero-3840x1240.png` | 3840 × 1240 | 3840 × 1240 | ✅ PASS |
+| *(none)* | — | **920 × 430 library header** | ❌ MISSING |
+| *(none)* | — | **1280 × 720 library logo, transparent** | ❌ MISSING |
+
+Aspect distortion is **0.000%** on all seven — nothing is squashed. All seven are `mode=RGB`
+(fine for capsules; the missing library logo is the one that must ship with an alpha channel).
+Proof sheet: `docs/assets/steam/review/capsule-set-confirmation.png`.
+
+**F1 is closed.** The header/main doubling is exact (920×430 = 2×460×215, 1232×706 = 2×616×353,
+ar 2.13953 and 1.74504 both unchanged), so the commit message's claim holds under measurement.
+
+### 6.2 What the size table hides — the three findings the resize did not close
+
+**C1 · Nothing was composited into any file — every asset is a bit-exact crop of the two masters.**
+Re-deriving each output from `key-art-*-master.png` with the crop bands in `make_steam_capsules.py`
+gives **maxdiff = 0** on all seven files. That is a clean pass on pipeline honesty, and simultaneously
+hard proof that **F2 is untouched**: there is no logotype pixel anywhere in the set. It also means the
+"new" small/vertical/page-background assets are **derived crops**, which is exactly what F3 said not to
+do — at 462×174 Valve wants the logo to nearly fill the frame, and this file is a landscape band with no
+logo at all. Measured as a lockup surface the small capsule is **BUSY** (L std 66.4) across the whole
+frame, so a logo dropped on it later will need a scrim.
+
+**C2 · The library header slot is still empty.** F3 listed three missing assets; two were created.
+`library-header-920x430.png` was not, and neither was the Library Logo from F2 — and the logo is what
+Steam overlays on the hero, so the hero still cannot function even though its dimensions pass.
+
+**C3 · Resolution honesty got slightly worse in one place, not better.** Per-pixel gradient energy
+against the native 1024 master (3.885):
+
+| File | src scale | gradient x | Read |
+|---|---|---|---|
+| `library-capsule-600x900` | 0.59× | 3.742 | native, sharp |
+| `header-capsule-920x430` | 0.90× | 3.362 | native, sharp |
+| `main-capsule-1232x706` | 1.20× | 3.141 | mild upscale |
+| `page-background-1438x810` | 1.40× | 2.797 | visible softening |
+| `library-hero-3840x1240` | 3.75× | **1.162** | **F5 unchanged — still an upscale** |
+
+Fixing F1 pushed the main capsule *past* the master's native width (1232 > 1024), so it is now a 1.2×
+upscale where it used to be a downscale, and the new page background is a 1.4× upscale. Neither is
+severe, but both are new soft spots that only disappear with F7 (author masters at target aspect).
+
+### 6.3 Findings that reproduce unchanged
+
+- **F4** — hero safe area, re-run byte-for-byte identical to §2: Auren x 2253–3126 / y 32–1239,
+  **3.4% 2-D overlap**, head band y 32–394 entirely above the band's top edge (y 430) → `FACE WILL CROP`.
+  Expected: `6376138` did not touch the hero.
+- **F5** — 1.162 vs 3.885 gradient, unchanged.
+- **F6** — all reserved logo zones still **BUSY**; the two new assets inherit it (vertical capsule top
+  25%: std 55.5 / edgeE 10.77 · small capsule whole frame: std 66.4).
+- **F8** — the crops still amputate and still hard-cut the cloak on the right edge: dark mass occupies
+  **91.5%** of the header's right edge column, **94.3%** of the small capsule's (the worst in the set —
+  the tightest band is also the one that runs off frame hardest), 66.3% main, 65.6% page background.
+- **F9/F10** — palette law unchanged on the new files: warm 98.4–99.8%, teal 0.001–0.028%
+  (main capsule 0.026%, still ~2 orders below the ≥0.3% target), crushed-below-L12 5.14–13.76%
+  (`library-hero` 13.76%, `main` 10.44%, `page-background` 10.41%) against the <3% target.
+  Highlights remain clean at 0.00% blown everywhere — P4 still holds.
+
+### 6.4 Verdict of the confirmation pass
+
+**Dimensionally the set is now correct and I would sign off on `6376138` for what it claims to be — a
+dimensions-only fix.** Scorecard moves **5 PASS · 10 FIX → 7 PASS · 9 FIX**: F1 closes, aspect fidelity
+and pipeline honesty (C1's maxdiff = 0) are new passes. But the set is still **not submittable**: two
+required slots are empty, no asset carries a logotype, and the hero fails the safe area. The order in
+§4 is unchanged — F2 (logo) first, because C1 proves every asset is still waiting on it.
+
+---
 
 *Reviewed by Flamingo (Design). Layer 2 — Gate 3 after-frames vs `docs/look-acceptance-rubric.md` —
 is armed and waiting on `docs/assets/gate3/*.png`; as of this writing the runlogs are still `[DryRun —
