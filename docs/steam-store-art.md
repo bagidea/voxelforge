@@ -6,7 +6,8 @@
 > every choice below is a reapplication of those two docs to a marketing surface.
 > Owner: Monanisa (Design). Last updated: 2026-08-01 (capsule sizes corrected to Valve's current spec — see
 > §6; §8 adds the upload compliance table — Director scope for this pass: store capsules only, Library
-> Hero on hold pending Gate 3).
+> Hero on hold pending Gate 3; §7/§8 then corrected same-day against Flamingo's confirmation-pass findings
+> C1/C2 — no capsule has a logotype yet, and the Library Header Capsule slot is missing, not reuse-satisfied).
 
 ---
 
@@ -108,9 +109,13 @@ For the key art specifically:
 | Library capsule | 600×900 | 2:3 portrait | Portrait master | Unchanged — still Valve's current library spec. Full-body Auren, top 25% reserved for logo |
 | Library hero | 3840×1240 | ~3.1:1 ultrawide | Landscape master | Unchanged — still Valve's current library spec. Thinnest band — composition must keep Auren + god-ray inside the vertical-center third |
 
-All final files land in `docs/assets/steam/`. Library Header Capsule (a separate library-asset slot,
-also 920×430 per Valve) defaults to the Store Header Capsule when not set explicitly — no separate file
-needed unless Steamworks App Admin says otherwise.
+All final files land in `docs/assets/steam/`. **Correction, 2026-08-01 (Monanisa) — the line that used to
+be here was wrong.** It claimed the Library Header Capsule "defaults to the Store Header Capsule when not
+set explicitly — no separate file needed." Flamingo's confirmation pass (`docs/steam-art-review-2026-08-01.md`
+§6.2, finding **C2**) measured the actual upload slot and found no such default: `library-header-920x430.png`
+does not exist on disk, and Steamworks App Admin lists Library Header Capsule as its own required 920×430
+upload, separate from the Store Header Capsule. Treat it as **missing**, not satisfied by reuse, until a
+dedicated file is produced and verified.
 
 **What this pass fixed vs. what's still open:** this was a dimensions-only correction — every asset
 above is now byte-verified against Valve's current upload spec (see §7). It does **not** address
@@ -171,26 +176,45 @@ points at the old 460×215/616×353 filenames — re-point it at the new filenam
 > `PIL.Image.open(...).size` read off disk, not a re-statement of the commit message. Spec source:
 > `docs/research/steamworks-publishing-brief-2026.md` §3.4, itself cross-checked against
 > `partner.steamgames.com/doc/store/assets/{standard,libraryassets}` directly.
+>
+> **Correction, 2026-08-01 (Monanisa) — "Compliant" below means pixel-dimension compliant only, not
+> Steam-upload-ready.** Flamingo's confirmation pass found **C1**: all seven shipped files are bit-exact
+> crops of the two masters with `maxdiff = 0` against a from-scratch re-crop — meaning **zero logotype
+> pixels exist anywhere in the set**. Valve rejects capsules without a legible logotype, and requires the
+> logo to *nearly fill* the small capsule specifically. So every "✅ Dimension OK" row below still fails
+> Steam's actual submission requirement (F2/C1) until a logo compositing pass happens — none of these
+> files can be uploaded as final today. The table also previously claimed the Library Header Capsule was
+> satisfied by reuse of the store header; that was wrong (see the correction above §7) and is fixed below.
 
 ### Store capsules (this pass's scope)
 
-| File | Size on disk (verified) | Steam slot | Required? | Status |
-|---|---|---|---|---|
-| `header-capsule-920x430.png` | 920×430 | Header Capsule | Required | ✅ Compliant |
-| `small-capsule-462x174.png` | 462×174 | Small Capsule | Required | ✅ Compliant |
-| `main-capsule-1232x706.png` | 1232×706 | Main Capsule | Required | ✅ Compliant |
-| `vertical-capsule-748x896.png` | 748×896 | Vertical Capsule | Required | ✅ Compliant |
-| `page-background-1438x810.png` | 1438×810 | Page Background | Optional | ✅ Compliant (delivered anyway) |
-| *(none yet)* | — | Screenshots ≥1920×1080, 16:9, ×5 | Required | ❌ Missing — needs a real build capture (`docs/steam-store-copy.md` §6); this pass's machine constraints forbid opening `voxelforge.exe`/GPU use, so it cannot be produced here |
+| File | Size on disk (verified) | Steam slot | Required? | Dimension | Logotype (F2/C1) |
+|---|---|---|---|---|---|
+| `header-capsule-920x430.png` | 920×430 | Header Capsule | Required | ✅ OK | ❌ None — text-free crop, not upload-ready |
+| `small-capsule-462x174.png` | 462×174 | Small Capsule | Required | ✅ OK | ❌ None — Valve wants the logo to nearly fill this frame; measured **BUSY** (L std 66.4) as a lockup surface, so it'll need a scrim behind the logo |
+| `main-capsule-1232x706.png` | 1232×706 | Main Capsule | Required | ✅ OK | ❌ None — text-free crop, not upload-ready |
+| `vertical-capsule-748x896.png` | 748×896 | Vertical Capsule | Required | ✅ OK | ❌ None — text-free crop, not upload-ready |
+| `page-background-1438x810.png` | 1438×810 | Page Background | Optional | ✅ OK | ➖ Not required to carry a logo (background asset) |
+| *(none yet)* | — | Screenshots ≥1920×1080, 16:9, ×5 | Required | ❌ Missing | ➖ N/A — needs a real build capture (`docs/steam-store-copy.md` §6); this pass's machine constraints forbid opening `voxelforge.exe`/GPU use, so it cannot be produced here |
+
+**None of the five delivered store capsules are Steam-upload-ready as of this pass** — dimensions are
+correct, but F2/C1 (no logotype composited anywhere) is a hard Valve rejection reason, not a nice-to-have.
 
 ### Library assets (adjacent slots, referenced for completeness — not re-touched this pass)
 
 | File | Size on disk (verified) | Steam slot | Required? | Status |
 |---|---|---|---|---|
-| `library-capsule-600x900.png` | 600×900 | Library Capsule | Required | ✅ Compliant, unchanged since commit `6376138` |
-| `header-capsule-920x430.png` (reused) | 920×430 | Library Header Capsule | Required | ✅ Compliant — Steamworks App Admin defaults this slot to the Store Header Capsule when not set separately (§6 note above); no extra file needed |
+| `library-capsule-600x900.png` | 600×900 | Library Capsule | Required | ⚠️ Dimension OK, unchanged since commit `6376138` — but same F2/C1 gap: no logotype, not upload-ready |
+| *(none)* | — | Library Header Capsule | Required | ❌ **MISSING — corrected 2026-08-01.** Earlier drafts of this doc and table claimed the store header satisfies this slot by default. Flamingo's confirmation pass (**C2**) measured the real state: `library-header-920x430.png` does not exist, and Steamworks App Admin treats this as its own required upload, not a reuse default. Not produced this pass. |
 | `library-hero-3840x1240.png` | 3840×1240 | Library Hero | Required | ⛔ **ON HOLD, not submission-ready.** Dimension is correct, but the critical-art safe area is the **centre 860×380 band** (not the full 3840×1240 frame), and Auren's head sits above/outside that band — 0% vertical overlap per Flamingo's measured F4. It is also a 3.75× Lanczos upscale off a 1024px master (F5), which measures as soft. Director decision: leave exactly as-is until the Gate 3 in-engine re-shoot: no regeneration, no re-crop, no grade pass. |
 | *(none yet)* | — | Library Logo | Required | ❌ Missing — no logotype exists yet for any asset (F2). Out of scope for this pass. |
+
+**Revised bottom line:** pixel dimensions are correct and byte-verified for every store capsule this pass
+touched, and that part of the work holds up. But "dimension compliant" is not "Steam-upload compliant" —
+**three separate blockers remain before this asset set can actually be submitted:** no logotype on any
+file (F2/C1), the Library Header Capsule slot is empty (C2), and the Library Hero fails Valve's safe area
+plus is a soft upscale (F4/F5, on hold by Director instruction). Screenshots are also still outstanding.
+None of these are resolved by a resize, and none are claimed as resolved here.
 
 ### Not capsules — flagged for awareness only, not delivered this pass
 
