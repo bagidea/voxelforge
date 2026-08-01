@@ -39,15 +39,6 @@ VOXELFORGE_BENCH=1 cargo run --release --bin voxelforge  # ramp benchmark, print
 Controls: **click** = capture mouse / look · **WASD** = move · **Space/Shift**
 = up/down · **Ctrl** = boost · **Esc** = release mouse.
 
-## Run — web (WebGPU)
-
-```bash
-trunk serve --release    # builds the `webgpu` feature, serves on 127.0.0.1:8088
-node scripts/measure-web.mjs http://127.0.0.1:8088 web-shot.png   # headless FPS read
-```
-
-Requires a WebGPU-capable Chrome (stable ≥ 113 on a real GPU).
-
 ## Render a beauty shot
 
 `voxelforge_shot` renders the lit hero scene only (no game loop), so the
