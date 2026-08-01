@@ -606,6 +606,9 @@ pub struct CombatIntent {
     pub block: bool,
     pub parry: bool,
     pub lock_toggle: bool,
+    /// Switch to the next-nearest valid target while already locked on (§2.3).
+    /// No-op when unlocked or when no other target is in range.
+    pub lock_switch: bool,
 }
 
 /// Lock-on state (§2.3).
@@ -1025,6 +1028,7 @@ pub fn gather_input(
         block: mouse.pressed(MouseButton::Right),
         parry: keys.just_pressed(KeyCode::KeyV),
         lock_toggle: keys.just_pressed(KeyCode::KeyR),
+        lock_switch: keys.just_pressed(KeyCode::KeyQ),
     };
 }
 
@@ -1080,6 +1084,17 @@ pub fn player_combat(
             lock.target = None;
         } else {
             lock.target = nearest_target(&ptf.translation, pc_facing(&ptf), &enemy_q);
+        }
+    }
+    // Switch target (§2.3): only meaningful while already locked; picks the
+    // nearest OTHER live enemy in range. No candidate => stay on current target.
+    if intent.lock_switch {
+        if let Some(cur) = lock.target {
+            let candidates: Vec<(Entity, Vec3, bool)> =
+                enemy_q.iter().map(|(e, tf, hp, _)| (e, tf.translation, hp.dead())).collect();
+            if let Some(next) = cycle_target(cur, &ptf.translation, &candidates) {
+                lock.target = Some(next);
+            }
         }
     }
     // Auto-unlock if the target left range or died (§2.3).
@@ -2307,6 +2322,29 @@ fn nearest_target(
     best.map(|(e, _)| e)
 }
 
+/// Pure target-switch logic (§2.3): nearest live candidate other than `current`
+/// within `LOCK_RANGE`. Takes plain tuples (not a `Query`) so it is unit-testable
+/// without spinning up a `World` — mirrors `nearest_target`'s range gate, but
+/// intentionally skips the acquisition cone: once locked, the player is already
+/// oriented at the fight, and gating a *switch* by facing would make the enemy
+/// you just turned away from unreachable.
+fn cycle_target(current: Entity, origin: &Vec3, candidates: &[(Entity, Vec3, bool)]) -> Option<Entity> {
+    let mut best: Option<(Entity, f32)> = None;
+    for &(e, pos, dead) in candidates {
+        if e == current || dead {
+            continue;
+        }
+        let dist = pos.distance(*origin);
+        if dist > LOCK_RANGE {
+            continue;
+        }
+        if best.map(|(_, d)| dist < d).unwrap_or(true) {
+            best = Some((e, dist));
+        }
+    }
+    best.map(|(e, _)| e)
+}
+
 // ===========================================================================
 // Unit tests — the headless numeric proof of the core loop (`cargo test`).
 // ===========================================================================
@@ -2622,5 +2660,45 @@ mod tests {
         demo.phase = 9;
         demo.husk_dead = true;
         assert!(demo.husk_dead);
+    }
+
+    // -- lock-on target switching (§2.3) ------------------------------------
+
+    #[test]
+    fn cycle_target_switches_to_the_next_nearest_live_enemy() {
+        let cur = Entity::from_raw_u32(1).unwrap();
+        let far = Entity::from_raw_u32(2).unwrap();
+        let near = Entity::from_raw_u32(3).unwrap();
+        let origin = Vec3::ZERO;
+        let candidates = [
+            (cur, Vec3::new(2.0, 0.0, 0.0), false),
+            (far, Vec3::new(10.0, 0.0, 0.0), false),
+            (near, Vec3::new(4.0, 0.0, 0.0), false),
+        ];
+        // `cur` itself must never be returned, and among the remaining live
+        // candidates the nearer one wins over the farther one.
+        assert_eq!(cycle_target(cur, &origin, &candidates), Some(near));
+    }
+
+    #[test]
+    fn cycle_target_skips_dead_and_out_of_range_candidates() {
+        let cur = Entity::from_raw_u32(1).unwrap();
+        let dead = Entity::from_raw_u32(2).unwrap();
+        let out_of_range = Entity::from_raw_u32(3).unwrap();
+        let origin = Vec3::ZERO;
+        let candidates = [
+            (cur, Vec3::new(2.0, 0.0, 0.0), false),
+            (dead, Vec3::new(3.0, 0.0, 0.0), true),
+            (out_of_range, Vec3::new(LOCK_RANGE + 1.0, 0.0, 0.0), false),
+        ];
+        assert_eq!(cycle_target(cur, &origin, &candidates), None);
+    }
+
+    #[test]
+    fn cycle_target_is_a_noop_when_no_other_enemy_exists() {
+        let cur = Entity::from_raw_u32(1).unwrap();
+        let origin = Vec3::ZERO;
+        let candidates = [(cur, Vec3::new(2.0, 0.0, 0.0), false)];
+        assert_eq!(cycle_target(cur, &origin, &candidates), None);
     }
 }

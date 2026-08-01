@@ -33,6 +33,9 @@ voxelforge-sim = { path = "../sim" }
 # file in assets/audio/ is a RIFF/WAVE — without it `bevy_audio` decodes nothing and
 # panics on `UnrecognizedFormat` (audio_source.rs:97) the first time a SFX plays.
 bevy = { version = "0.19", features = ["wav"] }
+# bevy_camera ships Frustum + Aabb (transitive dep of bevy; listed explicitly so
+# streaming.rs can import them directly without reaching through re-exports).
+bevy_camera = "0.19"
 dot_vox = "5"
 # VERIFY-ONLY: added temporarily to compile-check editor_ui.rs; remove after Poppy wires.
 bevy_egui = "0.41"

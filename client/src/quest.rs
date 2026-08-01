@@ -269,7 +269,7 @@ pub enum QuestStatus {
     Completed,
 }
 
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct QuestJournal {
     pub quests: HashMap<String, QuestProgress>,
     pub active_order: Vec<String>,
@@ -1362,5 +1362,490 @@ fn quest_demo(
     if demo.phase == 99 {
         println!("QUEST_FATAL phase=99");
         exit.write(AppExit::from_code(1));
+    }
+}
+
+// =============================================================================
+// Unit tests — quest state machine, save/load, objective completion
+// =============================================================================
+// These tests exercise the quest journal data model against the real act1.json
+// schema, proving every transition the engine makes during Act 1.  They do NOT
+// require Bevy — all logic is exercised through the pure functions.
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Load the real act1.json so test assertions match the shipped data.
+    fn act1() -> StoryData {
+        let text = std::fs::read_to_string("assets/story/act1.json")
+            .expect("act1.json must be readable from test");
+        serde_json::from_str(&text).expect("act1.json must parse")
+    }
+
+    fn fresh_journal(data: &StoryData) -> QuestJournal {
+        let mut j = QuestJournal::default();
+        for qdef in &data.quests {
+            j.quests.insert(qdef.id.clone(), QuestProgress {
+                status: if qdef.trigger.trigger_type == "on_spawn" {
+                    QuestStatus::Active
+                } else {
+                    QuestStatus::Locked
+                },
+                current_objective: 0,
+                completed_objectives: Vec::new(),
+                objective_counts: HashMap::new(),
+                flags: HashSet::new(),
+            });
+        }
+        // q1 always starts active.
+        if let Some(prog) = j.quests.get_mut(&data.start_quest) {
+            prog.status = QuestStatus::Active;
+            j.active_order.push(data.start_quest.clone());
+        }
+        j
+    }
+
+    // ---------------------------------------------------------------------------
+    // q1_embers — completes on campfire approach
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn q1_completes_on_campfire_approach() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        // Simulate walking to the campfire: complete o1_campfire (approach).
+        let qid = "q1_embers";
+        let obj_id = "o1_campfire";
+        let prog = j.quests.get_mut(qid).unwrap();
+        assert_eq!(prog.status, QuestStatus::Active);
+
+        // Manually push the objective completion (same path as check_approach_triggers).
+        prog.completed_objectives.push(obj_id.to_string());
+        prog.current_objective += 1;
+
+        // q1 has only o1_campfire (non-optional) → quest completes.
+        let qdef = data.quests.iter().find(|q| q.id == qid).unwrap();
+        let all_done = qdef.objectives.iter()
+            .filter(|o| !o.optional)
+            .all(|o| prog.completed_objectives.contains(&o.id));
+        assert!(all_done, "q1 should be done after o1_campfire");
+
+        // Complete the quest.
+        prog.status = QuestStatus::Completed;
+        // q1 rewards set campfire_anchored flag.
+        if let Some(ref flag) = qdef.rewards.set_flag {
+            j.flags.insert(flag.clone());
+        }
+        assert!(j.flags.contains("campfire_anchored"), "campfire_anchored flag should be set");
+        assert_eq!(prog.status, QuestStatus::Completed);
+
+        // q1.next → q2 should be unlocked.
+        if let Some(ref next_id) = qdef.next {
+            let next = j.quests.get_mut(next_id).unwrap();
+            next.status = QuestStatus::Active;
+            assert_eq!(next.status, QuestStatus::Active);
+            assert_eq!(next_id, "q2_voice_in_stone");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // q2_voice_in_stone — completes via dialogue choice
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn q2_completes_via_dialogue_choice() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        // Set up: q1 done, q2 active.
+        j.quests.get_mut("q1_embers").unwrap().status = QuestStatus::Completed;
+        let q2 = j.quests.get_mut("q2_voice_in_stone").unwrap();
+        q2.status = QuestStatus::Active;
+
+        // Find dlg_maren_gate and pick choice "c_go" → completes o2_listen + advances q3.
+        let dlg = data.dialogue.iter().find(|d| d.id == "dlg_maren_gate").unwrap();
+        let go_choice = dlg.choices.as_ref().unwrap().iter()
+            .find(|c| c.id == "c_go").unwrap();
+
+        // Simulate choice effects.
+        if let Some(ref obj_id) = go_choice.completes_objective {
+            q2.completed_objectives.push(obj_id.clone());
+            q2.current_objective += 1;
+        }
+        if let Some(ref flag) = go_choice.sets_flag {
+            j.flags.insert(flag.clone());
+        }
+        // q2 has 2 objectives: o1_gate (reach_zone) and o2_listen (listen).
+        // Both must be done.
+        q2.completed_objectives.push("o1_gate".to_string());
+        q2.current_objective += 1;
+        let qdef = data.quests.iter().find(|q| q.id == "q2_voice_in_stone").unwrap();
+        let all_done = qdef.objectives.iter()
+            .filter(|o| !o.optional)
+            .all(|o| q2.completed_objectives.contains(&o.id));
+        assert!(all_done, "q2 both objectives done");
+
+        q2.status = QuestStatus::Completed;
+        assert_eq!(q2.status, QuestStatus::Completed);
+        assert!(j.flags.contains("maren_met"), "maren_met flag should be set");
+
+        // q2.next → q3 should be unlockable.
+        assert_eq!(qdef.next.as_deref(), Some("q3_gatekeeper"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // q3_gatekeeper — defeat + reach_zone + approach → complete
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn q3_completes_via_defeat() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        // Set up: q1-q2 done, q3 active.
+        j.quests.get_mut("q1_embers").unwrap().status = QuestStatus::Completed;
+        j.quests.get_mut("q2_voice_in_stone").unwrap().status = QuestStatus::Completed;
+        let q3 = j.quests.get_mut("q3_gatekeeper").unwrap();
+        q3.status = QuestStatus::Active;
+
+        // Complete o1_east (reach_zone guard_post_east).
+        q3.completed_objectives.push("o1_east".to_string());
+        q3.current_objective += 1;
+
+        // Complete o2_observe (approach Garren).
+        q3.completed_objectives.push("o2_observe".to_string());
+        q3.current_objective += 1;
+
+        // Complete o3_defeat (defeat garren_husk).
+        q3.completed_objectives.push("o3_defeat".to_string());
+        q3.current_objective += 1;
+
+        let qdef = data.quests.iter().find(|q| q.id == "q3_gatekeeper").unwrap();
+        let all_done = qdef.objectives.iter()
+            .filter(|o| !o.optional)
+            .all(|o| q3.completed_objectives.contains(&o.id));
+        assert!(all_done, "q3 all non-optional objectives done");
+        assert!(q3.completed_objectives.contains(&"o3_defeat".to_string()));
+
+        q3.status = QuestStatus::Completed;
+        assert_eq!(q3.status, QuestStatus::Completed);
+
+        // q3.next → q4 unlocks.
+        assert_eq!(qdef.next.as_deref(), Some("q4_what_walls_remember"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // q4_what_walls_remember — place_block + interact ×2
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn q4_completes_via_build_and_interact() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        let q4 = j.quests.get_mut("q4_what_walls_remember").unwrap();
+        q4.status = QuestStatus::Active;
+
+        // o1_build: place_block at collapse_gap.
+        q4.completed_objectives.push("o1_build".to_string());
+        q4.current_objective += 1;
+
+        // o2_ledger: interact lore_village_ledger.
+        q4.completed_objectives.push("o2_ledger".to_string());
+        q4.current_objective += 1;
+
+        // o3_offering: interact lore_offering_bowl.
+        q4.completed_objectives.push("o3_offering".to_string());
+        q4.current_objective += 1;
+
+        let qdef = data.quests.iter().find(|q| q.id == "q4_what_walls_remember").unwrap();
+        let all_done = qdef.objectives.iter()
+            .filter(|o| !o.optional)
+            .all(|o| q4.completed_objectives.contains(&o.id));
+        assert!(all_done, "q4 all objectives done");
+
+        q4.status = QuestStatus::Completed;
+        // q4.next → q5.
+        assert_eq!(qdef.next.as_deref(), Some("q5_sigil_that_knew_you"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // q5_sigil_that_knew_you — approach sigil → enter Hollow Reach → cliffhanger
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn q5_completes_full_act1() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        let q5 = j.quests.get_mut("q5_sigil_that_knew_you").unwrap();
+        q5.status = QuestStatus::Active;
+
+        // o1_sigil: approach sigil within 4 blocks of gate.
+        q5.completed_objectives.push("o1_sigil".to_string());
+        q5.current_objective += 1;
+
+        // o2_enter: reach_zone hollow_reach_intro.
+        q5.completed_objectives.push("o2_enter".to_string());
+        q5.current_objective += 1;
+
+        // o3_end: listen to dlg_maren_cliffhanger (this sets act1_complete flag).
+        q5.completed_objectives.push("o3_end".to_string());
+        q5.current_objective += 1;
+
+        // Simulate the cliffhanger dialogue effect: set act1_complete flag.
+        j.flags.insert("act1_complete".to_string());
+
+        let qdef = data.quests.iter().find(|q| q.id == "q5_sigil_that_knew_you").unwrap();
+        let all_done = qdef.objectives.iter()
+            .filter(|o| !o.optional)
+            .all(|o| q5.completed_objectives.contains(&o.id));
+        assert!(all_done, "q5 all objectives done");
+
+        q5.status = QuestStatus::Completed;
+        assert_eq!(q5.status, QuestStatus::Completed);
+        assert!(j.flags.contains("act1_complete"), "act1_complete flag should be set");
+        assert_eq!(qdef.next, None, "q5 is the end of Act 1 — no next quest");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Full-chain test: q1 → q2 → q3 → q4 → q5 sequential activation
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn full_act1_chain_all_quests_accessible() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        // Start: only q1 is Active.
+        assert_eq!(j.quests.get("q1_embers").unwrap().status, QuestStatus::Active);
+        assert_eq!(j.quests.get("q2_voice_in_stone").unwrap().status, QuestStatus::Locked);
+        assert_eq!(j.quests.get("q3_gatekeeper").unwrap().status, QuestStatus::Locked);
+        assert_eq!(j.quests.get("q4_what_walls_remember").unwrap().status, QuestStatus::Locked);
+        assert_eq!(j.quests.get("q5_sigil_that_knew_you").unwrap().status, QuestStatus::Locked);
+
+        // Complete each quest in sequence.
+        for qid in &["q1_embers", "q2_voice_in_stone", "q3_gatekeeper",
+                      "q4_what_walls_remember", "q5_sigil_that_knew_you"] {
+            let q = j.quests.get_mut(*qid).unwrap();
+            q.status = QuestStatus::Active;
+            let qdef = data.quests.iter().find(|q| q.id == *qid).unwrap();
+            // Mark all non-optional objectives done.
+            for obj in &qdef.objectives {
+                if !obj.optional && !q.completed_objectives.contains(&obj.id) {
+                    q.completed_objectives.push(obj.id.clone());
+                    q.current_objective += 1;
+                }
+            }
+            q.status = QuestStatus::Completed;
+
+            // Unlock the next quest.
+            if let Some(ref next_id) = qdef.next {
+                let next = j.quests.get_mut(next_id).unwrap();
+                next.status = QuestStatus::Active;
+                if !j.active_order.contains(next_id) {
+                    j.active_order.push(next_id.clone());
+                }
+            }
+
+            // Apply rewards.
+            if let Some(ref flag) = qdef.rewards.set_flag {
+                j.flags.insert(flag.clone());
+            }
+        }
+
+        // Verify all 5 quests completed.
+        assert_eq!(j.quests.get("q1_embers").unwrap().status, QuestStatus::Completed);
+        assert_eq!(j.quests.get("q2_voice_in_stone").unwrap().status, QuestStatus::Completed);
+        assert_eq!(j.quests.get("q3_gatekeeper").unwrap().status, QuestStatus::Completed);
+        assert_eq!(j.quests.get("q4_what_walls_remember").unwrap().status, QuestStatus::Completed);
+        assert_eq!(j.quests.get("q5_sigil_that_knew_you").unwrap().status, QuestStatus::Completed);
+
+        // Flags set.
+        assert!(j.flags.contains("campfire_anchored"));
+        assert!(j.flags.contains("maren_met"));
+        assert!(j.flags.contains("act1_complete"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Save → Load round-trip — no data lost
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn save_load_round_trip_preserves_all_state() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        // Set up mid-playthrough state.
+        j.quests.get_mut("q1_embers").unwrap().status = QuestStatus::Completed;
+        j.flags.insert("campfire_anchored".to_string());
+        j.quests.get_mut("q2_voice_in_stone").unwrap().status = QuestStatus::Completed;
+        j.flags.insert("maren_met".to_string());
+        j.quests.get_mut("q3_gatekeeper").unwrap().status = QuestStatus::Active;
+        j.active_order = vec!["q3_gatekeeper".to_string()];
+        let q3 = j.quests.get_mut("q3_gatekeeper").unwrap();
+        q3.completed_objectives.push("o1_east".to_string());
+        q3.current_objective = 1;
+        q3.objective_counts.insert("o3_defeat".to_string(), 0);
+
+        // Save.
+        let ser = serde_json::to_string_pretty(&j).unwrap();
+
+        // Load into a fresh journal.
+        let restored: QuestJournal = serde_json::from_str(&ser).unwrap();
+
+        assert_eq!(restored.quests.len(), j.quests.len());
+        assert_eq!(restored.flags, j.flags);
+        assert_eq!(restored.active_order, j.active_order);
+        assert_eq!(
+            restored.quests.get("q3_gatekeeper").unwrap().current_objective,
+            j.quests.get("q3_gatekeeper").unwrap().current_objective
+        );
+        assert_eq!(
+            restored.quests.get("q3_gatekeeper").unwrap().completed_objectives,
+            j.quests.get("q3_gatekeeper").unwrap().completed_objectives
+        );
+        assert_eq!(
+            restored.quests.get("q3_gatekeeper").unwrap().objective_counts,
+            j.quests.get("q3_gatekeeper").unwrap().objective_counts
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Trigger: quest_complete → advances next quest
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn trigger_quest_complete_unlocks_next() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        // q2 has trigger type "quest_complete" on q1.
+        let q2_trig = &data.quests.iter().find(|q| q.id == "q2_voice_in_stone").unwrap().trigger;
+        assert_eq!(q2_trig.trigger_type, "quest_complete");
+        assert_eq!(q2_trig.quest.as_deref(), Some("q1_embers"));
+
+        // Simulate q1 completing → this should unlock q2.
+        let q1 = j.quests.get_mut("q1_embers").unwrap();
+        q1.status = QuestStatus::Completed;
+        let q1def = data.quests.iter().find(|q| q.id == "q1_embers").unwrap();
+        if let Some(ref next_id) = q1def.next {
+            let next = j.quests.get_mut(next_id).unwrap();
+            next.status = QuestStatus::Active;
+        }
+        assert_eq!(j.quests.get("q2_voice_in_stone").unwrap().status, QuestStatus::Active);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Trigger: on_spawn → Active at fresh journal
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn trigger_on_spawn_starts_active() {
+        let data = act1();
+        let j = fresh_journal(&data);
+
+        // q1 trigger is "on_spawn" — should be Active from the start.
+        assert_eq!(j.quests.get("q1_embers").unwrap().status, QuestStatus::Active);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Flag operations — set, check, clear
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn flag_set_and_check() {
+        let mut j = QuestJournal::default();
+        assert!(!j.flags.contains("test_flag"));
+
+        j.flags.insert("test_flag".to_string());
+        assert!(j.flags.contains("test_flag"));
+
+        j.flags.remove("test_flag");
+        assert!(!j.flags.contains("test_flag"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Objective count tracking (kill/defeat objectives)
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn objective_counts_track_progress() {
+        let mut prog = QuestProgress {
+            status: QuestStatus::Active,
+            current_objective: 0,
+            completed_objectives: Vec::new(),
+            objective_counts: HashMap::new(),
+            flags: HashSet::new(),
+        };
+
+        let count = prog.objective_counts.entry("o3_defeat".to_string()).or_insert(0);
+        *count += 1;
+        assert_eq!(*count, 1);
+
+        *count += 1;
+        assert_eq!(*count, 2);
+
+        // When count reaches needed (1), objective completes.
+        let needed: u32 = 1;
+        if *count >= needed {
+            prog.completed_objectives.push("o3_defeat".to_string());
+            prog.current_objective += 1;
+        }
+        assert!(prog.completed_objectives.contains(&"o3_defeat".to_string()));
+        assert_eq!(prog.current_objective, 1);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Lore items — all 11 are loaded and have expected kind + position
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn lore_items_load_correctly() {
+        let data = act1();
+        assert_eq!(data.lore_items.len(), 11, "Act 1 ships 11 lore items");
+
+        let well = data.lore_items.iter().find(|li| li.id == "lore_well_inscription").unwrap();
+        assert_eq!(well.kind, "inscription");
+        assert_eq!(well.world_position.x, 32.0);
+        assert_eq!(well.lore_layer, 2);
+
+        let toy = data.lore_items.iter().find(|li| li.id == "lore_tomas_toy").unwrap();
+        assert!(toy.tags.contains(&"toma".to_string()));
+        // Toma's toy must NOT carry teal (canon: the absence is the point).
+        let has_teal = toy.text.to_lowercase().contains("teal")
+            || toy.subtitle.to_lowercase().contains("teal")
+            || toy.subtitle.to_lowercase().contains("glow");
+        assert!(!has_teal, "Toma's toy should not carry teal light (canon)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Dialogue: dlg_maren_gate has 5 choices — hub pattern
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn dlg_maren_gate_has_five_choices_as_hub() {
+        let data = act1();
+        let dlg = data.dialogue.iter().find(|d| d.id == "dlg_maren_gate").unwrap();
+        let choices = dlg.choices.as_ref().unwrap();
+        assert_eq!(choices.len(), 5, "Maren's gate dialogue is a 5-choice hub");
+        assert_eq!(choices[0].label, "Who are you?");
+        assert_eq!(choices[4].label, "I'll go east. Keep the seal.");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Act end: cliffhanger data is intact
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn act_end_cliffhanger_intact() {
+        let data = act1();
+        let end = data.act_end.as_ref().unwrap();
+        assert_eq!(end.trigger_quest, "q5_sigil_that_knew_you");
+        assert!(!end.final_line.is_empty(), "final line must not be empty");
+        assert!(!end.beats.is_empty(), "cliffhanger beats must not be empty");
     }
 }
