@@ -147,6 +147,60 @@ impl Plugin for SettingsPlugin {
 }
 
 // =============================================================================
+// Voxelforge theme — warm walnut/espresso palette shared with the combat HUD
+// spec (see docs/hud-design.md), instead of egui's default cool-grey theme.
+// =============================================================================
+
+mod theme {
+    use bevy_egui::egui::{self, Color32, Stroke};
+
+    pub const PANEL_BG: Color32 = Color32::from_rgb(30, 20, 15);
+    pub const BORDER: Color32 = Color32::from_rgb(58, 39, 22);
+    pub const WIDGET_IDLE: Color32 = Color32::from_rgb(58, 39, 22);
+    pub const WIDGET_HOVER: Color32 = Color32::from_rgb(107, 74, 46);
+    pub const WIDGET_ACTIVE: Color32 = Color32::from_rgb(200, 138, 74);
+    pub const ACCENT_AMBER: Color32 = Color32::from_rgb(244, 184, 96);
+    pub const TEXT_CREAM: Color32 = Color32::from_rgb(232, 216, 184);
+
+    /// Frame for the outer `egui::Window` chrome. Set via `.frame(...)` on the
+    /// `Window` builder so it never touches the shared context-level `Style`
+    /// that the dialogue box and editor panels also draw with.
+    pub fn window_frame(ctx: &egui::Context) -> egui::Frame {
+        egui::Frame::window(&ctx.style_of(ctx.theme()))
+            .fill(PANEL_BG)
+            .stroke(Stroke::new(1.0, BORDER))
+    }
+
+    /// Warm widget palette, scoped to one `Ui` (and its children) via
+    /// `ui.style_mut()` — this does NOT leak into sibling egui surfaces drawn
+    /// later in the same `EguiPrimaryContextPass` frame, e.g. `dialogue_ui.rs`
+    /// or `editor_ui.rs`, which is why this lives here rather than as a
+    /// context-wide `ctx.set_visuals(..)` call.
+    pub fn apply(ui: &mut egui::Ui) {
+        let v = &mut ui.style_mut().visuals;
+        v.override_text_color = Some(TEXT_CREAM);
+        v.hyperlink_color = ACCENT_AMBER;
+        v.selection.bg_fill = ACCENT_AMBER;
+        v.selection.stroke.color = PANEL_BG;
+
+        v.widgets.noninteractive.bg_fill = PANEL_BG;
+        v.widgets.noninteractive.fg_stroke.color = TEXT_CREAM;
+
+        v.widgets.inactive.bg_fill = WIDGET_IDLE;
+        v.widgets.inactive.weak_bg_fill = WIDGET_IDLE;
+        v.widgets.inactive.fg_stroke.color = TEXT_CREAM;
+
+        v.widgets.hovered.bg_fill = WIDGET_HOVER;
+        v.widgets.hovered.weak_bg_fill = WIDGET_HOVER;
+        v.widgets.hovered.fg_stroke.color = TEXT_CREAM;
+
+        v.widgets.active.bg_fill = WIDGET_ACTIVE;
+        v.widgets.active.weak_bg_fill = WIDGET_ACTIVE;
+        v.widgets.active.fg_stroke.color = PANEL_BG;
+    }
+}
+
+// =============================================================================
 // Load / save
 // =============================================================================
 
@@ -349,7 +403,9 @@ fn settings_ui(
         .title_bar(true)
         .fixed_size(egui::vec2(panel_width, panel_height))
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .frame(theme::window_frame(ctx))
         .show(ctx, |ui| {
+            theme::apply(ui);
             ui.horizontal(|ui| {
                 for (tab, label) in [
                     (SettingsTab::Graphics, "Graphics"),
