@@ -18,12 +18,17 @@ use std::path::Path;
 use std::{fs, io};
 
 fn main() {
-    // Re-run if any file inside the source assets tree changes.
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("assets");
-    println!("cargo:rerun-if-changed={}", src.display());
-    // Also re-run if the src dir itself is created or deleted, which the
-    // recursive glob above does not cover (it monitors children, not the dir).
+    // Re-run the build script whenever any source file in this package
+    // changes — not just when the asset tree changes. Without this, a
+    // code-only rebuild (e.g. after a fresh checkout or after someone wipes
+    // the target dir) would recompile the binary but skip the asset copy,
+    // leaving the exe deaf. Watching src/ + Cargo.toml closes that gap.
+    println!("cargo:rerun-if-changed=src/");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    // Re-run when the shared asset tree at the workspace root changes.
     println!("cargo:rerun-if-changed=../assets/");
+
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("assets");
 
     let out = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     // OUT_DIR = <target>/<profile>/build/<crate>-<hash>/out
