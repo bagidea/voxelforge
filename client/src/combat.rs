@@ -26,141 +26,391 @@ use crate::{FlyCam, PLAYER_HALF_W};
 use voxelforge_sim::worldgen::terrain_height;
 
 // ===========================================================================
-// Spec constants — combat-design.md §2 / §3 / §4 / §5 / §6
+// CombatConfig — single source of truth for every tunable combat number.
+// Change a value here, rebuild, done. The old `pub const` names below are thin
+// backward-compatible aliases; new code should read `COMBAT.field` directly.
+//
+// Traceable to combat-design.md §2 / §3 / §4 / §5 / §6.
+// ===========================================================================
+
+/// Every numeric knob the soulslike combat loop reads, in one struct.
+///
+/// v1 has one player build and one enemy archetype (Guard Husk), so a `const`
+/// instance is the right shape — no runtime loader, no data file, but every
+/// number lives in exactly one named place and is greppable / diffable against
+/// `combat-design.md`'s §-tags.
+#[derive(Clone, Debug)]
+pub struct CombatConfig {
+    // -- Stamina (§2.1 / §6) ------------------------------------------------
+    pub stamina_max: f32,
+    pub stamina_regen: f32,
+    pub cost_light: f32,
+    pub cost_heavy: f32,
+    pub cost_charged: f32,
+    pub cost_dodge: f32,
+    pub cost_block: f32,
+    pub cost_parry: f32,
+    pub delay_light: f32,
+    pub delay_heavy: f32,
+    pub delay_charged: f32,
+    pub delay_dodge: f32,
+    pub delay_block: f32,
+    pub delay_parry: f32,
+    pub exhaust_lock: f32,
+    pub exhaust_clear: f32,
+
+    // -- Dodge / roll (§2.2 / §6) ------------------------------------------
+    pub dodge_iframes: f32,
+    pub dodge_recovery: f32,
+    pub dodge_distance: f32,
+
+    // -- Lock-on (§2.3 / §6) ------------------------------------------------
+    pub lock_range: f32,
+    pub lock_cone_h: f32,
+    pub lock_snap: f32,
+    pub lock_drop_range: f32,
+
+    // -- Attacks (§2.4 / §3) ------------------------------------------------
+    pub light_damage: f32,
+    pub light_poise: f32,
+    pub light_time: f32,
+    pub heavy_damage: f32,
+    pub heavy_poise: f32,
+    pub heavy_time: f32,
+    pub heavy_hyper: f32,
+    pub charged_damage: f32,
+    pub charged_poise: f32,
+    pub charged_time: f32,
+    pub charge_hold: f32,
+    pub combo_reset: f32,
+    pub combo_step: f32,
+    pub melee_range: f32,
+    pub melee_cone: f32,
+    /// Active-frame windows inside an attack (windup → active → recover).
+    pub light_active: (f32, f32),
+    pub heavy_active: (f32, f32),
+    pub charged_active: (f32, f32),
+
+    // -- Block & parry (§2.5) -----------------------------------------------
+    pub block_reduction: f32,
+    pub guard_break: f32,
+    pub parry_window: f32,
+    pub parry_posture: f32,
+    pub parry_punish: f32,
+    pub parry_punish_mult: f32,
+    pub parry_fail_mult: f32,
+    pub parry_fail_recover: f32,
+
+    // -- Poise / posture (§3.2) ---------------------------------------------
+    pub poise_player: f32,
+    pub poise_husk: f32,
+    pub poise_regen: f32,
+    pub poise_regen_delay: f32,
+    pub stagger_time: f32,
+    pub stagger_dmg_mult: f32,
+    pub hyper_armor_reduce: f32,
+
+    // -- Health (§3.1) ------------------------------------------------------
+    pub hp_player: f32,
+    pub hp_husk: f32,
+
+    // -- Guard Husk (§4.1) --------------------------------------------------
+    pub husk_walk: f32,
+    pub husk_turn: f32,
+    pub husk_telegraph: f32,
+    pub husk_swing1_dmg: f32,
+    pub husk_swing1_poise: f32,
+    pub husk_swing2_dmg: f32,
+    pub husk_swing2_poise: f32,
+    pub husk_active: f32,
+    pub husk_gap: f32,
+    pub husk_combo_pause: f32,
+    pub husk_aggro_range: f32,
+    pub husk_leash: f32,
+
+    // -- Guard Husk rhythm (§4.1 extended) ----------------------------------
+    pub husk_telegraph_delayed: f32,
+    pub husk_feint_hold: f32,
+    pub husk_feint_recover: f32,
+    pub husk_step_in: f32,
+
+    // -- Feedback (§5.2 / §5.3) ---------------------------------------------
+    pub hitstop_light: f32,
+    pub hitstop_parry: f32,
+    pub hitstop_enemy: f32,
+    pub hitstop_stagger: f32,
+    pub hitstop_heavy: f32,
+    pub hitstop_critical: f32,
+    pub shake_light: (f32, f32),
+    pub shake_heavy: (f32, f32),
+    pub shake_enemy_hit: (f32, f32),
+
+    // -- Weight layer: knockback --------------------------------------------
+    pub knockback_light: f32,
+    pub knockback_heavy: f32,
+    pub knockback_critical: f32,
+    pub knockback_time: f32,
+
+    // -- Weight layer: camera kick ------------------------------------------
+    pub kick_light: f32,
+    pub kick_heavy: f32,
+    pub kick_critical: f32,
+    pub kick_taken: f32,
+    pub kick_time: f32,
+}
+
+/// The live tuning instance. Every system below reads from this; no magic
+/// number is hardcoded inline.
+pub const COMBAT: CombatConfig = CombatConfig {
+    // -- Stamina (§2.1 / §6) ------------------------------------------------
+    stamina_max: 100.0,
+    stamina_regen: 40.0,
+    cost_light: 15.0,
+    cost_heavy: 35.0,
+    cost_charged: 50.0,
+    cost_dodge: 20.0,
+    cost_block: 15.0,
+    cost_parry: 10.0,
+    delay_light: 0.25,
+    delay_heavy: 0.40,
+    delay_charged: 0.50,
+    delay_dodge: 0.30,
+    delay_block: 0.20,
+    delay_parry: 0.35,
+    exhaust_lock: 0.8,
+    exhaust_clear: 20.0,
+
+    // -- Dodge / roll (§2.2 / §6) ------------------------------------------
+    dodge_iframes: 10.0 / 60.0,
+    dodge_recovery: 12.0 / 60.0,
+    dodge_distance: 2.5,
+
+    // -- Lock-on (§2.3 / §6) ------------------------------------------------
+    lock_range: 16.0,
+    lock_cone_h: 45.0,
+    lock_snap: 8.0,
+    lock_drop_range: 20.0,
+
+    // -- Attacks (§2.4 / §3) ------------------------------------------------
+    light_damage: 20.0,
+    light_poise: 15.0,
+    light_time: 0.35,
+    heavy_damage: 45.0,
+    heavy_poise: 40.0,
+    heavy_time: 0.85,
+    heavy_hyper: 0.40,
+    charged_damage: 70.0,
+    charged_poise: 60.0,
+    charged_time: 1.10,
+    charge_hold: 0.60,
+    combo_reset: 0.60,
+    combo_step: 0.10,
+    melee_range: 2.0,
+    melee_cone: 60.0,
+    light_active: (0.12, 0.22),
+    heavy_active: (0.55, 0.72),
+    charged_active: (0.75, 0.95),
+
+    // -- Block & parry (§2.5) -----------------------------------------------
+    block_reduction: 0.50,
+    guard_break: 0.60,
+    parry_window: 0.20,
+    parry_posture: 25.0,
+    parry_punish: 1.20,
+    parry_punish_mult: 1.25,
+    parry_fail_mult: 1.25,
+    parry_fail_recover: 0.50,
+
+    // -- Poise / posture (§3.2) ---------------------------------------------
+    poise_player: 40.0,
+    poise_husk: 30.0,
+    poise_regen: 10.0,
+    poise_regen_delay: 2.0,
+    stagger_time: 1.5,
+    stagger_dmg_mult: 1.30,
+    hyper_armor_reduce: 0.75,
+
+    // -- Health (§3.1) ------------------------------------------------------
+    hp_player: 100.0,
+    hp_husk: 80.0,
+
+    // -- Guard Husk (§4.1) --------------------------------------------------
+    husk_walk: 1.5,
+    husk_turn: 2.0,
+    husk_telegraph: 0.8,
+    husk_swing1_dmg: 15.0,
+    husk_swing1_poise: 15.0,
+    husk_swing2_dmg: 20.0,
+    husk_swing2_poise: 20.0,
+    husk_active: 0.2,
+    husk_gap: 0.25,
+    husk_combo_pause: 1.5,
+    husk_aggro_range: 12.0,
+    husk_leash: 6.0,
+
+    // -- Guard Husk rhythm (§4.1 extended) ----------------------------------
+    husk_telegraph_delayed: 1.55,
+    husk_feint_hold: 0.42,
+    husk_feint_recover: 0.55,
+    husk_step_in: 0.5,
+
+    // -- Feedback (§5.2 / §5.3) ---------------------------------------------
+    hitstop_light: 0.080,
+    hitstop_parry: 0.120,
+    hitstop_enemy: 0.100,
+    hitstop_stagger: 0.150,
+    hitstop_heavy: 0.120,
+    hitstop_critical: 0.170,
+    shake_light: (0.04, 0.10),
+    shake_heavy: (0.10, 0.20),
+    shake_enemy_hit: (0.15, 0.25),
+
+    // -- Weight layer: knockback --------------------------------------------
+    knockback_light: 0.18,
+    knockback_heavy: 0.32,
+    knockback_critical: 0.55,
+    knockback_time: 0.12,
+
+    // -- Weight layer: camera kick ------------------------------------------
+    kick_light: 0.045,
+    kick_heavy: 0.100,
+    kick_critical: 0.155,
+    kick_taken: 0.130,
+    kick_time: 0.16,
+};
+
+// ===========================================================================
+// Backward-compatible aliases — prefer `COMBAT.field` in new code.
+// These exist so anim.rs, dodge_parry.rs, scene.rs, quest.rs, and main.rs
+// continue to compile without changes.
 // ===========================================================================
 
 // -- Stamina (§2.1 / §6) ----------------------------------------------------
-pub const STAMINA_MAX: f32 = 100.0; //                              §2.1
-pub const STAMINA_REGEN: f32 = 40.0; // points/sec                  §2.1 / §6
-pub const COST_LIGHT: f32 = 15.0; //                               §2.1 / §6
-pub const COST_HEAVY: f32 = 35.0; //                               §2.1 / §6
-pub const COST_CHARGED: f32 = 50.0; //                             §2.1
-pub const COST_DODGE: f32 = 20.0; //                               §2.1 / §6
-pub const COST_BLOCK: f32 = 15.0; // per hit blocked               §2.1
-pub const COST_PARRY: f32 = 10.0; //                               §2.1
-pub const DELAY_LIGHT: f32 = 0.25; //                              §2.1
-pub const DELAY_HEAVY: f32 = 0.40; //                              §2.1
-pub const DELAY_CHARGED: f32 = 0.50; //                            §2.1
-pub const DELAY_DODGE: f32 = 0.30; //                              §2.1
-pub const DELAY_BLOCK: f32 = 0.20; //                              §2.1
-pub const DELAY_PARRY: f32 = 0.35; //                              §2.1
-pub const EXHAUST_LOCK: f32 = 0.8; // no-action window at 0 stam    §2.1
-pub const EXHAUST_CLEAR: f32 = 20.0; // stam needed to end penalty  §2.1
+pub const STAMINA_MAX: f32 = COMBAT.stamina_max;
+pub const STAMINA_REGEN: f32 = COMBAT.stamina_regen;
+pub const COST_LIGHT: f32 = COMBAT.cost_light;
+pub const COST_HEAVY: f32 = COMBAT.cost_heavy;
+pub const COST_CHARGED: f32 = COMBAT.cost_charged;
+pub const COST_DODGE: f32 = COMBAT.cost_dodge;
+pub const COST_BLOCK: f32 = COMBAT.cost_block;
+pub const COST_PARRY: f32 = COMBAT.cost_parry;
+pub const DELAY_LIGHT: f32 = COMBAT.delay_light;
+pub const DELAY_HEAVY: f32 = COMBAT.delay_heavy;
+pub const DELAY_CHARGED: f32 = COMBAT.delay_charged;
+pub const DELAY_DODGE: f32 = COMBAT.delay_dodge;
+pub const DELAY_BLOCK: f32 = COMBAT.delay_block;
+pub const DELAY_PARRY: f32 = COMBAT.delay_parry;
+pub const EXHAUST_LOCK: f32 = COMBAT.exhaust_lock;
+pub const EXHAUST_CLEAR: f32 = COMBAT.exhaust_clear;
 
 // -- Dodge / roll (§2.2 / §6) ----------------------------------------------
-pub const DODGE_IFRAMES: f32 = 10.0 / 60.0; // ~0.167 s            §2.2 / §6
-pub const DODGE_RECOVERY: f32 = 12.0 / 60.0; // ~0.200 s           §2.2 / §6
-pub const DODGE_DISTANCE: f32 = 2.5; // blocks                      §2.2
+pub const DODGE_IFRAMES: f32 = COMBAT.dodge_iframes;
+pub const DODGE_RECOVERY: f32 = COMBAT.dodge_recovery;
+pub const DODGE_DISTANCE: f32 = COMBAT.dodge_distance;
 
 // -- Lock-on (§2.3 / §6) ----------------------------------------------------
-pub const LOCK_RANGE: f32 = 16.0; // blocks                         §2.3 / §6
-pub const LOCK_CONE_H: f32 = 45.0_f32; // degrees                   §2.3
-pub const LOCK_SNAP: f32 = 8.0; // rad/s                            §2.3 / §6
-pub const LOCK_DROP_RANGE: f32 = 20.0; // auto-unlock beyond        §2.3
+pub const LOCK_RANGE: f32 = COMBAT.lock_range;
+pub const LOCK_CONE_H: f32 = COMBAT.lock_cone_h;
+pub const LOCK_SNAP: f32 = COMBAT.lock_snap;
+pub const LOCK_DROP_RANGE: f32 = COMBAT.lock_drop_range;
 
 // -- Attacks (§2.4 / §3) ----------------------------------------------------
-pub const LIGHT_DAMAGE: f32 = 20.0; //                             §2.4
-pub const LIGHT_POISE: f32 = 15.0; //                              §2.4
-pub const LIGHT_TIME: f32 = 0.35; //                              §2.4
-pub const HEAVY_DAMAGE: f32 = 45.0; //                            §2.4
-pub const HEAVY_POISE: f32 = 40.0; //                             §2.4
-pub const HEAVY_TIME: f32 = 0.85; //                              §2.4
-pub const HEAVY_HYPER: f32 = 0.40; // hyper-armor tail             §2.4 / §3.2
-pub const CHARGED_DAMAGE: f32 = 70.0; //                          §2.4
-pub const CHARGED_POISE: f32 = 60.0; //                           §2.4
-pub const CHARGED_TIME: f32 = 1.10; //                            §2.4
-pub const CHARGE_HOLD: f32 = 0.60; // hold before a heavy charges  §2.4
-pub const COMBO_RESET: f32 = 0.60; // window to continue a combo   §2.4
-pub const COMBO_STEP: f32 = 0.10; // +10% damage per chained hit   §2.4
-pub const MELEE_RANGE: f32 = 2.0; // blocks — player reach & Husk   §4.1
-pub const MELEE_CONE: f32 = 60.0_f32; // deg half-cone for a swing  §2.3 soft-lock
-
-// Active-frame windows inside an attack (windup → active → recover). The active
-// hitbox appears only after the wind-up ends — telegraphs are honest (§5.1).
-pub const LIGHT_ACTIVE: (f32, f32) = (0.12, 0.22); //             §2.4 0.35 total
-pub const HEAVY_ACTIVE: (f32, f32) = (0.55, 0.72); //            §2.4 0.85 total
-pub const CHARGED_ACTIVE: (f32, f32) = (0.75, 0.95); //         §2.4 1.10 total
+pub const LIGHT_DAMAGE: f32 = COMBAT.light_damage;
+pub const LIGHT_POISE: f32 = COMBAT.light_poise;
+pub const LIGHT_TIME: f32 = COMBAT.light_time;
+pub const HEAVY_DAMAGE: f32 = COMBAT.heavy_damage;
+pub const HEAVY_POISE: f32 = COMBAT.heavy_poise;
+pub const HEAVY_TIME: f32 = COMBAT.heavy_time;
+pub const HEAVY_HYPER: f32 = COMBAT.heavy_hyper;
+pub const CHARGED_DAMAGE: f32 = COMBAT.charged_damage;
+pub const CHARGED_POISE: f32 = COMBAT.charged_poise;
+pub const CHARGED_TIME: f32 = COMBAT.charged_time;
+pub const CHARGE_HOLD: f32 = COMBAT.charge_hold;
+pub const COMBO_RESET: f32 = COMBAT.combo_reset;
+pub const COMBO_STEP: f32 = COMBAT.combo_step;
+pub const MELEE_RANGE: f32 = COMBAT.melee_range;
+pub const MELEE_CONE: f32 = COMBAT.melee_cone;
+pub const LIGHT_ACTIVE: (f32, f32) = COMBAT.light_active;
+pub const HEAVY_ACTIVE: (f32, f32) = COMBAT.heavy_active;
+pub const CHARGED_ACTIVE: (f32, f32) = COMBAT.charged_active;
 
 // -- Block & parry (§2.5) ---------------------------------------------------
-pub const BLOCK_REDUCTION: f32 = 0.50; // 50% less damage           §2.5
-pub const GUARD_BREAK: f32 = 0.60; // stagger on a failed block     §2.5
-pub const PARRY_WINDOW: f32 = 0.20; // 12 frames @60               §2.5
-pub const PARRY_POSTURE: f32 = 25.0; // posture dmg to attacker     §2.5
-pub const PARRY_PUNISH: f32 = 1.20; // window of +25% dmg           §2.5
-pub const PARRY_PUNISH_MULT: f32 = 1.25; //                        §2.5
-pub const PARRY_FAIL_MULT: f32 = 1.25; // extra dmg on a whiff      §2.5
-pub const PARRY_FAIL_RECOVER: f32 = 0.50; //                      §2.5
+pub const BLOCK_REDUCTION: f32 = COMBAT.block_reduction;
+pub const GUARD_BREAK: f32 = COMBAT.guard_break;
+pub const PARRY_WINDOW: f32 = COMBAT.parry_window;
+pub const PARRY_POSTURE: f32 = COMBAT.parry_posture;
+pub const PARRY_PUNISH: f32 = COMBAT.parry_punish;
+pub const PARRY_PUNISH_MULT: f32 = COMBAT.parry_punish_mult;
+pub const PARRY_FAIL_MULT: f32 = COMBAT.parry_fail_mult;
+pub const PARRY_FAIL_RECOVER: f32 = COMBAT.parry_fail_recover;
 
 // -- Poise / posture (§3.2) -------------------------------------------------
-pub const POISE_PLAYER: f32 = 40.0; //                            §3.2
-pub const POISE_HUSK: f32 = 30.0; //                              §3.2 / §4.1
-pub const POISE_REGEN: f32 = 10.0; // per sec                      §3.2
-pub const POISE_REGEN_DELAY: f32 = 2.0; // sec without a hit        §3.2
-pub const STAGGER_TIME: f32 = 1.5; //                             §3.2
-pub const STAGGER_DMG_MULT: f32 = 1.30; // +30% while staggered     §3.2
-pub const HYPER_ARMOR_REDUCE: f32 = 0.75; // -75% poise dmg         §3.2 / §5
+pub const POISE_PLAYER: f32 = COMBAT.poise_player;
+pub const POISE_HUSK: f32 = COMBAT.poise_husk;
+pub const POISE_REGEN: f32 = COMBAT.poise_regen;
+pub const POISE_REGEN_DELAY: f32 = COMBAT.poise_regen_delay;
+pub const STAGGER_TIME: f32 = COMBAT.stagger_time;
+pub const STAGGER_DMG_MULT: f32 = COMBAT.stagger_dmg_mult;
+pub const HYPER_ARMOR_REDUCE: f32 = COMBAT.hyper_armor_reduce;
 
 // -- Health (§3.1) ----------------------------------------------------------
-pub const HP_PLAYER: f32 = 100.0; //                              §3.1
-pub const HP_HUSK: f32 = 80.0; //                                 §4.1 / §6
+pub const HP_PLAYER: f32 = COMBAT.hp_player;
+pub const HP_HUSK: f32 = COMBAT.hp_husk;
 
 // -- Guard Husk (§4.1) ------------------------------------------------------
-pub const HUSK_WALK: f32 = 1.5; // blocks/s                        §4.1
-pub const HUSK_TURN: f32 = 2.0; // rad/s                           §4.1
-pub const HUSK_TELEGRAPH: f32 = 0.8; // wind-up                    §4.1 / §6
-pub const HUSK_SWING1_DMG: f32 = 15.0; //                         §4.1
-pub const HUSK_SWING1_POISE: f32 = 15.0; //                       §4.1
-pub const HUSK_SWING2_DMG: f32 = 20.0; //                         §4.1
-pub const HUSK_SWING2_POISE: f32 = 20.0; //                       §4.1
-pub const HUSK_ACTIVE: f32 = 0.2; // active frames per swing        §4.1
-pub const HUSK_GAP: f32 = 0.25; // between the two swings
-pub const HUSK_COMBO_PAUSE: f32 = 1.5; // between combos           §4.1
-pub const HUSK_AGGRO_RANGE: f32 = 12.0; // sees player             §4.1
-pub const HUSK_LEASH: f32 = 6.0; // retreat past this → patrol      §4.1
+pub const HUSK_WALK: f32 = COMBAT.husk_walk;
+pub const HUSK_TURN: f32 = COMBAT.husk_turn;
+pub const HUSK_TELEGRAPH: f32 = COMBAT.husk_telegraph;
+pub const HUSK_SWING1_DMG: f32 = COMBAT.husk_swing1_dmg;
+pub const HUSK_SWING1_POISE: f32 = COMBAT.husk_swing1_poise;
+pub const HUSK_SWING2_DMG: f32 = COMBAT.husk_swing2_dmg;
+pub const HUSK_SWING2_POISE: f32 = COMBAT.husk_swing2_poise;
+pub const HUSK_ACTIVE: f32 = COMBAT.husk_active;
+pub const HUSK_GAP: f32 = COMBAT.husk_gap;
+pub const HUSK_COMBO_PAUSE: f32 = COMBAT.husk_combo_pause;
+pub const HUSK_AGGRO_RANGE: f32 = COMBAT.husk_aggro_range;
+pub const HUSK_LEASH: f32 = COMBAT.husk_leash;
 
 // -- Feedback (§5.2 / §5.3) -------------------------------------------------
-pub const HITSTOP_LIGHT: f32 = 0.080; // player hits enemy         §5.2
-pub const HITSTOP_PARRY: f32 = 0.120; //                          §5.2
-pub const HITSTOP_ENEMY: f32 = 0.100; // enemy hits player         §5.2
-pub const HITSTOP_STAGGER: f32 = 0.150; //                        §5.2
-pub const SHAKE_LIGHT: (f32, f32) = (0.04, 0.10); // amp, dur       §5.3
-pub const SHAKE_HEAVY: (f32, f32) = (0.10, 0.20); //             §5.3 / §6
-pub const SHAKE_ENEMY_HIT: (f32, f32) = (0.15, 0.25); //         §5.3
+pub const HITSTOP_LIGHT: f32 = COMBAT.hitstop_light;
+pub const HITSTOP_PARRY: f32 = COMBAT.hitstop_parry;
+pub const HITSTOP_ENEMY: f32 = COMBAT.hitstop_enemy;
+pub const HITSTOP_STAGGER: f32 = COMBAT.hitstop_stagger;
+pub const SHAKE_LIGHT: (f32, f32) = COMBAT.shake_light;
+pub const SHAKE_HEAVY: (f32, f32) = COMBAT.shake_heavy;
+pub const SHAKE_ENEMY_HIT: (f32, f32) = COMBAT.shake_enemy_hit;
 
-// -- Weight layer: what makes a swing feel like it *lands* ------------------
-// §5.2 only fixed one hit-stop length for the player. A single length reads as
-// a stutter, not as weight: the ear/eye grades "how hard was that?" almost
-// entirely off how long the frame froze. So hit-stop is graded by the blow.
-pub const HITSTOP_HEAVY: f32 = 0.120; // heavy swing connects
-pub const HITSTOP_CRITICAL: f32 = 0.170; // charged, or a poise break
+// -- Weight layer -----------------------------------------------------------
+pub const HITSTOP_HEAVY: f32 = COMBAT.hitstop_heavy;
+pub const HITSTOP_CRITICAL: f32 = COMBAT.hitstop_critical;
 /// How far a connected blow shoves the target along the blade's direction. Small
 /// on purpose — a souls-like nudges, it does not punt (a punt would push the
 /// enemy out of the follow-up's reach and break every combo).
-pub const KNOCKBACK_LIGHT: f32 = 0.18; // blocks
-pub const KNOCKBACK_HEAVY: f32 = 0.32; // blocks
-pub const KNOCKBACK_CRITICAL: f32 = 0.55; // blocks
+pub const KNOCKBACK_LIGHT: f32 = COMBAT.knockback_light;
+pub const KNOCKBACK_HEAVY: f32 = COMBAT.knockback_heavy;
+pub const KNOCKBACK_CRITICAL: f32 = COMBAT.knockback_critical;
 /// The shove is spread over this window so the body slides, never teleports.
-pub const KNOCKBACK_TIME: f32 = 0.12; // sec
+pub const KNOCKBACK_TIME: f32 = COMBAT.knockback_time;
 /// Directional camera kick — rides on top of [`Shake`]'s omni-directional
 /// rattle: the rattle says "something happened", the kick says "*that* way".
-pub const KICK_LIGHT: f32 = 0.045;
-pub const KICK_HEAVY: f32 = 0.100;
-pub const KICK_CRITICAL: f32 = 0.155;
-pub const KICK_TAKEN: f32 = 0.130; // the player eating a hit
-pub const KICK_TIME: f32 = 0.16; // sec — snap out, ease back
+pub const KICK_LIGHT: f32 = COMBAT.kick_light;
+pub const KICK_HEAVY: f32 = COMBAT.kick_heavy;
+pub const KICK_CRITICAL: f32 = COMBAT.kick_critical;
+pub const KICK_TAKEN: f32 = COMBAT.kick_taken;
+pub const KICK_TIME: f32 = COMBAT.kick_time;
 
 // -- Guard Husk rhythm (§4.1 extended) --------------------------------------
 // One fixed 0.8 s wind-up is a metronome: after two swings the player has the
 // timing and the fight is over as a threat. The signature of a soulslike boss is
 // that the *same* wind-up resolves at different times, so the dodge has to be
 // read, not memorised.
-pub const HUSK_TELEGRAPH_DELAYED: f32 = 1.55; // holds the pose, then falls
-pub const HUSK_FEINT_HOLD: f32 = 0.42; // pulls back before the swing ever comes
-pub const HUSK_FEINT_RECOVER: f32 = 0.55; // beat of nothing — baits the dodge
+pub const HUSK_TELEGRAPH_DELAYED: f32 = COMBAT.husk_telegraph_delayed;
+pub const HUSK_FEINT_HOLD: f32 = COMBAT.husk_feint_hold;
+pub const HUSK_FEINT_RECOVER: f32 = COMBAT.husk_feint_recover;
 /// A husk that has not closed the gap keeps stepping in *while* winding up (at
 /// half walk speed). Standing still through a 1.5 s wind-up would let the player
 /// simply back off, and it would let hit-knockback slide the fight apart.
-pub const HUSK_STEP_IN: f32 = 0.5; // × HUSK_WALK
+pub const HUSK_STEP_IN: f32 = COMBAT.husk_step_in;
 
 // ===========================================================================
 // Pure combat model — the testable core (no Bevy scheduling, headless-proofable)
