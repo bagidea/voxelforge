@@ -1416,6 +1416,20 @@ pub(crate) fn fly_camera(
         Some(world) => camera_boom(world, pivot, back, want),
         None => want,
     };
+    // Asymmetric spring-arm smoothing. `camera_boom` marches the lens along the
+    // boom in fixed 0.1 steps against the voxel grid, so as the avatar drifts the
+    // raw distance flickers between adjacent grid steps and the camera jitters.
+    // Snap shut the instant a wall closes — the lens must never trail a collision
+    // and clip back through it — but ease back *out* frame-rate-independently; the
+    // slow release collapses the flicker without ever docking late. Hard snap on
+    // pull-in (closing), exponential ease on release (opening).
+    const BOOM_RELEASE_K: f32 = 8.0; // release time-constant: ~0.5s to near-full
+    let prev = orbit.dist;
+    let dist = if dist <= prev {
+        dist
+    } else {
+        prev + (dist - prev) * (1.0 - (-BOOM_RELEASE_K * dt).exp())
+    };
     orbit.dist = dist;
     ctf.translation = pivot + back * dist;
     ctf.rotation = cam_rot;
