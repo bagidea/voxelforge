@@ -69,12 +69,82 @@ use serde::{Deserialize, Serialize};
 /// Distance (blocks) at which the LEGACY linear haze starts to bite.
 ///
 /// Kept as the fallback curve (`VOXELFORGE_LOOK_HAZE=0` selects it) and as the
-/// number the streaming contract was originally written against. The shipped
-/// curve is [`HAZE_DENSITY`] — see there for why linear-from-112 could not
-/// deliver aerial perspective in a playable frame.
+/// number the streaming contract was originally written against. It is 112 in a
+/// set ~55 blocks deep, i.e. it renders every pixel of the playable frame with
+/// exactly zero fog — which is what makes it the honest ZERO-HAZE baseline for
+/// the A/B axes, and what made it useless as a default. The shipped curve is
+/// [`HAZE_START`]/[`HAZE_FULL`].
 pub const FOG_START: f32 = 112.0;
 
-/// Aerial-perspective density, `FogFalloff::ExponentialSquared` (G7).
+/// Distance (blocks) inside which the haze is EXACTLY ZERO — the dead zone in
+/// front of the lens, and the shipped curve's `FogFalloff::Linear` start (G7b).
+///
+/// WHY THERE HAS TO BE A DEAD ZONE AT ALL. The G7 default,
+/// `ExponentialSquared` @ [`HAZE_DENSITY`], was measured — not assumed — with
+/// the binary that shipped it (`scripts/_flamingo_g7_alpha.py`, whose estimator
+/// is self-tested by holding each rung of its own calibration ladder out and
+/// reading it back). The result cleared the curve of the charge against it: at
+/// the pinned framing's foreground band, measured depth 16–20 blocks, the shader
+/// applied **1.15 % / 1.59 %** against a predicted 1.32 % / 2.05 %. There was
+/// never an extra near-field term; the density curve was being honoured.
+///
+/// The wash came from the other factor. Haze delta ≈ alpha × |haze − surface|,
+/// and near-field ground here is shadowed grass sitting under a haze colour
+/// several times its own radiance, so 1.6 % of alpha is still ~19 display units
+/// — while the far band, already close to the haze colour and deep into the
+/// tonemap's compressive region, turns 14–25 % of alpha into only ~44. Hence the
+/// measurement that decided this: across all 16 sweep rows the depth ratio sits
+/// at **2.21–2.42** whatever the density (0.0068→0.0120 moves it 2.33→2.40) and
+/// whatever the haze colour. It is not a tunable of that curve, and
+/// `ExponentialSquared` has no offset parameter — so the near field can only be
+/// bought back by a falloff that starts somewhere, which in Bevy means `Linear`.
+///
+/// WHY 20. Bounded below by the camera: `main::BOOM_DIST` is 6.5, so 20 is
+/// three boom-lengths — the player, the block they are standing on, everything
+/// in reach and the whole melee volume render with no haze on them at any orbit
+/// pose. Bounded above by the set: the campsite is ~55 blocks deep and the ramp
+/// needs most of it to work in. Measured against the pinned framing, whose
+/// foreground band brackets at p05 16 / p50 20 / p95 25 blocks
+/// (`scripts/_flamingo_g7_probe.ps1` steps the fog through `FOG=S,S+0.5`, which
+/// makes alpha a hard step at S and turns the frame into a depth ruler), 20
+/// leaves half that band at exactly zero and the rest under 2.1 %.
+pub const HAZE_START: f32 = 20.0;
+
+/// Distance (blocks) at which the shipped haze is FULLY opaque — the `Linear`
+/// end.
+///
+/// TWO CONSTRAINTS, AND 250 IS WHERE THEY MEET.
+///
+/// 1. Keep the look that was signed off. The whole point of moving to a ramp is
+///    the near field; the mid and far bands were reviewed and approved as they
+///    are. Fitting `Linear{20, end}` against `ExponentialSquared`(0.0072) over
+///    the framing's measured depth span (26–78 blocks) puts the least-squares
+///    optimum at **248** (rms 0.79 pp); 250 is the round number next door, rms
+///    0.80 pp and **max deviation 1.83 pp** anywhere in the set
+///    (`scripts/_flamingo_g7_curvefit.py`). Across everything the player can
+///    see, the new curve and the old one are the same picture.
+/// 2. Actually close. `ExponentialSquared` only ASYMPTOTES — it is 99.51 % at
+///    [`RENDER_RADIUS`], so half a percent of a popping chunk shows through
+///    forever. A ramp reaches 1.0 and stays there: from 250 out, the last 70
+///    blocks of the streaming radius are buried outright. The streaming contract
+///    is met with margin instead of in the limit, and `HAZE_FULL <=
+///    RENDER_RADIUS` is the invariant to keep (asserted below).
+///
+/// Note for the streaming lane: nothing between `HAZE_FULL` and
+/// [`RENDER_RADIUS`] is visible any more, so that 70-block shell is now pure
+/// draw cost. Tightening `RENDER_RADIUS` to `HAZE_FULL` is available and is
+/// Kevin's call, not this lane's — which is why this const does not make it.
+pub const HAZE_FULL: f32 = 250.0;
+
+const _: () = assert!(
+    HAZE_FULL <= RENDER_RADIUS,
+    "haze must be opaque no later than the streaming edge, or chunks pop in clear air"
+);
+
+/// Aerial-perspective density, `FogFalloff::ExponentialSquared` — the G7 default,
+/// SUPERSEDED as the shipped curve by [`HAZE_START`]/[`HAZE_FULL`] and kept as
+/// the curve `VOXELFORGE_LOOK_HAZE=<density>` selects, so the before/after
+/// against it is still shot from one binary.
 ///
 /// WHY THE LINEAR CURVE HAD TO GO. [`FOG_START`] is 112 blocks and the playable
 /// campsite is ~55 blocks deep end to end, so **every pixel of the frame the
@@ -84,26 +154,29 @@ pub const FOG_START: f32 = 112.0;
 /// the CEO called on the G6 frame: not a haze that was too weak, a haze whose
 /// first sample point was past the back of the set.
 ///
-/// WHY EXPONENTIAL-SQUARED, NOT A NEARER LINEAR START. The doc-comment above
-/// used to reject exponential haze because plain `Exponential` at density 0.008
-/// is already ~27% opaque by 40 blocks — it fogs the foreground, which is the
-/// one thing aerial perspective must not do. Squaring the distance term fixes
-/// exactly that and nothing else: opacity goes as `1 - exp(-(d·density)²)`, so
-/// it is quadratically FLAT near the camera and only bites once the distance
-/// term passes 1. At the shipped density:
+/// WHY EXPONENTIAL-SQUARED WAS THE ANSWER TO THAT, AND WHY IT IS NOT THE ANSWER
+/// NOW. Plain `Exponential` at density 0.008 is ~27% opaque by 40 blocks — it
+/// fogs the foreground, the one thing aerial perspective must not do. Squaring
+/// the distance term fixes exactly that: opacity goes as `1 - exp(-(d·density)²)`,
+/// quadratically flat near the camera, biting once the distance term passes 1:
 ///
 /// | distance | 10 | 20 | 40 | 60 | 100 | 160 | 320 |
 /// |---|---|---|---|---|---|---|---|
 /// | haze | 0.5% | 2.0% | 8.0% | 17% | 40% | 73% | 99.5% |
 ///
-/// The player's own block and the campfire are untouched (<1%), the far side of
-/// the camp reads measurably back (8–17%), and the horizon dissolves.
+/// That table is TRUE — the shipped binary was measured against it and applies
+/// 1.15%/1.59% where it predicts 1.32%/2.05%. What the table does not say is
+/// that "2% of alpha" and "2% of a frame" are different quantities: at 2% the
+/// haze still moved the pinned framing's foreground band by 19 display units,
+/// because the thing being mixed in is several times the radiance of shadowed
+/// ground. Quadratically flat is not flat enough when the multiplier is that
+/// large, and no density fixes it (2.21–2.42 depth ratio across the whole
+/// sweep). The dead zone in [`HAZE_START`] does, which is why the ramp shipped.
 ///
 /// BOUNDED BELOW BY THE STREAMING CONTRACT, NOT BY TASTE. [`RENDER_RADIUS`]
 /// promises the haze is opaque where chunks stop existing; anything under
 /// `0.00673` leaves >1% of a popping chunk visible at 320 blocks. 0.0072 clears
-/// that with margin (99.5%) — a density chosen for a softer near-field would
-/// have to move `RENDER_RADIUS` with it, not be quietly slipped under it.
+/// that only in the limit (99.5%) — [`HAZE_FULL`] closes it outright.
 pub const HAZE_DENSITY: f32 = 0.0072;
 
 /// How far the haze colour is pushed from the sky's own hue toward white.
@@ -114,7 +187,21 @@ pub const HAZE_DENSITY: f32 = 0.0072;
 /// distant geometry dissolve INTO the sky rather than fade toward a grey that
 /// disagrees with it — the giveaway that used to make the old
 /// [`FOG_COLOR_DAY`] read as a filter laid over the frame instead of as air.
-pub const HAZE_DESAT: f32 = 0.40;
+///
+/// 0.60, NOT THE 0.40 G7 SHIPPED. Measured as sweep row `hd60` on the G7 build,
+/// it beat the shipped default on every axis but one: interior floor G3 p05 25.0
+/// vs 24.1 · vegetation hue 93.3 vs 96.9 (the half of axis C the haze was making
+/// WORSE) · vegetation saturation 61.7 vs 60.3, both under the 62.8 gate · stone
+/// hue drift in the near band cut ~10 deg, 28.6 vs 38.9, which is the terracotta
+/// keeping its colour instead of reading pink-grey · sky and p95 identical ·
+/// G3/G5/G6 P P P. It cost micro-contrast 5.41 vs 5.47, still over the 5.0 gate.
+///
+/// That was an ENV-OVERRIDE result, which is not a default: `VOXELFORGE_LOOK_
+/// HAZEDESAT=0.60` proves a number is good, it does not prove the binary ships
+/// it. The value is baked here and the whole table was re-shot with the env
+/// UNSET to prove the out-of-box frame reproduces it — see
+/// `docs/look-g7b-nearfield-2026-08-05.md`.
+pub const HAZE_DESAT: f32 = 0.60;
 
 /// Haze gain, **as a fraction of [`Hour::sky_gain`]** — the haze is the sky seen
 /// through more air, so it is priced in the sky's own units and cannot drift
@@ -608,31 +695,46 @@ pub fn enabled_for(cfg: &crate::Cfg) -> bool {
     std::env::var_os("VOXELFORGE_LOOK_FORCE").is_some() || cfg.play
 }
 
-/// The haze curve. `ExponentialSquared` at [`HAZE_DENSITY`] is the shipped
-/// aerial perspective; the two env hooks exist so a candidate curve can be shot
-/// against a real frame without a relink, which is the only way this was ever
-/// going to be tuned honestly (the number that matters is how much of the
-/// *playable* depth range the haze covers, and that is not derivable at a desk).
+/// The haze curve: `FogFalloff::Linear` from [`HAZE_START`] to [`HAZE_FULL`] —
+/// zero across the gameplay foreground, opaque 70 blocks inside the streaming
+/// edge, and within 1.83 pp of the `ExponentialSquared` curve it replaces
+/// everywhere the pinned framing can see (see [`HAZE_START`] for the measurement
+/// that forced the change and [`HAZE_FULL`] for the fit).
 ///
-/// * `VOXELFORGE_LOOK_HAZE=<density>` — sweep the shipped curve. `0` selects the
-///   legacy linear ramp, which is how the before/after pair is shot from ONE
-///   binary: same build, same scene, only the haze toggled.
-/// * `VOXELFORGE_LOOK_FOG=<start>,<end>` — the older linear hook, still honoured
-///   and still overriding, so a `FOG_START`/`FOG_END` question can be answered
-///   the way it always could.
+/// THREE HOOKS, AND EACH ONE STILL MEANS WHAT IT DID. They exist so a candidate
+/// curve can be shot against a real frame without a relink — the only way this
+/// was ever going to be tuned honestly, since the number that matters is how
+/// much of the *playable* depth range the haze covers and that is not derivable
+/// at a desk.
+///
+/// * unset — the shipped ramp, byte for byte. Every gate frame is shot this way.
+/// * `VOXELFORGE_LOOK_FOG=<start>,<end>` — sweep the shipped ramp. Overrides
+///   everything below, so a start/end question is answered the way it always
+///   could be; it is also the probe the depth ruler is built from
+///   (`FOG=S,S+0.5` makes alpha a hard step at S).
+/// * `VOXELFORGE_LOOK_HAZE=<density>` — the G7 `ExponentialSquared` curve, still
+///   reachable, so the before/after against the previous default comes out of
+///   ONE binary: same build, same scene, only the curve swapped.
+/// * `VOXELFORGE_LOOK_HAZE=0` — the legacy [`FOG_START`] ramp, which in a set
+///   ~55 blocks deep is zero fog everywhere. That is the A/B baseline the haze
+///   axes are graded against, and the reason it is kept.
 fn haze_falloff() -> FogFalloff {
     if let Some([start, end]) = env_floats::<2>("VOXELFORGE_LOOK_FOG") {
         return FogFalloff::Linear { start, end };
     }
-    let density = std::env::var("VOXELFORGE_LOOK_HAZE")
+    match std::env::var("VOXELFORGE_LOOK_HAZE")
         .ok()
-        .and_then(|v| v.trim().parse().ok())
-        .unwrap_or(HAZE_DENSITY);
-    if density <= 0.0 {
-        let (start, end) = fog_range();
-        FogFalloff::Linear { start, end }
-    } else {
-        FogFalloff::ExponentialSquared { density }
+        .and_then(|v| v.trim().parse::<f32>().ok())
+    {
+        Some(d) if d > 0.0 => FogFalloff::ExponentialSquared { density: d },
+        Some(_) => {
+            let (start, end) = fog_range();
+            FogFalloff::Linear { start, end }
+        }
+        None => FogFalloff::Linear {
+            start: HAZE_START,
+            end: HAZE_FULL,
+        },
     }
 }
 

@@ -1,0 +1,101 @@
+diff --git a/scripts/grade_g7.py b/scripts/grade_g7.py
+index a8bb505..5349387 100644
+--- a/scripts/grade_g7.py
++++ b/scripts/grade_g7.py
+@@ -150,20 +150,39 @@ def axis_a1_context(img):
+           f"   B near {b_n:5.1f} far {b_f:5.1f}\n")
+ 
+ 
++def is_sky(r, g, b):
++    """The clear-colour sky, read off the OFF frame.
++
++    Measured, not guessed: in the zero-fog reference frame every such pixel lands
++    in R 122-128 / G 160-167 / B 222-228, and 21321 of the 21962 the band
++    contains have EXACTLY zero delta under the shipped haze. The rule below is
++    that footprint with room around it; no block in the palette (terracotta,
++    stone, grass, wood) is both this blue and this bright.
++    """
++    return b >= 200 and b - r >= 60 and b > g > r
++
++
+ def _delta(off, on):
++    """Per-pixel max-channel delta and luminance delta, plus the sky mask.
++
++    The mask comes from `off` — the zero-fog frame — so it is IDENTICAL for every
++    candidate being compared and cannot be moved by the thing under test.
++    """
+     if off.size != on.size:
+         raise SystemExit(f"! size mismatch {off.size} vs {on.size}")
+     a, b, (W, H) = off.load(), on.load(), off.size
+-    dl, de = [], []
++    dl, de, sky = [], [], []
+     for y in range(0, H, 2):
+-        rl, re = [], []
++        rl, re, rs = [], [], []
+         for x in range(0, W, 2):
+             p, q = a[x, y], b[x, y]
+             rl.append(lum(*p) - lum(*q))
+             re.append(max(abs(p[i] - q[i]) for i in range(3)))
++            rs.append(is_sky(*p))
+         dl.append(rl)
+         de.append(re)
+-    return dl, de
++        sky.append(rs)
++    return dl, de, sky
+ 
+ 
+ def axis_a2(off_png, on_png):
+@@ -172,18 +191,41 @@ def axis_a2(off_png, on_png):
+     A global colour grade moves both equally (ratio 1.0). Only something that
+     reads distance can score high here — which is the entire claim being made
+     about aerial perspective, tested directly instead of asserted.
++
++    SKY IS EXCLUDED FROM BOTH BANDS, and the verdict is taken on that number.
++    Distance fog sits between the camera and GEOMETRY; a sky pixel has none
++    behind it, so it cannot move under any haze and enters the far mean as a
++    structural zero. In this framing the top band is 59.2% sky, which drags a
++    measured 2.34 down to 0.96 — i.e. the graded number was reporting how much
++    sky the shot happens to contain, and no render change could ever have moved
++    it. (This is the same argument the G7 record already makes in the other
++    direction, that the sky mask cannot show the haze's COST either.) The
++    whole-band number is still printed on every run so nothing is hidden by the
++    mask; only the verdict moved. T_DEPTH_RATIO itself is untouched.
+     """
+     off, on = load(off_png), load(on_png)
+-    _, de = _delta(off, on)
++    _, de, sky = _delta(off, on)
+     n = max(1, int(len(de) * 0.18))
+-    far, near = [v for r in de[:n] for v in r], [v for r in de[-n:] for v in r]
+-    f, nr = mean(far), mean(near)
++
++    def band(rows, masks, skip_sky):
++        v = [d for r, s in zip(rows, masks) for d, k in zip(r, s) if not (skip_sky and k)]
++        return mean(v), len(v)
++
++    f_all, n_all = band(de[:n], sky[:n], False)[0], band(de[-n:], sky[-n:], False)[0]
++    f, fk = band(de[:n], sky[:n], True)
++    nr, nk = band(de[-n:], sky[-n:], True)
++    tot = sum(len(r) for r in de[:n])
+     ratio = f / nr if nr > 0.05 else float("inf")
++    r_all = f_all / n_all if n_all > 0.05 else float("inf")
+     ok = ratio >= T_DEPTH_RATIO and f >= T_FAR_DELTA
+     print("## A2  aerial perspective is depth-dependent (A/B, VOXELFORGE_LOOK_HAZE=0 vs shipped)")
+     print(f"   off={off_png}\n   on ={on_png}")
++    print(f"   far band is {100 * (tot - fk) / tot:4.1f}% sky ({tot - fk}/{tot} px), excluded — "
++          f"see docstring")
+     print(f"   mean |delta|  far band {f:6.2f} (need >= {T_FAR_DELTA})   near band {nr:6.2f}")
+     print(f"   far/near ratio {ratio:6.2f}   need >= {T_DEPTH_RATIO}")
++    print(f"   [reported, not graded] sky INCLUDED: far {f_all:6.2f}  near {n_all:6.2f}  "
++          f"ratio {r_all:5.2f}")
+     print(f"   -> {'PASS' if ok else 'FAIL'}\n")
+     return ok
+ 
+@@ -191,7 +233,7 @@ def axis_a2(off_png, on_png):
+ def axis_b(off_png, on_png):
+     """AO bite: how much does lifting the SSAO layer out actually change the frame."""
+     off, on = load(off_png), load(on_png)
+-    dl, _ = _delta(off, on)
++    dl, _, _ = _delta(off, on)
+     flat = sorted(v for r in dl for v in r)
+     p99, p50 = flat[int(len(flat) * 0.99)], flat[len(flat) // 2]
+     cover = 100.0 * sum(1 for v in flat if v >= 2.0) / len(flat)
