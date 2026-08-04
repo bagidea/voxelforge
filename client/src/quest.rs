@@ -452,6 +452,7 @@ impl Plugin for QuestPlugin {
                     lore_interact,
                     check_block_place_triggers,
                     check_lore_read_triggers,
+                    check_act_end,
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),
             );
@@ -1269,6 +1270,34 @@ fn check_lore_read_triggers(
 }
 
 // =============================================================================
+// Act-end check — when q5 completes + act1_complete flag is set, print the
+// cliffhanger beats per §11.8 of the schema spec.
+// =============================================================================
+
+fn check_act_end(
+    journal: Res<QuestJournal>,
+    story: Res<StoryDataRes>,
+    mut fired: Local<bool>,
+) {
+    if *fired { return; }
+    let q5_done = journal.quests.get("q5_sigil_that_knew_you")
+        .map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+    if !q5_done || !journal.flags.contains("act1_complete") { return; }
+    *fired = true;
+
+    let data = story_data(&story);
+    if let Some(ref end) = data.act_end {
+        println!("ACT_END id={} title=\"{}\"", end.id, end.title);
+        for (i, beat) in end.beats.iter().enumerate() {
+            println!("ACT_END beat[{}] {}", i, beat);
+        }
+        println!("ACT_END final_line: {}", end.final_line);
+        println!("ACT_END card: {}", end.card);
+        println!("ACT1_COMPLETE");
+    }
+}
+
+// =============================================================================
 // Scripted quest demo proof (`--quest-demo`)
 // =============================================================================
 // Proves the full quest loop on Rose's schema:
@@ -1286,15 +1315,19 @@ fn check_lore_read_triggers(
 // exactly what the previous version did.
 
 /// Edhari is not a straight line, and every leg here is a wall the body actually
-/// hits: the spawn shelter is fenced by two-block posts at x=29 and x=35, a
-/// six-block longhouse (x 28-36, z 25-27) sits directly north of the campfire,
-/// and the gate square is a two-block plateau whose only climbable side is the
-/// x≈32 ramp (z 12-15). Step-up is one block, so this is the walkable path.
+/// hits: the spawn shelter has two-block posts at x=29 and x=35, a six-block
+/// longhouse (x 28-36, z 25-27) sits directly north of the campfire, and the
+/// gate square is a two-block plateau whose only climbable side is the x≈32 ramp
+/// (z 12-15).  Step-up is one block, so this is the walkable path.
 /// Each leg is an (x, z) waypoint.
-// Route goes FAR east (x=45) to stay clear of the longhouse (x 28-36, z 25-27),
-// then north along open ground, and only merges west at the ramp column.
-const GATE_ROUTE: [(f32, f32); 4] = [
-    (45.0, 32.0), // far east out of the shelter, clear of the village
+///
+/// Route: walk north FIRST to z≈22 (south of the longhouse, clear of shelter
+/// posts), THEN east to x=45, then north along the open field, then west to the
+/// ramp, then up onto the gate square.  This avoids the x=35 post that blocked
+/// the previous "east-first" route on the current map.
+const GATE_ROUTE: [(f32, f32); 5] = [
+    (32.5, 22.0), // north — clear the shelter posts (x=29/35) + longhouse south edge
+    (45.0, 22.0), // east along clear ground south of the longhouse
     (45.0, 16.5), // north along the open east field
     (32.5, 16.5), // west onto the ramp column
     (32.5, 6.4),  // up the ramp onto the gate square
@@ -1312,13 +1345,18 @@ const MELEE_CLOSE: f32 = 2.2;
 /// fires on a rising edge, so a key held down forever registers exactly once.
 const TAP_PERIOD: f32 = 0.25;
 
-/// One scripted keystroke: let go of whatever is down, then press on the next tick.
-fn tap(demo: &mut QuestDemo, keys: &mut ButtonInput<KeyCode>, key: KeyCode, t: f32) {
-    if t - demo.tap_t < TAP_PERIOD { return; }
-    demo.tap_t = t;
-    match demo.tap_down.take() {
-        Some(down) => keys.reset(down),
-        None => { keys.press(key); demo.tap_down = Some(key); }
+/// One scripted keystroke: release whatever is held, then press `key` after a
+/// minimum gap.  Always presses — no alternating — so every call that is far
+/// enough from the last produces a clean `just_pressed` edge the reader can see.
+fn press_key(demo: &mut QuestDemo, keys: &mut ButtonInput<KeyCode>, key: KeyCode, t: f32) {
+    // Release the previous key so it stops being held.
+    if let Some(down) = demo.tap_down.take() { keys.reset(down); }
+    // Only press when enough time has passed since the last press (proven 0.35s
+    // hold + 0.15s gap is enough for `just_pressed` to register).
+    if t - demo.tap_t > TAP_PERIOD {
+        keys.press(key);
+        demo.tap_down = Some(key);
+        demo.tap_t = t;
     }
 }
 
@@ -1395,7 +1433,7 @@ fn quest_demo(
                 } else {
                     steer(&mut key_input, 0.0, 0.0, 1.0);
                 }
-                tap(&mut demo, &mut key_input, KeyCode::KeyX, t);
+                press_key(&mut demo, &mut key_input,KeyCode::KeyX, t);
             } else {
                 steer(&mut key_input, dx, dz, WAYPOINT_TOL);
             }
@@ -1425,12 +1463,15 @@ fn quest_demo(
 
     // ---- phase 1: talk to Maren with the keyboard ----------------------------
     // E → `npc_interact` opens dlg_maren_gate (4 lines, then 5 choices).
-    // Enter → `resolve_dialogue_actions` walks the lines. Enter, not Space: Space
-    // is jump/ascend in `fly_camera` and would bounce the player out of range.
-    // 5 → choice index 4, "I'll go east", whose `advances_quest` is what makes
-    // q3 Active — and the engine prints QUEST_ACCEPT when it does.
+    // Enter → `resolve_dialogue_actions` walks the lines, until choices appear.
+    // Digit5 → choice index 4, "I'll go east", whose `advances_quest` is what
+    // makes q3 Active — and the engine prints QUEST_ACCEPT when it does.
+    //
+    // Key sequencing uses `phase_t` with a 0.35 s hold + 0.15 s gap per key,
+    // and the last key pressed is always cleared before the next press so the
+    // reader always sees a clean `just_pressed` edge.  The previous `tap()`
+    // alternator could release the wrong key when timing drifted.
     if demo.phase == 1 {
-        // Watch the journal, don't touch it: q3 going Active is the pass condition.
         let q3_active = journal.quests.get("q3_gatekeeper")
             .map(|p| p.status == QuestStatus::Active).unwrap_or(false);
         if q3_active {
@@ -1456,6 +1497,10 @@ fn quest_demo(
         }
         steer(&mut key_input, 0.0, 0.0, 1.0);
 
+        // Release whatever was held, then press the right key for this time slice.
+        // 0.35 s hold + 0.15 s gap = 0.5 s per key press → 10 keys in 5 s.
+        if let Some(down) = demo.tap_down.take() { key_input.reset(down); }
+        let t0 = demo.tap_t;
         let key = if !dialogue.open {
             KeyCode::KeyE
         } else if dialogue.choosing {
@@ -1463,7 +1508,12 @@ fn quest_demo(
         } else {
             KeyCode::Enter
         };
-        tap(&mut demo, &mut key_input, key, t);
+        // Only press a fresh key when we've waited long enough since the last press.
+        if t - t0 > 0.5 {
+            key_input.press(key);
+            demo.tap_down = Some(key);
+            demo.tap_t = t;
+        }
 
         if phase_t > 25.0 {
             hands_off!();
@@ -1530,7 +1580,7 @@ fn quest_demo(
             } else {
                 steer(&mut key_input, 0.0, 0.0, 1.0);
             }
-            tap(&mut demo, &mut key_input, KeyCode::KeyX, t);
+            press_key(&mut demo, &mut key_input,KeyCode::KeyX, t);
         }
         // Dying respawns the body at the campfire ~20 blocks west; without this the
         // demo would stand there swinging at nothing until the timeout and blame it
@@ -1569,21 +1619,21 @@ fn quest_demo(
             0 => { let (tx, tz) = (50.0, 9.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
-                    tap(&mut demo, &mut key_input, KeyCode::KeyR, t); }
+                    press_key(&mut demo, &mut key_input,KeyCode::KeyR, t); }
                 else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
                 if phase_t > 25.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o1_build => FAIL (timeout)"); demo.phase = 99; } }
             1 => { let (tx, tz) = (46.0, 24.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
-                    tap(&mut demo, &mut key_input, KeyCode::KeyE, t); }
+                    press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
                 else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
                 if phase_t > 30.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o2_ledger => FAIL (timeout)"); demo.phase = 99; } }
             2 => { let (tx, tz) = (33.0, 14.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
-                    tap(&mut demo, &mut key_input, KeyCode::KeyE, t); }
+                    press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
                 else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
                 if phase_t > 30.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o3_offering => FAIL (timeout)"); demo.phase = 99; } }
@@ -1614,8 +1664,8 @@ fn quest_demo(
             return;
         }
         if dialogue.open && dialogue.dialogue_id == "dlg_maren_cliffhanger" {
-            if dialogue.choosing { tap(&mut demo, &mut key_input, KeyCode::Digit1, t); }
-            else { tap(&mut demo, &mut key_input, KeyCode::Enter, t); }
+            if dialogue.choosing { press_key(&mut demo, &mut key_input,KeyCode::Digit1, t); }
+            else { press_key(&mut demo, &mut key_input,KeyCode::Enter, t); }
         }
         if phase_t > 25.0 { hands_off!();
             println!("QUEST_STAGE_COMPLETE q5 cliffhanger => FAIL (timeout)"); demo.phase = 99; }
