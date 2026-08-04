@@ -1,0 +1,348 @@
+diff --git a/client/src/look.rs b/client/src/look.rs
+index 96f5c87..fc94421 100644
+--- a/client/src/look.rs
++++ b/client/src/look.rs
+@@ -66,12 +66,66 @@ use serde::{Deserialize, Serialize};
+ // rather than retype the literal, so moving the haze moves the streaming with it
+ // and there is never a second set of truth to forget about.
+ 
+-/// Distance (blocks) at which the distance haze starts to bite. Everything
+-/// nearer than this renders with ZERO fog — the reference frames keep
+-/// mid-distance pine trees fully saturated and razor sharp, and an exponential
+-/// haze that starts at the camera cannot do that.
++/// Distance (blocks) at which the LEGACY linear haze starts to bite.
++///
++/// Kept as the fallback curve (`VOXELFORGE_LOOK_HAZE=0` selects it) and as the
++/// number the streaming contract was originally written against. The shipped
++/// curve is [`HAZE_DENSITY`] — see there for why linear-from-112 could not
++/// deliver aerial perspective in a playable frame.
+ pub const FOG_START: f32 = 112.0;
+ 
++/// Aerial-perspective density, `FogFalloff::ExponentialSquared` (G7).
++///
++/// WHY THE LINEAR CURVE HAD TO GO. [`FOG_START`] is 112 blocks and the playable
++/// campsite is ~55 blocks deep end to end, so **every pixel of the frame the
++/// reviewer actually looks at rendered with exactly zero fog** — the far wall of
++/// the ruin came out the same value, the same saturation and the same contrast
++/// as the block under the player's feet. That is the "ไม่มีหมอกระยะ / ไม่มีมิติ"
++/// the CEO called on the G6 frame: not a haze that was too weak, a haze whose
++/// first sample point was past the back of the set.
++///
++/// WHY EXPONENTIAL-SQUARED, NOT A NEARER LINEAR START. The doc-comment above
++/// used to reject exponential haze because plain `Exponential` at density 0.008
++/// is already ~27% opaque by 40 blocks — it fogs the foreground, which is the
++/// one thing aerial perspective must not do. Squaring the distance term fixes
++/// exactly that and nothing else: opacity goes as `1 - exp(-(d·density)²)`, so
++/// it is quadratically FLAT near the camera and only bites once the distance
++/// term passes 1. At the shipped density:
++///
++/// | distance | 10 | 20 | 40 | 60 | 100 | 160 | 320 |
++/// |---|---|---|---|---|---|---|---|
++/// | haze | 0.5% | 2.0% | 8.0% | 17% | 40% | 73% | 99.5% |
++///
++/// The player's own block and the campfire are untouched (<1%), the far side of
++/// the camp reads measurably back (8–17%), and the horizon dissolves.
++///
++/// BOUNDED BELOW BY THE STREAMING CONTRACT, NOT BY TASTE. [`RENDER_RADIUS`]
++/// promises the haze is opaque where chunks stop existing; anything under
++/// `0.00673` leaves >1% of a popping chunk visible at 320 blocks. 0.0072 clears
++/// that with margin (99.5%) — a density chosen for a softer near-field would
++/// have to move `RENDER_RADIUS` with it, not be quietly slipped under it.
++pub const HAZE_DENSITY: f32 = 0.0072;
++
++/// How far the haze colour is pushed from the sky's own hue toward white.
++///
++/// The horizon is never the zenith's colour: Rayleigh scattering has had far
++/// more path length to work with down there, so it washes out. Deriving the
++/// haze from [`Hour::sky`] instead of authoring a second colour is what makes
++/// distant geometry dissolve INTO the sky rather than fade toward a grey that
++/// disagrees with it — the giveaway that used to make the old
++/// [`FOG_COLOR_DAY`] read as a filter laid over the frame instead of as air.
++pub const HAZE_DESAT: f32 = 0.40;
++
++/// Haze gain, **as a fraction of [`Hour::sky_gain`]** — the haze is the sky seen
++/// through more air, so it is priced in the sky's own units and cannot drift
++/// away from it when the sky is retuned.
++///
++/// Under 1.0 because [`HAZE_DESAT`] has already lifted the darker channels a
++/// long way toward white; without pulling the overall level back the horizon
++/// band comes out BRIGHTER than the sky above it and distant geometry
++/// silhouettes in reverse — a glowing skyline instead of a receding one.
++pub const HAZE_GAIN: f32 = 0.62;
++
+ /// Distance (blocks) at which the haze is fully opaque. Also [`RENDER_RADIUS`].
+ pub const FOG_END: f32 = 320.0;
+ 
+@@ -100,6 +154,16 @@ pub const FOG_SUN_GLOW: [f32; 3] = [1.00, 0.85, 0.60];
+ /// How tightly [`FOG_SUN_GLOW`] hugs the sun direction (higher = tighter).
+ pub const FOG_SUN_EXPONENT: f32 = 30.0;
+ 
++/// Estimated object thickness the SSAO pass assumes, in world units. A ray that
++/// passes within this distance behind a surface counts as occluded, so it is the
++/// knob that decides how deep a crease has to be before it darkens — voxel-scale
++/// on purpose (1 block), so the creases between blocks read and the pass does
++/// not start shading whole faces.
++pub const AO_THICKNESS: f32 = 1.45;
++
++/// PCSS penumbra width for the sun, where the tier turns it on.
++pub const PCSS_WIDTH: f32 = 3.0;
++
+ /// Post-grade constants.
+ ///
+ /// These started as the numbers the reviewer approved on the golden beauty shot
+@@ -544,21 +608,90 @@ pub fn enabled_for(cfg: &crate::Cfg) -> bool {
+     std::env::var_os("VOXELFORGE_LOOK_FORCE").is_some() || cfg.play
+ }
+ 
++/// The haze curve. `ExponentialSquared` at [`HAZE_DENSITY`] is the shipped
++/// aerial perspective; the two env hooks exist so a candidate curve can be shot
++/// against a real frame without a relink, which is the only way this was ever
++/// going to be tuned honestly (the number that matters is how much of the
++/// *playable* depth range the haze covers, and that is not derivable at a desk).
++///
++/// * `VOXELFORGE_LOOK_HAZE=<density>` — sweep the shipped curve. `0` selects the
++///   legacy linear ramp, which is how the before/after pair is shot from ONE
++///   binary: same build, same scene, only the haze toggled.
++/// * `VOXELFORGE_LOOK_FOG=<start>,<end>` — the older linear hook, still honoured
++///   and still overriding, so a `FOG_START`/`FOG_END` question can be answered
++///   the way it always could.
++fn haze_falloff() -> FogFalloff {
++    if let Some([start, end]) = env_floats::<2>("VOXELFORGE_LOOK_FOG") {
++        return FogFalloff::Linear { start, end };
++    }
++    let density = std::env::var("VOXELFORGE_LOOK_HAZE")
++        .ok()
++        .and_then(|v| v.trim().parse().ok())
++        .unwrap_or(HAZE_DENSITY);
++    if density <= 0.0 {
++        let (start, end) = fog_range();
++        FogFalloff::Linear { start, end }
++    } else {
++        FogFalloff::ExponentialSquared { density }
++    }
++}
++
++/// The colour distant geometry dissolves toward.
++///
++/// DERIVED FROM THE SKY, NOT AUTHORED BESIDE IT. The endpoint of aerial
++/// perspective is, physically, the radiance of the sky along that line of sight
++/// — so the one thing this colour must never be is an independent decision that
++/// can drift out of agreement with [`Hour::sky`]. It is the hour's own sky hue,
++/// washed [`HAZE_DESAT`] toward white (horizon, not zenith) and scaled by
++/// [`HAZE_GAIN`] into the same scene-referred linear units `ClearColor` is
++/// written in — `DistanceFog` mixes in linear space, so authoring this as a
++/// plain sRGB triple (the old [`FOG_COLOR_DAY`]) put a value ~2.5× under the
++/// sky's radiance behind the skyline, which reads as distant terrain going
++/// muddy and DARK as it recedes. Air does not do that.
++///
++/// `VOXELFORGE_LOOK_HAZECOL=r,g,b,gain` overrides hue (sRGB) and gain together —
++/// they are one decision, same as [`Hour::sky`]/[`Hour::sky_gain`].
++fn haze_color() -> Color {
++    let h = hour();
++    let over = env_floats::<4>("VOXELFORGE_LOOK_HAZECOL");
++    let (hue, gain) = match over {
++        Some([r, g, b, gain]) => ([r, g, b], gain),
++        None => (h.sky, HAZE_GAIN),
++    };
++    let desat = std::env::var("VOXELFORGE_LOOK_HAZEDESAT")
++        .ok()
++        .and_then(|v| v.trim().parse().ok())
++        .unwrap_or(HAZE_DESAT);
++    // NIGHT keeps its authored haze: a night sky is near-black, and deriving the
++    // haze from it would hand the frame a horizon that swallows the skyline
++    // instead of the deep blue air `FOG_COLOR_NIGHT` was picked for.
++    if std::env::var_os("VOXELFORGE_LOOK_NIGHT").is_some() && over.is_none() {
++        let c = h.fog;
++        return Color::srgb(c[0], c[1], c[2]);
++    }
++    let lin = Color::srgb(hue[0], hue[1], hue[2]).to_linear();
++    // `* h.sky_gain` is the whole point: `apply_fog` mixes this colour into an
++    // ALREADY-EXPOSED lit colour and writes it to the same HDR target the sky's
++    // `ClearColor` lands in un-exposed, so the two are directly comparable only
++    // once the haze carries the sky's gain too. Without it the haze sits at the
++    // sRGB value (~0.3 linear) against a sky at ~1.9 and the skyline reads as a
++    // dark band — the failure mode this whole function exists to avoid.
++    let scale = gain * h.sky_gain;
++    let mix = |c: f32| (c + (1.0 - c) * desat) * scale;
++    Color::linear_rgb(mix(lin.red), mix(lin.green), mix(lin.blue))
++}
++
+ /// The distance haze, built from the public contract constants.
+ ///
+ /// One constructor for every tier: the haze is not a luxury effect that scales
+ /// with the GPU, it is the thing that hides the streaming radius (see
+ /// [`RENDER_RADIUS`]), so a Low-tier machine needs it exactly as much as an Ultra
+-/// one. `FogFalloff::Linear` rather than `Exponential`: exponential starts biting
+-/// at the camera (~27% opaque by 40 blocks at the old density 0.008), which
+-/// desaturates the mid-distance geometry the reference frames keep vivid.
++/// one.
+ fn distance_fog() -> DistanceFog {
+-    let (start, end) = fog_range();
+-    let c = hour().fog;
+     let g = FOG_SUN_GLOW;
+     DistanceFog {
+-        color: Color::srgb(c[0], c[1], c[2]),
+-        falloff: FogFalloff::Linear { start, end },
++        color: haze_color(),
++        falloff: haze_falloff(),
+         // Looking INTO the low sun, the haze picks up its colour — the warm
+         // atmospheric glow every shader pack sells golden hour with. It costs
+         // nothing (a term in the fog shader, not a pass).
+@@ -646,6 +779,54 @@ pub fn base_camera_look() -> impl Bundle {
+     )
+ }
+ 
++/// Contact AO for one tier, with the sweep hooks the G7 pass needed.
++///
++/// WHY THIS IS A FUNCTION AND NOT FOUR LITERALS. The G6 frame was read as having
++/// no ambient occlusion at all, and the first job was to find out whether that
++/// meant *absent* or *invisible*: SSAO in Bevy darkens the DIFFUSE INDIRECT term
++/// only, so under an 11 000-lux key against a 1 100-lux fill it can move a
++/// sunlit face by at most ~9% no matter how hard it works, while an in-shade
++/// face is ~100% fill and takes the full bite. That is a measurement, not an
++/// opinion, and it needs an A/B from ONE binary to settle — hence
++/// `VOXELFORGE_LOOK_SSAO=off`, which returns `None` and shoots the same frame
++/// with the layer lifted out.
++///
++/// `VOXELFORGE_LOOK_SSAO=<thickness>` and `VOXELFORGE_LOOK_SSAOQ=low|medium|high|ultra`
++/// sweep the two real knobs. Unset ⇒ the tier's own values, byte-for-byte.
++fn ssao(tier_quality: ScreenSpaceAmbientOcclusionQualityLevel) -> Option<ScreenSpaceAmbientOcclusion> {
++    let raw = std::env::var("VOXELFORGE_LOOK_SSAO").unwrap_or_default();
++    if raw.trim().eq_ignore_ascii_case("off") {
++        return None;
++    }
++    let quality_level = match std::env::var("VOXELFORGE_LOOK_SSAOQ")
++        .unwrap_or_default()
++        .trim()
++        .to_ascii_lowercase()
++        .as_str()
++    {
++        "low" => ScreenSpaceAmbientOcclusionQualityLevel::Low,
++        "medium" => ScreenSpaceAmbientOcclusionQualityLevel::Medium,
++        "high" => ScreenSpaceAmbientOcclusionQualityLevel::High,
++        "ultra" => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
++        _ => tier_quality,
++    };
++    Some(ScreenSpaceAmbientOcclusion {
++        quality_level,
++        constant_object_thickness: raw.trim().parse().unwrap_or(AO_THICKNESS),
++    })
++}
++
++/// PCSS penumbra width for the sun, or `None` for a fixed-width filter.
++///
++/// `VOXELFORGE_LOOK_PCSS=off|<width>`; unset ⇒ the tier's own call.
++fn pcss_width(tier_on: bool) -> Option<f32> {
++    match std::env::var("VOXELFORGE_LOOK_PCSS") {
++        Ok(v) if v.trim().eq_ignore_ascii_case("off") => None,
++        Ok(v) => v.trim().parse().ok().or(tier_on.then_some(PCSS_WIDTH)),
++        Err(_) => tier_on.then_some(PCSS_WIDTH),
++    }
++}
++
+ /// Build the look stack for `quality` onto the camera entity `e`.
+ ///
+ /// This is the single tier→effect map — the place Poppy's per-effect ms budget
+@@ -664,6 +845,22 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
+     // Base layer — present at every tier, and the SAME function `main.rs` spawns
+     // the camera with, so the two paths cannot drift into two different looks.
+     e.insert(base_camera_look());
++    // Contact AO is identity, not a luxury: without it blocks hover off the
++    // ground. The layer is present at EVERY tier (look-tier-spec.md §1 ranks it
++    // "cut = dies"); only the sample count steps down, which is why it is hoisted
++    // out of the `match` and only its quality argument comes from the tier.
++    if let Some(ao) = ssao(match quality {
++        LookQuality::Low | LookQuality::Medium => ScreenSpaceAmbientOcclusionQualityLevel::Low,
++        // High was `Medium` (8 spp) through G6. Raised to `High` (18 spp) for
++        // G7: the AO signal the CEO could not find in the frame is worth more
++        // than the tier is worth saving, and the pass is a fixed-size compute
++        // dispatch over the depth buffer — the step is sample count, not another
++        // full-screen pass.
++        LookQuality::High => ScreenSpaceAmbientOcclusionQualityLevel::High,
++        LookQuality::Ultra => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
++    }) {
++        e.insert(ao);
++    }
+     match quality {
+         LookQuality::Low => {
+             // The cheapest tier that still clears every gate-identity axis (G1–G6):
+@@ -673,21 +870,12 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
+             // (look-tier-spec.md §1). Without these two, Low was failing both
+             // halves of G4: hovering blocks (no AO) and a hard shadow edge (no
+             // explicit filter).
+-            e.insert((
+-                // Gaussian is a fixed multi-tap blur with no history buffer, so it
+-                // gives a soft (≥3px) shadow edge without TAA — exactly the §1
+-                // "cut survives" choice for the no-TAA tier. Leaving Low without an
+-                // explicit filter left the shadow edge at an unintended default
+-                // rather than the soft edge G4 wants.
+-                ShadowFilteringMethod::Gaussian,
+-                // Contact AO is identity, not a luxury: without it blocks hover off
+-                // the ground. The layer must be present at every tier (§1 ranks it
+-                // "cut = dies"); only the quality steps down. Low is the floor.
+-                ScreenSpaceAmbientOcclusion {
+-                    quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Low,
+-                    constant_object_thickness: 1.45,
+-                },
+-            ));
++            // Gaussian is a fixed multi-tap blur with no history buffer, so it
++            // gives a soft (≥3px) shadow edge without TAA — exactly the §1
++            // "cut survives" choice for the no-TAA tier. Leaving Low without an
++            // explicit filter left the shadow edge at an unintended default
++            // rather than the soft edge G4 wants.
++            e.insert(ShadowFilteringMethod::Gaussian);
+         }
+         LookQuality::Medium => {
+             // TAA cleans up the low-quality SSAO. The shadow filter stays temporal
+@@ -698,16 +886,10 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
+             e.insert((
+                 ShadowFilteringMethod::Temporal,
+                 TemporalAntiAliasing::default(),
+-                ScreenSpaceAmbientOcclusion {
+-                    quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Low,
+-                    // Voxel-scale thickness: darkens the contact crease so things
+-                    // sit ON the ground instead of looking like they hover.
+-                    constant_object_thickness: 1.45,
+-                },
+             ));
+         }
+         LookQuality::High => {
+-            // Default tier. Temporal soft shadows (no PCSS) + medium SSAO +
++            // Default tier. Temporal soft shadows (no PCSS) + high SSAO +
+             // volumetric fog at a reduced step count. The one effect cut vs Ultra
+             // is PCSS: per look-tier-spec.md §1 the hero-shot measurement found
+             // Bevy clamps `soft_shadow_size` to its 0.5 floor in a room that size,
+@@ -720,10 +902,6 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
+                 // filtering + TAA accumulate it into clean contact AO.
+                 ShadowFilteringMethod::Temporal,
+                 TemporalAntiAliasing::default(),
+-                ScreenSpaceAmbientOcclusion {
+-                    quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+-                    constant_object_thickness: 1.45,
+-                },
+                 // Volumetric fog at a reduced step count (Ultra ray-marches 96; 32
+                 // keeps the god-ray shaft at a fraction of the cost, with banding
+                 // TAA smooths out). `VolumetricLight` on the sun — set in
+@@ -742,10 +920,6 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
+             e.insert((
+                 ShadowFilteringMethod::Temporal,
+                 TemporalAntiAliasing::default(),
+-                ScreenSpaceAmbientOcclusion {
+-                    quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
+-                    constant_object_thickness: 1.45,
+-                },
+                 VolumetricFog {
+                     ambient_intensity: 0.08,
+                     step_count: 96,
+@@ -870,8 +1044,9 @@ fn apply_look_to_sun(
+         // look knob.
+         #[cfg(feature = "experimental_pbr_pcss")]
+         {
+-            // 3.0 is the width the hero shot's penumbra gate was signed off at.
+-            dl.soft_shadow_size = if pcss { Some(3.0) } else { None };
++            // [`PCSS_WIDTH`] is the width the hero shot's penumbra gate was
++            // signed off at; `VOXELFORGE_LOOK_PCSS` sweeps it (see [`pcss_width`]).
++            dl.soft_shadow_size = pcss_width(pcss);
+         }
+         #[cfg(not(feature = "experimental_pbr_pcss"))]
+         {
