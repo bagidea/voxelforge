@@ -26,6 +26,7 @@ use voxelforge_sim::chunk::CHUNK_SIZE as CHUNK;
 
 use crate::combat;
 use crate::editor::AppState;
+use crate::hud;
 use crate::{
     box_fill, find_spawn, highest_solid, Cfg, FlyCam, OrbitCam, World, BOOM_DIST, EYE_HEIGHT,
     PIVOT_UP, PLAYER_HALF_W,
@@ -288,7 +289,7 @@ fn boot_scene(
         let husk_z = sz as f32 - 7.0;
         let ground_y = (surface + 1) as f32; // same ground as the player
         combat::spawn_guard_husk(&mut commands, &mut meshes, &mut materials, husk_x, husk_z, Some(ground_y));
-        combat::spawn_combat_hud(&mut commands);
+        hud::spawn_hud(&mut commands);
         enc.spawned = true;
         println!("SPAWN_ENCOUNTER husk at ({husk_x:.1},_,{husk_z:.1}) on Edhari surface");
     }
