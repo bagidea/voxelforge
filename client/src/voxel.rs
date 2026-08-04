@@ -22,6 +22,21 @@
 //! which a single shared material can never express.
 //!
 //! Both paths carry vertex ambient occlusion.
+//!
+//! ## Material response
+//!
+//! The split path additionally wears a per-type **normal map** and
+//! **metallic-roughness map** ([`build_block_normal_map`],
+//! [`build_block_metallic_roughness`]), both derived from the same
+//! [`tile_shade`] pattern that paints the albedo, so colour, relief and finish
+//! cannot drift out of register. The atlas/LOD path deliberately gets neither:
+//! it stretches one tile across a whole merged quad, so per-texel relief there
+//! would smear.
+//!
+//! `VOXELFORGE_FLAT_MATERIAL=1` builds the palette base-colour-only, which is
+//! exactly what shipped before the maps existed — the A/B lever out of one
+//! binary. `VOXELFORGE_MAT_RELIEF` and `VOXELFORGE_MAT_ROUGH_VAR` scale the two
+//! amplitudes without a rebuild.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
@@ -155,16 +170,116 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
     }
 }
 
-/// The StandardMaterial for one block type, given its (repeating) tile texture.
+/// How much per-texel *shape* one block type has, and how far its finish varies
+/// across a face. Consumed by [`build_block_normal_map`] and
+/// [`build_block_metallic_roughness`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockRelief {
+    /// Normal-map amplitude, `0.0` = deliberately flat (no map is built at all).
+    pub relief: f32,
+    /// How far roughness swings either side of the table value across a tile.
+    pub roughness_spread: f32,
+}
+
+/// The relief grade for one block type.
+///
+/// This is a decision per material, not a global filter — a pile of loose
+/// cobbles and a plaster wall do not have the same amount of shape, and running
+/// one amplitude over both is what makes a procedural bump pass read as noise.
+pub fn block_relief(id: BlockId) -> BlockRelief {
+    let g = |relief, roughness_spread| BlockRelief {
+        relief,
+        roughness_spread,
+    };
+    match id {
+        // A pile of separate loose objects — the strongest relief in the palette.
+        BlockId::COBBLESTONE | BlockId::GRAVEL => g(1.00, 0.12),
+        // The dark gaps in the tile are real holes between blades.
+        BlockId::GRASS | BlockId::LEAVES | BlockId::MOSS => g(0.85, 0.08),
+        // Recessed mortar joints, flat-ish faces.
+        BlockId::BRICK => g(0.80, 0.12),
+        // Deepest grooves *and* the smoothest face between them — that spread is
+        // the read; a plank with a uniform finish is a plank-coloured board.
+        BlockId::WOOD => g(0.75, 0.16),
+        BlockId::DIRT => g(0.70, 0.08),
+        // Plaster: broad soft undulation, not detail.
+        BlockId::LIMESTONE => g(0.45, 0.10),
+        // Grain finer than a texel — sparkle, not shape.
+        BlockId::SAND | BlockId::RED_SAND => g(0.35, 0.06),
+        // Almost no shape, wide finish spread: that is why snow glitters.
+        BlockId::SNOW => g(0.25, 0.18),
+        // A glowing surface has no shading to modulate.
+        LAMP => g(0.15, 0.00),
+        // Deliberately flat. The diagonal sheen is a reflection, not a ridge —
+        // bumping a pane only frosts it and kills the mirror, so it gets no
+        // normal map at all.
+        BlockId::OBSIDIAN => g(0.00, 0.03),
+        // STONE, CLAY — matte mineral.
+        _ => g(0.55, 0.10),
+    }
+}
+
+/// `VOXELFORGE_FLAT_MATERIAL=1` — build the palette base-colour-only: no normal
+/// map, no roughness map, exactly what shipped before this pass.
+///
+/// It exists for the same reason `main::atlas_mesh_forced` does: the fix gets
+/// photographed **against itself out of one binary** — same exe, same map, same
+/// seed, same camera, one variable.
+fn flat_material() -> bool {
+    matches!(std::env::var("VOXELFORGE_FLAT_MATERIAL"), Ok(v) if !v.is_empty() && v != "0")
+}
+
+/// A non-negative amplitude scale read from the environment, `1.0` by default.
+///
+/// Relief amplitude is the one number here that can only be judged from a
+/// rendered frame, and this binary costs a fat-LTO link per rebuild; a runtime
+/// scale turns a sweep from hours into minutes. A negative or non-numeric value
+/// falls back to `1.0` rather than inverting every surface in the game on a typo.
+fn env_scale(key: &str) -> f32 {
+    match std::env::var(key).ok().and_then(|v| v.trim().parse::<f32>().ok()) {
+        Some(v) if v.is_finite() && v >= 0.0 => v,
+        _ => 1.0,
+    }
+}
+
+/// The `perceptual_roughness` factor to hand a material that carries a roughness
+/// map: the table value plus its whole spread.
+///
+/// Bevy *multiplies* `perceptual_roughness` by the map's green channel. Hand the
+/// same factor to the mapped and unmapped cases and every mapped surface is
+/// quietly smoother than the table says, with nothing anywhere reporting it. So
+/// the factor is raised to the ceiling and the map dips down from there — the
+/// effective roughness straddles the table's value instead of only cutting below
+/// it.
+pub fn roughness_ceiling(id: BlockId) -> f32 {
+    let spread = block_relief(id).roughness_spread * env_scale("VOXELFORGE_MAT_ROUGH_VAR");
+    (block_surface(id).perceptual_roughness + spread).min(1.0)
+}
+
+/// The StandardMaterial for one block type, given its (repeating) tile texture
+/// and — where the material has any — its derived normal / roughness maps.
 ///
 /// This is the per-type material the single shared atlas material can't be. Pair
-/// it with [`greedy_mesh_chunk_split`], which produces one mesh per type.
-pub fn block_material(id: BlockId, texture: Handle<Image>) -> StandardMaterial {
+/// it with [`greedy_mesh_chunk_split`], which produces one mesh per type *and*
+/// the tangents a normal map is silently dropped without.
+pub fn block_material(
+    id: BlockId,
+    texture: Handle<Image>,
+    normal_map: Option<Handle<Image>>,
+    metallic_roughness: Option<Handle<Image>>,
+) -> StandardMaterial {
     let s = block_surface(id);
+    let mapped_roughness = metallic_roughness.is_some();
     StandardMaterial {
         base_color: Color::srgba(1.0, 1.0, 1.0, s.alpha),
         base_color_texture: Some(texture),
-        perceptual_roughness: s.perceptual_roughness,
+        normal_map_texture: normal_map,
+        metallic_roughness_texture: metallic_roughness,
+        perceptual_roughness: if mapped_roughness {
+            roughness_ceiling(id)
+        } else {
+            s.perceptual_roughness
+        },
         metallic: s.metallic,
         reflectance: s.reflectance,
         emissive: s.emissive,
@@ -215,7 +330,9 @@ pub fn build_block_materials(
         .map(|id| {
             let id = BlockId(id);
             let tile = images.add(build_block_texture(id));
-            materials.add(block_material(id, tile))
+            let normal = build_block_normal_map(id).map(|i| images.add(i));
+            let rough = build_block_metallic_roughness(id).map(|i| images.add(i));
+            materials.add(block_material(id, tile, normal, rough))
         })
         .collect()
 }
@@ -259,12 +376,15 @@ struct Buffers {
     normals: Vec<[f32; 3]>,
     uvs: Vec<[f32; 2]>,
     colors: Vec<[f32; 4]>,
+    /// Only the split path fills this — see [`Buffers::into_mesh`].
+    tangents: Vec<[f32; 4]>,
     indices: Vec<u32>,
     quads: usize,
 }
 
 impl Buffers {
     fn into_mesh(self) -> Mesh {
+        let tangents = self.tangents;
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
@@ -276,6 +396,14 @@ impl Buffers {
         // layout and multiplies it into base colour — which is how the AO term
         // reaches the shipping StandardMaterial without a custom shader.
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
+        // Bevy's PBR shader only applies a normal map under `VERTEX_TANGENTS`. A
+        // mesh with no tangent attribute drops the whole map on the floor — no
+        // warning, no error, and the frame renders identical to the flat
+        // version. The atlas path leaves this empty on purpose (it wears no
+        // normal map), so the attribute is only inserted when it was filled.
+        if !tangents.is_empty() {
+            mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangents);
+        }
         mesh.insert_indices(Indices::U32(self.indices));
         mesh
     }
@@ -433,6 +561,25 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                         buf.normals.extend_from_slice(&[nrm; 4]);
 
                         if split {
+                            // The quads are axis-aligned and their UVs run
+                            // straight down (du, dv), so the tangent frame is
+                            // exact: no `generate_tangents()` pass, and no seam
+                            // where a generated frame would flip.
+                            let mut t = [0f32; 3];
+                            t[u] = 1.0;
+                            let mut b = [0f32; 3];
+                            b[v] = 1.0;
+                            // The shader rebuilds the bitangent as
+                            // cross(N, T) * w, so w is whichever sign puts it
+                            // back on the +v axis — back faces flip with their
+                            // normal instead of being hard-coded per axis.
+                            let sign = Vec3::from(nrm)
+                                .cross(Vec3::from(t))
+                                .dot(Vec3::from(b))
+                                .signum();
+                            buf.tangents
+                                .extend_from_slice(&[[t[0], t[1], t[2], sign]; 4]);
+
                             // UVs in BLOCKS. With the tile texture sampled in
                             // `Repeat` (see `build_block_texture`) a 12×3 merged
                             // quad samples the tile 12×3 times — per-block texel
@@ -596,6 +743,137 @@ fn tile_shade(id: BlockId, lx: usize, ly: usize) -> i32 {
     }
 }
 
+/// Peak absolute amplitude any [`tile_shade`] pattern reaches, used to normalise
+/// shade into a height field. The lantern's bright core (`+34`) is the widest
+/// swing in the palette.
+const SHADE_SPAN: f32 = 34.0;
+
+/// How far a normal tilts per unit of height slope: a quarter of the full swing
+/// across two texels lands on roughly 45° at `relief == 1.0`.
+const NORMAL_STRENGTH: f32 = 4.0;
+
+/// The tile's height field at tile-local `(lx, ly)`, in `0.0..=1.0`, sampled
+/// **wrapped**.
+///
+/// Derived from the same [`tile_shade`] pattern that paints the albedo rather
+/// than from a second hand-authored pattern — that is the load-bearing decision
+/// here: albedo, relief and finish cannot drift out of register, because there
+/// is only one pattern. A normal map that disagrees with its own albedo is
+/// exactly what reads as plastic.
+///
+/// Wrapped, not clamped, on purpose. The tiles are sampled in `Repeat` and every
+/// `tile_shade` pattern is seamless, so a clamped edge would bake a one-texel
+/// ridge into every block boundary — the same class of bug as the old painted
+/// border, just in the normal instead of the colour.
+fn tile_height(id: BlockId, lx: i32, ly: i32) -> f32 {
+    let px = TILE_PX as i32;
+    let x = lx.rem_euclid(px) as usize;
+    let y = ly.rem_euclid(px) as usize;
+    (0.5 + tile_shade(id, x, y) as f32 / (2.0 * SHADE_SPAN)).clamp(0.0, 1.0)
+}
+
+/// `-1.0..=1.0` → `0..=255`: the tangent-space normal encoding.
+#[inline]
+fn encode_unorm(v: f32) -> u8 {
+    ((v * 0.5 + 0.5).clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+/// The per-texel shading normal for one block type, or `None` for a material
+/// that is deliberately flat.
+///
+/// This is the half of the fix that albedo cannot do. Before it, every texel of
+/// a cobble wall handed the sun the same normal, so the painted stones in the
+/// tile stayed a *picture* of stones: move the sun and the entire wall brightens
+/// together. With it, a plank groove, a mortar joint and the gap between two
+/// cobbles catch and lose the light on their own.
+///
+/// `Rgba8Unorm` — a normal map is data, not colour, and an sRGB view of it would
+/// bend every normal toward the viewer.
+pub fn build_block_normal_map(id: BlockId) -> Option<Image> {
+    if flat_material() {
+        return None;
+    }
+    let relief = block_relief(id).relief * env_scale("VOXELFORGE_MAT_RELIEF");
+    if relief <= 0.0 {
+        return None;
+    }
+
+    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
+    for ly in 0..TILE_PX as i32 {
+        for lx in 0..TILE_PX as i32 {
+            let h = |dx: i32, dy: i32| tile_height(id, lx + dx, ly + dy);
+            // Central differences: symmetric, so a groove tilts both of its
+            // walls by the same amount instead of leaning the whole tile one way.
+            let dhdu = (h(1, 0) - h(-1, 0)) * 0.5;
+            let dhdv = (h(0, 1) - h(0, -1)) * 0.5;
+            let n = Vec3::new(
+                -dhdu * relief * NORMAL_STRENGTH,
+                -dhdv * relief * NORMAL_STRENGTH,
+                1.0,
+            )
+            .normalize();
+            let px = (ly as usize * TILE_PX + lx as usize) * 4;
+            data[px] = encode_unorm(n.x);
+            data[px + 1] = encode_unorm(n.y);
+            data[px + 2] = encode_unorm(n.z);
+            data[px + 3] = 255;
+        }
+    }
+    Some(image_from_rgba(
+        TILE_PX,
+        TILE_PX,
+        data,
+        TextureFormat::Rgba8Unorm,
+        voxel_sampler(true),
+    ))
+}
+
+/// The per-texel finish for one block type, or `None` for a material with no
+/// finish variation to express.
+///
+/// Bevy's `StandardMaterial` reads **green = roughness, blue = metallic** and
+/// multiplies both by their factors, so the green channel here is the ratio
+/// against [`roughness_ceiling`], never an absolute. Blue stays 0: nothing in
+/// this palette is a metal.
+pub fn build_block_metallic_roughness(id: BlockId) -> Option<Image> {
+    if flat_material() {
+        return None;
+    }
+    let spread = block_relief(id).roughness_spread * env_scale("VOXELFORGE_MAT_ROUGH_VAR");
+    if spread <= 0.0 {
+        return None;
+    }
+
+    let base = block_surface(id).perceptual_roughness;
+    let ceiling = roughness_ceiling(id);
+    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
+    for ly in 0..TILE_PX {
+        for lx in 0..TILE_PX {
+            let h = tile_height(id, lx as i32, ly as i32);
+            // Hollows dusty, high points polished — dust settles where the
+            // surface is worn away, and what stands proud is what gets rubbed.
+            let worn = spread * (1.0 - 2.0 * h);
+            // Plus coarse 4×4 patchiness, so a long wall is not one uniform
+            // finish. Uniform gloss over a whole wall is its own kind of flat.
+            let patch = spread * 0.35 * dither((lx / 4) as u32, (ly / 4) as u32, 81, 100) as f32
+                / 100.0;
+            let rough = (base + worn + patch).clamp(0.0, ceiling);
+            let px = (ly * TILE_PX + lx) * 4;
+            data[px] = 255; // unused by StandardMaterial (occlusion slot)
+            data[px + 1] = (rough / ceiling * 255.0).round() as u8;
+            data[px + 2] = 0;
+            data[px + 3] = 255;
+        }
+    }
+    Some(image_from_rgba(
+        TILE_PX,
+        TILE_PX,
+        data,
+        TextureFormat::Rgba8Unorm,
+        voxel_sampler(true),
+    ))
+}
+
 /// Base colour for a tile, including [`LAMP`] which the sim palette has no entry
 /// for.
 fn tile_base(id: BlockId) -> [u8; 3] {
@@ -631,7 +909,16 @@ fn voxel_sampler(repeat: bool) -> ImageSampler {
     })
 }
 
-fn image_from_rgba(w: usize, h: usize, data: Vec<u8>, sampler: ImageSampler) -> Image {
+/// `format` is the caller's call and matters: albedo is `Rgba8UnormSrgb`, but a
+/// normal or roughness map is data — viewing one through sRGB silently bends
+/// every value it carries.
+fn image_from_rgba(
+    w: usize,
+    h: usize,
+    data: Vec<u8>,
+    format: TextureFormat,
+    sampler: ImageSampler,
+) -> Image {
     let mut image = Image::new(
         Extent3d {
             width: w as u32,
@@ -640,7 +927,7 @@ fn image_from_rgba(w: usize, h: usize, data: Vec<u8>, sampler: ImageSampler) -> 
         },
         TextureDimension::D2,
         data,
-        TextureFormat::Rgba8UnormSrgb,
+        format,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     );
     image.sampler = sampler;
@@ -672,7 +959,13 @@ pub fn build_atlas() -> Image {
         }
     }
 
-    image_from_rgba(w, h, data, voxel_sampler(false))
+    image_from_rgba(
+        w,
+        h,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        voxel_sampler(false),
+    )
 }
 
 /// Build the standalone 16×16 tile for one block type, sampled with `Repeat`.
@@ -692,7 +985,13 @@ pub fn build_block_texture(id: BlockId) -> Image {
             data[px + 3] = 255;
         }
     }
-    image_from_rgba(TILE_PX, TILE_PX, data, voxel_sampler(true))
+    image_from_rgba(
+        TILE_PX,
+        TILE_PX,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        voxel_sampler(true),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -972,12 +1271,224 @@ mod tests {
 
     #[test]
     fn block_material_carries_the_surface_and_the_texture() {
-        let m = block_material(LAMP, Handle::default());
+        let m = block_material(LAMP, Handle::default(), None, None);
         assert_eq!(m.emissive, block_surface(LAMP).emissive);
         assert!(m.base_color_texture.is_some());
-        let pane = block_material(BlockId::OBSIDIAN, Handle::default());
+        let pane = block_material(BlockId::OBSIDIAN, Handle::default(), None, None);
         assert!(matches!(pane.alpha_mode, AlphaMode::Blend));
         assert!(pane.base_color.alpha() < 1.0);
+    }
+
+    // ---- material response: relief + finish ----
+
+    fn tangents(mesh: &Mesh) -> Option<Vec<[f32; 4]>> {
+        match mesh.attribute(Mesh::ATTRIBUTE_TANGENT) {
+            Some(VertexAttributeValues::Float32x4(v)) => Some(v.clone()),
+            _ => None,
+        }
+    }
+
+    /// Bevy MULTIPLIES `perceptual_roughness` by the map's green channel. Hand
+    /// the mapped case the same factor as the unmapped one and every mapped
+    /// surface is quietly smoother than the table says, with nothing anywhere
+    /// reporting it. The factor has to rise to the ceiling so the map can dip
+    /// down from there and straddle the table value.
+    #[test]
+    fn a_roughness_map_raises_the_factor_to_the_ceiling() {
+        for id in [BlockId::WOOD, BlockId::COBBLESTONE, BlockId::SNOW] {
+            let base = block_surface(id).perceptual_roughness;
+            let ceiling = roughness_ceiling(id);
+            assert!(
+                ceiling > base,
+                "{}: ceiling {ceiling} must sit above the table value {base}",
+                id.name()
+            );
+
+            let mapped = block_material(id, Handle::default(), None, Some(Handle::default()));
+            assert_eq!(
+                mapped.perceptual_roughness,
+                ceiling,
+                "{}: a mapped material must carry the ceiling as its factor",
+                id.name()
+            );
+            let plain = block_material(id, Handle::default(), None, None);
+            assert_eq!(
+                plain.perceptual_roughness,
+                base,
+                "{}: an unmapped material must carry the table value",
+                id.name()
+            );
+        }
+    }
+
+    /// The green channel is a RATIO against the ceiling, so the effective
+    /// roughness (`ceiling * g`) has to land either side of the table value —
+    /// not only below it.
+    #[test]
+    fn the_roughness_map_straddles_the_table_value() {
+        let id = BlockId::WOOD;
+        let base = block_surface(id).perceptual_roughness;
+        let ceiling = roughness_ceiling(id);
+        let img = build_block_metallic_roughness(id).expect("wood has a finish spread");
+        let data = img.data.as_ref().unwrap();
+
+        let eff: Vec<f32> = (0..TILE_PX * TILE_PX)
+            .map(|i| data[i * 4 + 1] as f32 / 255.0 * ceiling)
+            .collect();
+        let lo = eff.iter().cloned().fold(f32::INFINITY, f32::min);
+        let hi = eff.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            lo < base && hi > base,
+            "effective roughness {lo}..{hi} must straddle the table value {base}"
+        );
+        // Blue is metallic. Nothing in this palette is a metal.
+        assert!((0..TILE_PX * TILE_PX).all(|i| data[i * 4 + 2] == 0));
+    }
+
+    /// Wrapped, not clamped. Every `tile_shade` pattern is seamless and the
+    /// tiles are sampled in `Repeat`, so a clamped edge would bake a one-texel
+    /// ridge into every block boundary — the painted-border bug again, moved
+    /// from the colour into the normal.
+    #[test]
+    fn tile_height_wraps_instead_of_clamping() {
+        for id in [BlockId::WOOD, BlockId::BRICK, BlockId::COBBLESTONE] {
+            let last = TILE_PX as i32 - 1;
+            for k in 0..TILE_PX as i32 {
+                assert_eq!(
+                    tile_height(id, -1, k),
+                    tile_height(id, last, k),
+                    "{}: u wrapped sample must equal the far edge",
+                    id.name()
+                );
+                assert_eq!(
+                    tile_height(id, k, -1),
+                    tile_height(id, k, last),
+                    "{}: v wrapped sample must equal the far edge",
+                    id.name()
+                );
+            }
+        }
+    }
+
+    /// A normal map must decode to unit-ish normals pointing OUT of the surface.
+    /// An all-flat map (every texel `z == 1`) would mean the pattern never
+    /// reached the map at all.
+    #[test]
+    fn the_normal_map_encodes_outward_normals_and_is_not_flat() {
+        let img = build_block_normal_map(BlockId::BRICK).expect("brick has relief");
+        assert_eq!(img.texture_descriptor.format, TextureFormat::Rgba8Unorm);
+        let data = img.data.as_ref().unwrap();
+        let mut tilted = 0;
+        for i in 0..TILE_PX * TILE_PX {
+            let d = |c: usize| data[i * 4 + c] as f32 / 255.0 * 2.0 - 1.0;
+            let (x, y, z) = (d(0), d(1), d(2));
+            assert!(z > 0.0, "texel {i} points into the surface");
+            let len = (x * x + y * y + z * z).sqrt();
+            assert!((len - 1.0).abs() < 0.02, "texel {i} normal length {len}");
+            if x.abs() > 0.05 || y.abs() > 0.05 {
+                tilted += 1;
+            }
+        }
+        assert!(
+            tilted > TILE_PX,
+            "only {tilted} texels carry any tilt — the pattern never reached the map"
+        );
+    }
+
+    /// The grade in the material table is a decision per material, and two of
+    /// its entries are load-bearing zeroes: a bumped pane frosts over and loses
+    /// its mirror, and a glowing surface has no shading to modulate.
+    #[test]
+    fn deliberately_flat_materials_get_no_map() {
+        assert!(
+            build_block_normal_map(BlockId::OBSIDIAN).is_none(),
+            "bumping the pane only frosts it and kills the reflection"
+        );
+        assert!(
+            build_block_metallic_roughness(BlockId::OBSIDIAN).is_some(),
+            "the pane still varies its finish, just not its shape"
+        );
+        assert!(
+            build_block_metallic_roughness(LAMP).is_none(),
+            "a glowing surface has no shading to modulate"
+        );
+        // Everything else in the palette has both.
+        for id in BlockId::ALL_PLACEABLE
+            .iter()
+            .copied()
+            .filter(|id| *id != BlockId::OBSIDIAN)
+        {
+            assert!(
+                build_block_normal_map(id).is_some() && build_block_metallic_roughness(id).is_some(),
+                "{} lost its material response",
+                id.name()
+            );
+        }
+    }
+
+    /// Without `ATTRIBUTE_TANGENT` Bevy drops the normal map with no warning and
+    /// no error, and the frame renders identical to the flat version — so the
+    /// attribute's presence is the only thing standing between this pass and it
+    /// silently doing nothing. The atlas path must NOT get them: it wears no
+    /// normal map, and one tile stretched over a merged quad would smear.
+    #[test]
+    fn only_the_split_path_carries_tangents() {
+        let parts = greedy_mesh_chunk_split(&pad(true));
+        let (_, mesh, _) = parts.first().expect("stone mesh");
+        let t = tangents(mesh).expect("the split path must emit tangents");
+        assert_eq!(t.len(), mesh.count_vertices());
+        for [x, y, z, w] in t {
+            let len = (x * x + y * y + z * z).sqrt();
+            assert!((len - 1.0).abs() < 1e-5, "tangent {x},{y},{z} is not unit");
+            assert!(w == 1.0 || w == -1.0, "handedness {w} must be ±1");
+        }
+
+        let (atlas, _) = greedy_mesh_chunk(&pad(true));
+        assert!(
+            tangents(&atlas).is_none(),
+            "the atlas/LOD path must stay tangent-free"
+        );
+    }
+
+    /// The tangent frame has to agree with the UVs it is a frame FOR: T points
+    /// along +u, and cross(N, T) * w has to land back on +v. Get the handedness
+    /// wrong and every back face lights as though the sun moved.
+    #[test]
+    fn the_tangent_frame_matches_the_uv_axes() {
+        let mut c = ChunkData::empty(ChunkPos::new(0, 0, 0));
+        c.set(8, 8, 8, BlockId::STONE);
+        let parts = greedy_mesh_chunk_split(&c);
+        let (_, mesh, _) = parts.first().unwrap();
+        let pos = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(v)) => v.clone(),
+            _ => panic!("no positions"),
+        };
+        let nrm = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(VertexAttributeValues::Float32x3(v)) => v.clone(),
+            _ => panic!("no normals"),
+        };
+        let uv = uvs(mesh);
+        let tan = tangents(mesh).unwrap();
+
+        // A lone block emits 6 single-block quads, 4 vertices each.
+        for q in 0..pos.len() / 4 {
+            let (v0, v1, v3) = (pos[q * 4], pos[q * 4 + 1], pos[q * 4 + 3]);
+            let (uv0, uv1, uv3) = (uv[q * 4], uv[q * 4 + 1], uv[q * 4 + 3]);
+            // v0→v1 is the +u edge, v0→v3 the +v edge (see the emit order).
+            assert_eq!([uv1[0] - uv0[0], uv1[1] - uv0[1]], [1.0, 0.0]);
+            assert_eq!([uv3[0] - uv0[0], uv3[1] - uv0[1]], [0.0, 1.0]);
+
+            let du = Vec3::from(v1) - Vec3::from(v0);
+            let dv = Vec3::from(v3) - Vec3::from(v0);
+            let t = Vec3::new(tan[q * 4][0], tan[q * 4][1], tan[q * 4][2]);
+            let w = tan[q * 4][3];
+            assert!((t - du.normalize()).length() < 1e-5, "T must run along +u");
+            let bitangent = Vec3::from(nrm[q * 4]).cross(t) * w;
+            assert!(
+                (bitangent - dv.normalize()).length() < 1e-5,
+                "cross(N, T) * {w} must land back on +v"
+            );
+        }
     }
 
     /// Every palette entry — including the client-side lamp — must have a tile
