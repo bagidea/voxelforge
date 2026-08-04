@@ -1250,6 +1250,15 @@ fn check_block_place_triggers(
         all_jp.join(","),
         demo_fid);
 
+    // INSTRUMENTATION: dump q4 state to see if it's even eligible
+    let q4 = journal.quests.get("q4_what_walls_remember");
+    let q4_status = q4.map(|p| format!("{:?}", p.status)).unwrap_or_else(|| "MISSING".into());
+    let q4_obj = q4.map(|p| p.current_objective).unwrap_or(999);
+    let q4_done = q4.map(|p| p.completed_objectives.join(",")).unwrap_or_default();
+    println!("QUEST_DEBUG_BLOCK q4_state status={} cur_obj={} done=[{}]",
+        q4_status, q4_obj, q4_done);
+
+    let mut found_any = false;
     for qdef in &data.quests {
         let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
         if prog.status != QuestStatus::Active { continue; }
@@ -1264,6 +1273,7 @@ fn check_block_place_triggers(
         println!("QUEST_DEBUG_BLOCK checking qid={} oid={} pos=({},{}) dist={:.1} radius={:.0}",
             qdef.id, obj.id, pos.x, pos.z, dist, radius);
         if dist <= radius {
+            found_any = true;
             prog.completed_objectives.push(obj.id.clone());
             prog.current_objective += 1;
             println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (place_block)", qdef.id, obj.id);
@@ -1274,6 +1284,9 @@ fn check_block_place_triggers(
             println!("QUEST_DEBUG_BLOCK too far qid={} oid={} dist={:.1} > radius={:.0}",
                 qdef.id, obj.id, dist, radius);
         }
+    }
+    if !found_any {
+        println!("QUEST_DEBUG_BLOCK NO place_block objective matched — q4 may be locked/wrong-obj/already-done");
     }
 }
 
