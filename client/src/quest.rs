@@ -349,6 +349,10 @@ pub struct QuestDemo {
     pub leg: usize,
     /// Last whole-second tick when we printed a debug position line.
     pub debug_tick: u32,
+    /// INSTRUMENTATION: monotonic counter incremented every frame quest_demo runs.
+    /// check_block_place_triggers logs this value so we can verify .after() ordering
+    /// in the raw log (demo_frame_id must be > 0 when check runs).
+    pub demo_frame_id: u64,
 }
 
 /// Cached story data — loaded ONCE at startup so `load_story_data()` is never
@@ -1206,15 +1210,45 @@ fn lore_interact(
 // Block-place trigger — complete place_block objectives on R key near target
 // =============================================================================
 
+/// INSTRUMENTATION (diagnose-synthetic-input): atomic counter tracking how many
+/// times the handler SAW the press (should match PRESS_R_COUNT if no consumption).
+static DETECT_R_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 fn check_block_place_triggers(
     keys: Res<ButtonInput<KeyCode>>,
     player_q: Query<&Transform, With<FlyCam>>,
     mut journal: ResMut<QuestJournal>,
     story: Res<StoryDataRes>,
+    demo: Res<QuestDemo>,
 ) {
-    if !keys.just_pressed(KeyCode::KeyR) { return; }
+    // INSTRUMENTATION: capture demo frame-id to verify ordering (must be > 0
+    // when check runs, proving quest_demo already ran this frame).
+    let demo_fid = demo.demo_frame_id;
+    let r_pressed = keys.just_pressed(KeyCode::KeyR);
+    let r_held = keys.pressed(KeyCode::KeyR);
+    // INSTRUMENTATION: snapshot ALL keys in just_pressed for cross-reference
+    let all_jp: Vec<String> = keys.get_just_pressed()
+        .map(|k| format!("{:?}", k)).collect();
+    if !r_pressed {
+        // DEBUG: log every frame R is held but not just_pressed
+        if r_held {
+            let Ok(ptf) = player_q.single() else { return };
+            println!("QUEST_DEBUG_BLOCK R held but not just_pressed pt=({:.1},{:.1}) jp=[{}] press_calls={} detect_calls={} demo_fid={}",
+                ptf.translation.x, ptf.translation.z, all_jp.join(","),
+                PRESS_R_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+                DETECT_R_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+                demo_fid);
+        }
+        return;
+    }
+    let n = DETECT_R_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let Ok(ptf) = player_q.single() else { return };
     let data = story_data(&story);
+    println!("QUEST_DEBUG_BLOCK R just_pressed pt=({:.1},{:.1}) detect_count={} press_calls={} jp=[{}] demo_fid={}",
+        ptf.translation.x, ptf.translation.z, n + 1,
+        PRESS_R_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+        all_jp.join(","),
+        demo_fid);
 
     for qdef in &data.quests {
         let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
@@ -1226,13 +1260,19 @@ fn check_block_place_triggers(
         let radius = obj.radius.unwrap_or(4.0);
         let dx = ptf.translation.x - pos.x;
         let dz = ptf.translation.z - pos.z;
-        if (dx * dx + dz * dz).sqrt() <= radius {
+        let dist = (dx * dx + dz * dz).sqrt();
+        println!("QUEST_DEBUG_BLOCK checking qid={} oid={} pos=({},{}) dist={:.1} radius={:.0}",
+            qdef.id, obj.id, pos.x, pos.z, dist, radius);
+        if dist <= radius {
             prog.completed_objectives.push(obj.id.clone());
             prog.current_objective += 1;
             println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (place_block)", qdef.id, obj.id);
             let all_done = qdef.objectives.iter().filter(|o| !o.optional)
                 .all(|o| prog.completed_objectives.contains(&o.id));
             if all_done { complete_quest(&mut journal, &qdef.id, data); }
+        } else {
+            println!("QUEST_DEBUG_BLOCK too far qid={} oid={} dist={:.1} > radius={:.0}",
+                qdef.id, obj.id, dist, radius);
         }
     }
 }
@@ -1351,15 +1391,42 @@ const TAP_PERIOD: f32 = 0.25;
 /// One scripted keystroke: release whatever is held, then press `key` after a
 /// minimum gap.  Always presses — no alternating — so every call that is far
 /// enough from the last produces a clean `just_pressed` edge the reader can see.
+///
+/// INSTRUMENTATION (diagnose-synthetic-input): atomic counter so we can
+/// cross-reference "N presses emitted" vs "M presses detected" in the handler.
+static PRESS_R_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static PRESS_E_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 fn press_key(demo: &mut QuestDemo, keys: &mut ButtonInput<KeyCode>, key: KeyCode, t: f32) {
     // Release the previous key so it stops being held.
-    if let Some(down) = demo.tap_down.take() { keys.reset(down); }
+    if let Some(down) = demo.tap_down.take() {
+        keys.reset(down);
+        if down == KeyCode::KeyR { println!("QUEST_DEBUG_PRESS R released prev={:?}  just_pressed_after_reset={}",
+            down, keys.just_pressed(KeyCode::KeyR)); }
+    }
     // Only press when enough time has passed since the last press (proven 0.35s
     // hold + 0.15s gap is enough for `just_pressed` to register).
     if t - demo.tap_t > TAP_PERIOD {
+        let was_already = keys.pressed(key);
         keys.press(key);
         demo.tap_down = Some(key);
         demo.tap_t = t;
+        if key == KeyCode::KeyR {
+            let n = PRESS_R_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            println!("QUEST_DEBUG_PRESS R pressed at t={:.3} press_count={} was_already_pressed={} just_pressed_now={}",
+                t, n + 1, was_already, keys.just_pressed(KeyCode::KeyR));
+        }
+        if key == KeyCode::KeyE {
+            let n = PRESS_E_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            println!("QUEST_DEBUG_PRESS E pressed at t={:.3} press_count={} was_already_pressed={} just_pressed_now={}",
+                t, n + 1, was_already, keys.just_pressed(KeyCode::KeyE));
+        }
+    } else {
+        // DEBUG: log when press_key is called but TAP_PERIOD hasn't elapsed
+        if key == KeyCode::KeyR {
+            println!("QUEST_DEBUG_PRESS R SKIPPED (tap cooldown) t={:.3} tap_t={:.3} gap={:.3}",
+                t, demo.tap_t, t - demo.tap_t);
+        }
     }
 }
 
@@ -1393,6 +1460,9 @@ fn quest_demo(
     cfg: Res<crate::Cfg>,
 ) {
     if !cfg.quest_demo { return; }
+    // INSTRUMENTATION: bump frame-id at the START so any .after() system
+    // that reads it can prove quest_demo really ran first this frame.
+    demo.demo_frame_id = demo.demo_frame_id.wrapping_add(1);
     let t = time.elapsed_secs();
     let Ok((ptf, php)) = player_q.single() else { return };
 
@@ -1618,14 +1688,32 @@ fn quest_demo(
         }
         let cur = journal.quests.get("q4_what_walls_remember")
             .map(|p| p.current_objective).unwrap_or(0);
+        // ---- DEBUG: trace Phase 4 state every whole second ----
+        let tick = phase_t as u32;
+        if tick > 0 && tick % 2 == 0 && tick != demo.debug_tick {
+            let q4_status = journal.quests.get("q4_what_walls_remember")
+                .map(|p| format!("{:?}/{}", p.status, p.current_objective))
+                .unwrap_or_else(|| "missing".into());
+            println!("QUEST_DEBUG_P4 pt=({:.1},{:.1}) cur={} status={} walking={} t={:.1}",
+                ptf.translation.x, ptf.translation.z, cur, q4_status, fly_q.single().map(|f| f.walking).unwrap_or(false), phase_t);
+            demo.debug_tick = tick;
+        }
         match cur {
             0 => { let (tx, tz) = (50.0, 9.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyR, t); }
                 else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                // DEBUG: log walk progress every second
+                let tick = phase_t as u32;
+                if tick > 0 && tick != demo.debug_tick && tick % 3 == 0 {
+                    println!("QUEST_DEBUG_P4_WALK tx={:.0} tz={:.0} pt=({:.1},{:.1}) dx={:.1} dz={:.1} in_range={}",
+                        tx, tz, ptf.translation.x, ptf.translation.z, dx, dz,
+                        dx.abs() <= 2.0 && dz.abs() <= 2.0);
+                }
                 if phase_t > 25.0 { hands_off!();
-                    println!("QUEST_STAGE_COMPLETE q4 o1_build => FAIL (timeout)"); demo.phase = 99; } }
+                    println!("QUEST_STAGE_COMPLETE q4 o1_build => FAIL (timeout) at ({:.1},{:.1}) cur={}",
+                        ptf.translation.x, ptf.translation.z, cur); demo.phase = 99; } }
             1 => { let (tx, tz) = (46.0, 24.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
