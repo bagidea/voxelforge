@@ -450,8 +450,11 @@ impl Plugin for QuestPlugin {
                     render_objective_tracker,
                     campfire_rest,
                     lore_interact,
-                    check_block_place_triggers,
-                    check_lore_read_triggers,
+                    // These two MUST run after quest_demo so they see keys
+                    // the demo pressed this frame (just_pressed is cleared
+                    // next PreUpdate, so check_* before quest_demo = lost).
+                    check_block_place_triggers.after(quest_demo),
+                    check_lore_read_triggers.after(quest_demo),
                     check_act_end,
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),

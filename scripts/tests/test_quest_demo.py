@@ -15,19 +15,35 @@ import subprocess, sys, os, time, re
 from pathlib import Path
 
 # --- Self-audit: this script must not emit fake PASS lines ---
+# Scan every stdout-writing statement (print / sys.stdout.write / sys.stdout.writelines).
+# If ANY string literal inside one of those calls contains the word "PASS",
+# exit 2 immediately — the harness would be faking game output.  The only
+# exception is the PASS_PATTERNS list definition itself, which holds the
+# patterns we grep *from* the game.
 _SELF = Path(__file__).read_text(encoding="utf-8")
-# Check print() calls only — constants and comments can name PASS patterns.
-_FAKE = False
-for line in _SELF.split("\n"):
+_STDOUT_CALLS = []
+for i, line in enumerate(_SELF.split("\n"), 1):
     s = line.strip()
-    if s.startswith("print(") and ("=> PASS" in s or "=> PASS" in s.replace(" ", "")):
-        _FAKE = True
-if _FAKE:
-    print("SELF_AUDIT FAIL: harness print() contains PASS — would fake results")
+    if any(s.startswith(pfx) for pfx in ("print(", "sys.stdout.write(", "sys.stdout.writelines(")):
+        _STDOUT_CALLS.append((i, s))
+
+_BAD = []
+for lineno, call in _STDOUT_CALLS:
+    # Extract string literals from the call — both single and double-quoted.
+    # Check if any of them contain the forbidden substring.
+    for m in re.finditer(r"""(["'])(?:(?=(\\?))\2.)*?\1""", call):
+        lit = m.group(0)
+        if "PASS" in lit:
+            # Allow PASS_PATTERNS references (variable, not string content).
+            if "PASS_PATTERNS" not in call:
+                _BAD.append((lineno, call[:80]))
+if _BAD:
+    for lineno, call in _BAD:
+        print(f"SELF_AUDIT FAIL line {lineno}: stdout call contains forbidden token — {call}")
     sys.exit(2)
 
 ROOT = Path(__file__).resolve().parents[2]
-BINARY = os.environ.get("VOXELFORGE_BIN", str(ROOT / "target-quest" / "debug" / "voxelforge.exe"))
+BINARY = os.environ.get("VOXELFORGE_BIN", str(ROOT / "target" / "debug" / "voxelforge.exe"))
 
 # --- PASS lines the GAME must emit (not us) ---
 # Each regex matches exactly one line the quest engine writes.
@@ -98,11 +114,11 @@ def main():
     if missing:
         print(f"QUEST_DEMO_PROOF MISSING ({len(missing)}):")
         for m in missing:
-            print(f"  ✗ {m}")
+            print(f"  X {m}")
     if has_final:
-        print(f"QUEST_DEMO_PROOF final_gate: {FINAL_GATE} ✓")
+        print(f"QUEST_DEMO_PROOF final_gate: {FINAL_GATE} OK")
     else:
-        print(f"QUEST_DEMO_PROOF final_gate: {FINAL_GATE} ✗ NOT FOUND")
+        print(f"QUEST_DEMO_PROOF final_gate: {FINAL_GATE} X NOT FOUND")
 
     # Write the full log for human inspection.
     log_path = ROOT / "_quest_proof" / "quest-demo-harness.log"
