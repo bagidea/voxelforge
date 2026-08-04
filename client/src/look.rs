@@ -701,8 +701,18 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
     }
 }
 
-/// Give every 3D camera the post stack for the live [`LookQuality`] tier, and set
-/// the sky and bounce fill for the live [`Hour`].
+/// Give the gameplay (`OrbitCam`) camera the post stack for the live
+/// [`LookQuality`] tier, and set the sky and bounce fill for the live [`Hour`].
+///
+/// WHY `OrbitCam`, NOT `Camera3d`. The VFX lane spawns its own `Camera3d` stage
+/// camera (`vfx.rs`) that is deliberately graded and lit for a VFX still and —
+/// critically — runs WITHOUT TAA, because TAA smears the fast-moving particles
+/// into ghost trails (`vfx.rs` documents that choice on the camera spawn). A
+/// `With<Camera3d>` filter would dress that stage camera with this stack too:
+/// `remove::<LookStack>()` strips its hand-tuned `AcesFitted`/grade/exposure and
+/// `insert_stack()` slaps TAA back on — silently breaking the VFX lane the first
+/// time a `--play` session runs alongside `VOXELFORGE_VFX`. The gameplay camera
+/// is the only `OrbitCam`, so filtering on it is exact.
 ///
 /// Compares the tier stamped on the camera (`LookApplied`) to the live resource
 /// each frame: equal ⇒ skip (steady state is one enum compare per camera, no
@@ -714,7 +724,7 @@ fn apply_look_to_cameras(
     mut commands: Commands,
     quality: Res<LookQuality>,
     mut clear: ResMut<ClearColor>,
-    mut q: Query<(Entity, Option<&LookApplied>, Option<&mut AmbientLight>), With<Camera3d>>,
+    mut q: Query<(Entity, Option<&LookApplied>, Option<&mut AmbientLight>), With<crate::OrbitCam>>,
 ) {
     for (cam, applied, ambient) in &mut q {
         if applied.is_some_and(|a| a.0 == *quality) {
