@@ -239,6 +239,17 @@ pub struct Rigged;
 #[derive(Component)]
 pub struct Joint;
 
+/// Marks the weapon mesh entity riding in a rig's `hand_r` joint — the blade
+/// that is actually drawn, as opposed to any other lane's own placeholder
+/// (e.g. `combat::HuskArm`, which `attach_rigs` hides the moment a rig lands
+/// on that actor). Other lanes (the VFX bridge) attach effects — a swing
+/// trail — to this entity so the ribbon follows the blade the player really
+/// sees, not a proxy with its own, slightly different arc.
+#[derive(Component, Clone, Copy)]
+pub struct RigWeapon {
+    pub actor: Actor,
+}
+
 /// The rig root — one child entity per actor, holding the joint handles and all
 /// the animation state. Everything below it is pure decoration.
 #[derive(Component)]
@@ -659,12 +670,13 @@ fn build_rig(
         Actor::Player => 0.86,
         Actor::Husk => 1.05,
     };
-    skin(
-        &p.weapon,
-        &p.steel,
+    commands.spawn((
+        Mesh3d(p.weapon.clone()),
+        MeshMaterial3d(p.steel.clone()),
         Transform::from_xyz(0.0, -blade_len * 0.5 + 0.06, -0.04),
-        hand_r,
-    );
+        ChildOf(hand_r),
+        RigWeapon { actor },
+    ));
 
     let rig = Rig {
         actor,
