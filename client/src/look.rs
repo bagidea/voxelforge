@@ -193,8 +193,37 @@ pub struct Hour {
     /// gate G6) and leaves the flat sky clear alone. A white-balance matrix
     /// cannot tell those two apart — that was the 2026-08-01 magenta bug.
     pub key: [f32; 3],
-    /// Sky / `ClearColor`, sRGB.
+    /// Sky / `ClearColor` HUE, sRGB. Scaled by [`Self::sky_gain`] into the
+    /// scene-referred radiance actually written to the target.
     pub sky: [f32; 3],
+    /// Scene-referred gain on [`Self::sky`], applied in LINEAR space, in units
+    /// where 1.0 is the tonemapper's white.
+    ///
+    /// WHY THIS EXISTS. `ClearColor` is written straight into the camera's HDR
+    /// target and — unlike every lit surface — never passes through `Exposure`.
+    /// Authored at sRGB `[0.36, 0.60, 0.90]` the sky's brightest channel lands
+    /// at linear 0.79, i.e. UNDER the `Bloom` prefilter threshold of 1.0 (see
+    /// [`base_camera_look`]), so the sky could never bloom and the tonemapper
+    /// only ever had a sub-white value to roll off — a flat LDR plate pasted
+    /// behind an HDR scene. Anything above `1/0.79 = 1.27` gives bloom and the
+    /// tonemap actual range to work on.
+    ///
+    /// Bounded ABOVE by gate G5, not by taste: `grade_gate.py` finds the window
+    /// as the brightest NEAR-NEUTRAL pixel (`|R-B| <= 45`). Push the sky until
+    /// all three channels clip and it goes achromatic white, captures that
+    /// locator, and G5's 3-point gradient then samples a flat clear colour —
+    /// spread 0, FAIL. 2.4 puts blue at linear 1.89 (blooms) while red and
+    /// green stay under 1.0, so the halo keeps the sky's own hue.
+    ///
+    /// The VALUE is set by the P0 highlight-p95 axis, because this — not
+    /// `ev100` — is the lever that moves it: p95 is a GLOBAL percentile and the
+    /// sky is the largest bright region in a vista frame, so an un-exposed sky
+    /// pins it. Measured on the vista frame, holding the sky and sweeping
+    /// exposure 11.0 -> 10.7 left p95 at 117.8 UNCHANGED; holding exposure at
+    /// 10.8 and lifting the gain moved it 117.8 -> 162.8 (2.4) -> 174.5 (3.0)
+    /// -> 215.9. 2.4 lands on the golden ref's own 165.8; 3.0 clears the 185
+    /// ceiling by only 10.5, thin for a framing showing more sky than this one.
+    pub sky_gain: f32,
     /// Bounce-fill (`AmbientLight`) colour, sRGB — the axis that moves the
     /// *midtone* numbers, since midtones are open shade and bounce, not the
     /// sunlit wedge.
@@ -217,9 +246,24 @@ impl Hour {
         illuminance: 11_000.0,
         key: [1.00, 0.84, 0.62],
         sky: [0.36, 0.60, 0.90],
+        sky_gain: 2.4,
         ambient: [0.96, 0.84, 0.66],
         ambient_lux: 1100.0,
-        ev100: 11.0,
+        // 11.0 was this lane's own value and it cost 1.3 stops against Bevy's
+        // implicit `Exposure::BLENDER` (9.7): measured on the vista frame it
+        // held the brightest sunlit patch at RGB(209,124,55), L=53.9, under
+        // G6's `L >= 55` sunlit floor. Exposure is the ONLY axis that moves
+        // that patch — `sky_gain` above barely touches it (L 53.9 -> 54.5
+        // across the whole usable gain range), so the sunlit floor is this
+        // number's job alone.
+        //
+        // 10.8, not 9.7: 9.7 overshoots to L=69.9 but bleaches the frame's
+        // identity getting there — the same patch goes (241,167,108), R-B 133
+        // against the shipped 155, and the window's G5 gradient spread collapses
+        // 56.7 -> 35.8. 10.8 clears the floor at L=57.1 with R-B 151 and spread
+        // 53.6: the gate is passed without spending the golden-hour warmth that
+        // G6's own hue clause exists to protect.
+        ev100: 10.8,
         fog: FOG_COLOR_DAY,
     };
 
@@ -233,6 +277,11 @@ impl Hour {
         illuminance: 260.0,
         key: [0.55, 0.66, 0.95],
         sky: [0.03, 0.05, 0.12],
+        // Deliberately 1.0, i.e. stays LDR. The whole point of a night frame is
+        // that lanterns and the campfire are the ONLY things above the bloom
+        // threshold; giving the night sky HDR headroom would light a halo
+        // around the skyline and undo it.
+        sky_gain: 1.0,
         ambient: [0.42, 0.52, 0.78],
         ambient_lux: 90.0,
         ev100: 7.5,
@@ -745,7 +794,16 @@ fn apply_look_to_cameras(
         // is set here, alongside the sun and the fill, because a sky that
         // disagrees with the key light is the single most obvious way a frame
         // reads fake.
-        clear.0 = Color::srgb(h.sky[0], h.sky[1], h.sky[2]);
+        // Authored as an sRGB hue, written as scene-referred LINEAR radiance:
+        // `ClearColor` lands in the HDR target un-exposed, so the gain is the
+        // only thing that can put the sky above the bloom threshold. See
+        // [`Hour::sky_gain`].
+        let sky = Color::srgb(h.sky[0], h.sky[1], h.sky[2]).to_linear();
+        clear.0 = Color::linear_rgb(
+            sky.red * h.sky_gain,
+            sky.green * h.sky_gain,
+            sky.blue * h.sky_gain,
+        );
         // Tint AND power the camera's bounce fill. Colour is the midtone half of
         // the frame's warmth (the half that used to come out of the white-balance
         // matrix — that was the magenta bug); brightness has to move with it,

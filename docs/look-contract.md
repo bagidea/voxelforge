@@ -82,7 +82,7 @@ FOG_START = 0.35 × R
 |---|---|---|
 | Tonemapping | **`TonyMcMapface`** | ดูข้อ 4 |
 | ColorGrading | temp 0.02 · sat 1.05 · midtone contrast 1.12 · highlight gain 0.86 · shadows neutral | ความอุ่นมาจาก "ไฟ" ไม่ใช่ white-balance matrix (บทเรียน magenta 2026-08-01) |
-| Exposure | **ev100 = 11.0** | แดด 11,000 lux golden-hour |
+| Exposure | **ev100 = 10.8** | แดด 11,000 lux golden-hour. 11.0 เดิมมืดไป 1.3 stop จาก `Exposure::BLENDER` (9.7) — วัดบนเฟรม vista: patch แดดสว่างสุด L=53.9 ต่ำกว่า floor G6 ที่ 55. 9.7 ดันขึ้น L=69.9 ก็จริงแต่ซีด (R−B 133 จาก 155, G5 spread 56.7→35.8); **10.8** ผ่าน floor ที่ L=57.1 โดยยังเหลือความอุ่น (R−B 151, spread 53.6) |
 | Bloom | intensity 0.18 · **prefilter threshold 1.0 / softness 0.4** | ฟุ้งเฉพาะสิ่งที่สว่างเกิน 1.0 ใน HDR = โคมไฟ/ไฟ/emissive/แดดในกระจก เท่านั้น |
 | MSAA | **Off** | SSAO บังคับ + ขอบ voxel เป็น 90° ไม่มี jaggy ให้ลบ |
 | TAA | on ตั้งแต่ Medium ขึ้นไป | SSAO/เงา temporal เป็น stochastic ต้องมีตัวสะสม |
@@ -142,10 +142,10 @@ DOF โฟกัสใกล้เป็นภาษาของ "ภาพน�
 | azimuth | 205° | 205° |
 | illuminance | 11,000 lux | 260 lux (แสงจันทร์) |
 | สีแดด | `srgb(1.00, 0.84, 0.62)` | `srgb(0.55, 0.66, 0.95)` |
-| ClearColor (ฟ้า) | `srgb(0.36, 0.60, 0.90)` | `srgb(0.03, 0.05, 0.12)` |
+| ClearColor (ฟ้า) | hue `srgb(0.36, 0.60, 0.90)` × **sky_gain 2.4** (linear) | hue `srgb(0.03, 0.05, 0.12)` × **sky_gain 1.0** |
 | AmbientLight สี | `srgb(0.96, 0.84, 0.66)` | `srgb(0.42, 0.52, 0.78)` |
 | AmbientLight brightness | 1100 lux | 90 lux |
-| Exposure ev100 | 11.0 | 7.5 |
+| Exposure ev100 | 10.8 | 7.5 |
 
 `illuminance` / มุมแดด / ClearColor เดิมเป็นของ `main.rs` (9000 lux, ดวงอาทิตย์สูง 59°,
 ฟ้าซีด 0.53/0.72/0.92). ตอนนี้ **ลานลุคเป็นคนเซ็ต** เพราะ "แดดเฉียง golden-hour" คือ
