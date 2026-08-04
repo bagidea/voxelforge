@@ -20,6 +20,7 @@ mod editor_config;
 mod editor_ui;
 mod gizmo;
 mod hero;
+mod hud;
 mod import;
 mod look;
 mod mapfile;
@@ -464,6 +465,10 @@ fn main() {
             .add_plugins(look::LookPlugin)
             .add_plugins(settings_menu::SettingsPlugin)
             .add_plugins(streaming::StreamingPlugin)
+            // Combat HUD (Monanisa's lane, docs/hud-design.md Option A). Reads
+            // combat::{Health,Stamina,LockOn} and quest::ObjectiveText only —
+            // self-wiring, doesn't touch either file.
+            .add_plugins(hud::HudPlugin)
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
             .insert_resource(Editor {
@@ -606,7 +611,7 @@ fn spawn_encounter(
         tf.translation.z - dist,
         None,
     );
-    combat::spawn_combat_hud(&mut commands);
+    hud::spawn_hud(&mut commands);
     println!("SPAWN_ENCOUNTER husk {dist} blocks in front of the player");
 }
 
@@ -620,6 +625,7 @@ fn despawn_encounter(
     hbars: Query<Entity, With<combat::HealthBar>>,
     sbars: Query<Entity, With<combat::StaminaBar>>,
     reticles: Query<Entity, With<combat::LockReticle>>,
+    hud_roots: Query<Entity, With<hud::HudRoot>>,
 ) {
     let mut n = 0;
     for e in enemies
@@ -627,6 +633,7 @@ fn despawn_encounter(
         .chain(hbars.iter())
         .chain(sbars.iter())
         .chain(reticles.iter())
+        .chain(hud_roots.iter())
     {
         commands.entity(e).despawn();
         n += 1;
