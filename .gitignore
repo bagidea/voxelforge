@@ -136,7 +136,9 @@ _*.json
 /_quarantine_steamworks/
 
 # One-shot review scripts (Python / PowerShell) — same convention as scripts/_*.sh
-/scripts/_*.py
+# `_[!_]*.py` (not `_*.py`) so it doesn't also swallow dunder package files
+# like scripts/__init__.py / scripts/__main__.py.
+/scripts/_[!_]*.py
 /scripts/_*.ps1
 
 # Steam capsule review proof images (Flamingo, 2026-08-01)
@@ -151,3 +153,20 @@ _*.json
 /_rose_*/
 # Kevin's CARGO_TARGET_DIR — the `target-<lane>` convention above missed the name.
 /target-kevin/
+
+# ── Blanket catch-alls (2026-08-05) ──────────────────────────
+# The per-lane entries above are added one name at a time and keep missing
+# new lanes (target-flamingo/, target-monanisa/ both leaked in as untracked
+# before this rule existed). Blanket rules so no lane's scratch — any
+# extension, any depth — needs its own line ever again. Evidence stays on
+# disk; it's just never tracked. Do NOT delete anyone else's files under
+# these patterns — ignoring is not deleting.
+target-*/
+_*/
+# `_[!_]*.py` (not `_*.py`) so a python package's __init__.py/__main__.py
+# under scripts/ (or anywhere) never gets silently ignored.
+_[!_]*.py
+_*.sh
+_*.ps1
+_*.marker
+_*.patch
