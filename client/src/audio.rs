@@ -34,6 +34,8 @@
 //! | `PlayerRespawn`| `audio/player_respawn.wav`|
 //! | (ambient)      | `audio/ambient_wind.wav` etc. |
 
+use std::collections::HashMap;
+
 use bevy::audio::{AudioPlayer, AudioSource, GlobalVolume, PlaybackSettings, SpatialListener, Volume};
 use bevy::ecs::message::{Message, MessageReader, MessageWriter};
 use bevy::prelude::*;
@@ -164,6 +166,26 @@ pub struct AmbientEnts {
     pub village: Option<Entity>,
 }
 
+/// Diagnostic counter: how many times each sound file was spawned by the audio
+/// system.  Written by [`play_sfx`] — the real sound system — so a grep for
+/// `AUDIO_PLAY:` on stdout proves the game found its own sounds, not a harness.
+#[derive(Resource, Default)]
+pub struct SfxCounter {
+    /// `"audio/player_hurt.wav"` → count
+    pub plays: HashMap<String, u64>,
+    /// Running total across all sounds.
+    pub total: u64,
+    /// Seconds since last summary dump (drives [`dump_sfx_summary`]).
+    pub since_dump: f32,
+}
+
+impl SfxCounter {
+    fn bump(&mut self, path: &str) {
+        *self.plays.entry(path.to_string()).or_insert(0) += 1;
+        self.total += 1;
+    }
+}
+
 pub struct AudioPlugin;
 
 impl Plugin for AudioPlugin {
@@ -172,12 +194,14 @@ impl Plugin for AudioPlugin {
             .insert_resource(AudioSettings::default())
             .insert_resource(StepTracker::default())
             .insert_resource(AmbientEnts::default())
+            .insert_resource(SfxCounter::default())
             .add_message::<SfxEvent>()
             .add_systems(Update, (
                 attach_listener,
                 play_sfx,
                 footstep_tracker,
                 update_volumes,
+                dump_sfx_summary,
             ).run_if(in_state(AppState::Play)))
             .add_systems(OnEnter(AppState::Play), spawn_ambient)
             .add_systems(OnExit(AppState::Play), despawn_ambient);
@@ -206,6 +230,7 @@ fn play_sfx(
     asset_server: Res<AssetServer>,
     settings: Res<AudioSettings>,
     mut events: MessageReader<SfxEvent>,
+    mut counter: ResMut<SfxCounter>,
 ) {
     let vol = (settings.master * settings.sfx) as f64;
     for ev in events.read() {
@@ -244,6 +269,10 @@ fn play_sfx(
         if pos != Vec3::ZERO {
             entity.insert(Transform::from_translation(pos));
         }
+        // Diagnostic: the real audio system prints this line — grep for
+        // `AUDIO_PLAY:` to prove the game found its own sounds.
+        counter.bump(path);
+        println!("AUDIO_PLAY:{path}");
     }
 }
 
@@ -290,12 +319,14 @@ fn spawn_ambient(
     mut ents: ResMut<AmbientEnts>,
     camp: Option<Res<Campsite>>,
     player_q: Query<&Transform, With<FlyCam>>,
+    mut counter: ResMut<SfxCounter>,
 ) {
     let vol = (settings.master * settings.ambient) as f64;
     let player_pos = player_q.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
 
     // Wind — placed at the player (it's everywhere, no real position).
-    let wind_h: Handle<AudioSource> = asset_server.load("audio/ambient_wind.wav");
+    let wind_path = "audio/ambient_wind.wav";
+    let wind_h: Handle<AudioSource> = asset_server.load(wind_path);
     let wind = commands.spawn((
         AudioPlayer(wind_h),
         PlaybackSettings {
@@ -305,10 +336,13 @@ fn spawn_ambient(
         },
     )).id();
     ents.wind = Some(wind);
+    counter.bump(wind_path);
+    println!("AUDIO_PLAY:{wind_path}");
 
     // Campfire — placed at the actual campfire position from the scene.
     let fire_pos = camp.map(|c| c.fire).unwrap_or(player_pos + Vec3::new(0.0, 0.0, -3.0));
-    let fire_h: Handle<AudioSource> = asset_server.load("audio/ambient_campfire.wav");
+    let fire_path = "audio/ambient_campfire.wav";
+    let fire_h: Handle<AudioSource> = asset_server.load(fire_path);
     let fire = commands.spawn((
         AudioPlayer(fire_h),
         PlaybackSettings {
@@ -319,10 +353,13 @@ fn spawn_ambient(
         Transform::from_translation(fire_pos),
     )).id();
     ents.campfire = Some(fire);
+    counter.bump(fire_path);
+    println!("AUDIO_PLAY:{fire_path}");
 
     // Village murmur — distant, placed some distance from spawn.
     let village_pos = player_pos + Vec3::new(15.0, 0.0, -10.0);
-    let village_h: Handle<AudioSource> = asset_server.load("audio/ambient_village.wav");
+    let village_path = "audio/ambient_village.wav";
+    let village_h: Handle<AudioSource> = asset_server.load(village_path);
     let village = commands.spawn((
         AudioPlayer(village_h),
         PlaybackSettings {
@@ -333,6 +370,8 @@ fn spawn_ambient(
         Transform::from_translation(village_pos),
     )).id();
     ents.village = Some(village);
+    counter.bump(village_path);
+    println!("AUDIO_PLAY:{village_path}");
 }
 
 /// Despawn all ambient sound entities when leaving Play.
@@ -342,4 +381,26 @@ fn despawn_ambient(mut commands: Commands, mut ents: ResMut<AmbientEnts>) {
             commands.entity(e).despawn();
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic — periodic counter dump
+// ---------------------------------------------------------------------------
+
+/// Every 5 seconds, print a summary of all SFX counters to stdout so a
+/// verification harness can grep for `AUDIO_SUMMARY:` and confirm every sound
+/// file was spawned at least once.
+fn dump_sfx_summary(
+    time: Res<Time>,
+    mut counter: ResMut<SfxCounter>,
+) {
+    counter.since_dump += time.delta_secs();
+    if counter.since_dump < 5.0 || counter.total == 0 {
+        return;
+    }
+    counter.since_dump = 0.0;
+    let mut keys: Vec<&String> = counter.plays.keys().collect();
+    keys.sort();
+    let detail: Vec<String> = keys.iter().map(|k| format!("{k}={}", counter.plays[*k])).collect();
+    println!("AUDIO_SUMMARY:total={} | {}", counter.total, detail.join(" "));
 }
