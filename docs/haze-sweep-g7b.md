@@ -90,9 +90,12 @@ already a closed question regardless.
 Apparatus: `python scripts/_rose_haze_delta.py --ab <off> <on...>`, baseline
 `_flamingo_g7b/hazeoff-nohud2.png` (`VOXELFORGE_LOOK_HAZE=0`), pinned camera
 `VOXELFORGE_LOOK_CAM=35,-18,26`, de-HUD'd (`-nohud2`). Frames are Flamingo's G7b shoot; the
-delta math is mine. Per-band = luminance |ΔL| on row-thirds (far = top, near = bottom).
+delta math is mine. Per-band = luminance |ΔL| on row-thirds (far = top, near = bottom), **not
+sky-masked** — so the per-band columns are a *different metric* from the A2 ratio column, which
+is Flamingo's `grade_g7.py` (max-channel |Δ| on a sky-masked far band, 18% of rows); see ¹.
+They are not meant to divide to the A2 ratio.
 
-| label | env override | net\|ΔL\| | %≥5 | far mean/%≥5 | mid mean/%≥5 | near mean/%≥5 | A2 (a2.log) |
+| label | env override | net\|ΔL\| | %≥5 | far mean/%≥5 | mid mean/%≥5 | near mean/%≥5 | A2 ratio¹ (grade_g7) |
 |---|---|---|---|---|---|---|---|
 | hazeoff | `HAZE=0` (baseline) | 0 | 0 | — | — | — | — |
 | **ship** | default `20,250` | **3.32** | **28.3** | 5.71 / 46.8 | 4.12 / 37.7 | **0.10 / 0.1** | PASS (ratio 274) |
@@ -104,6 +107,16 @@ delta math is mine. Per-band = luminance |ΔL| on row-thirds (far = top, near = 
 | ssaooff | `SSAO=off` | 3.42 | 28.9 | 5.76 / 47.1 | 4.28 / 39.3 | 0.20 / 0.2 | PASS (78) |
 | g7curve | `HAZE=0.0072` (old G7 ExpSq) | 4.58 | 36.4 | 5.56 / 46.8 | 5.41 / 49.4 | **2.75 / 12.8** | **FAIL (2.33)** |
 | g7full | `HAZE=0.0072;DESAT=0.40` | 3.86 | 30.7 | 4.54 / 42.1 | 4.76 / 42.2 | **2.26 / 7.7** | **FAIL (2.35)** |
+
+> ¹ **Two harnesses share this table — do not divide the per-band columns to get the A2 ratio.**
+> The `net|ΔL|`, `%≥5`, and `far/mid/near mean` columns are Rose's `_rose_haze_delta.py`: Rec709
+> **luminance** |ΔL| on row-thirds, **no sky mask**. The `A2 ratio` column is Flamingo's
+> [grade_g7.py](../scripts/grade_g7.py) axis A2: **max-channel** |Δ| on a **sky-masked far band**
+> (top 18% of rows). On `ship` that is the whole difference: far 5.71 / near 0.10 here (luminance,
+> unmasked = **57×**) vs far **48.35** / near **0.18** in `_flamingo_g7b/a2.log` (max-channel,
+> sky-free = **274×**). The two ratios disagree because they are different metrics on different
+> masks, not because either number is wrong; both are reported so each reproduces from its own
+> harness.
 
 Read it top-to-bottom:
 
@@ -163,9 +176,14 @@ is already graded (AO bite, god rays, G7 axis A2). The targets exist, are in
 
 | differential target | threshold | shipped `ship` | source |
 |---|---|---|---|
-| far-band mean \|Δ\| (depth proof) | ≥ 6.0 | **48.4** ✓ | grade_g7.py `T_FAR_DELTA`, a2.log |
-| far/near depth ratio | ≥ 2.5 | **274** ✓ | grade_g7.py `T_DEPTH_RATIO` |
-| near-band mean \|ΔL\| (dead zone) | ≤ 1.0 | **0.18** ✓ | this file §2 |
+| far-band mean \|Δ\| (maxCh, sky-masked) | ≥ 6.0 | **48.4** ✓ | grade_g7.py `T_FAR_DELTA` → a2.log |
+| far/near depth ratio (maxCh, sky-masked) | ≥ 2.5 | **274** ✓ | grade_g7.py `T_DEPTH_RATIO` → a2.log |
+| near-band mean \|Δ\| (maxCh) | ≤ 1.0 | **0.18** ✓ | grade_g7.py axis A2 → a2.log |
+
+All three rows are the [grade_g7.py](../scripts/grade_g7.py) A2 harness — max-channel Δ on a
+sky-masked far band — which is the gate authority. They are a *different metric* from §2's
+per-band columns (luminance Δ on unmasked row-thirds): the `ship` near-band reads **0.10** in §2
+and **0.18** here, and both pass the dead-zone target.
 
 This is "derived from reality" in the only honest sense available: the reference frame for an
 A/B layer is the same scene with the layer lifted, not an unrelated indoor photograph.
