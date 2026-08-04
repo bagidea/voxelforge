@@ -438,6 +438,9 @@ impl Plugin for QuestPlugin {
             .add_systems(
                 Update,
                 (
+                    // INPUT_TRACE: snapshot just_pressed(R) BEFORE quest_demo injects.
+                    // Ordering: before quest_demo → captures baseline state.
+                    input_trace_before_inject.before(quest_demo),
                     quest_demo
                         .before(npc_interact)
                         .before(combat::gather_input)
@@ -459,6 +462,9 @@ impl Plugin for QuestPlugin {
                     // next PreUpdate, so check_* before quest_demo = lost).
                     check_block_place_triggers.after(quest_demo),
                     check_lore_read_triggers.after(quest_demo),
+                    // INPUT_TRACE: snapshot just_pressed(R) AFTER the handler.
+                    // Proves flag survived the full pipeline to end-of-frame.
+                    input_trace_after_handler.after(check_block_place_triggers),
                     check_act_end,
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),
@@ -1213,6 +1219,38 @@ fn lore_interact(
 /// INSTRUMENTATION (diagnose-synthetic-input): atomic counter tracking how many
 /// times the handler SAW the press (should match PRESS_R_COUNT if no consumption).
 static DETECT_R_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// INSTRUMENTATION (q4-diagnose): snapshot just_pressed(R) BEFORE quest_demo
+/// injects synthetic keys. This is the baseline — should be false unless a
+/// real keyboard press or stale flag survived from the previous frame.
+fn input_trace_before_inject(
+    keys: Res<ButtonInput<KeyCode>>,
+    demo: Res<QuestDemo>,
+) {
+    let r_jp = keys.just_pressed(KeyCode::KeyR);
+    let r_held = keys.pressed(KeyCode::KeyR);
+    let all_jp: Vec<String> = keys.get_just_pressed()
+        .map(|k| format!("{:?}", k)).collect();
+    println!("INPUT_TRACE BEFORE inject  R_just_pressed={} R_held={} jp=[{}] demo_fid={}",
+        r_jp, r_held, all_jp.join(","), demo.demo_frame_id);
+}
+
+/// INSTRUMENTATION (q4-diagnose): snapshot just_pressed(R) AFTER
+/// check_block_place_triggers ran. If the handler consumed the flag
+/// (by reading just_pressed), Bevy still reports true — just_pressed
+/// is only cleared at PreUpdate of the NEXT frame. This confirms
+/// the flag survived the full pipeline.
+fn input_trace_after_handler(
+    keys: Res<ButtonInput<KeyCode>>,
+    demo: Res<QuestDemo>,
+) {
+    let r_jp = keys.just_pressed(KeyCode::KeyR);
+    let r_held = keys.pressed(KeyCode::KeyR);
+    let all_jp: Vec<String> = keys.get_just_pressed()
+        .map(|k| format!("{:?}", k)).collect();
+    println!("INPUT_TRACE AFTER  handler R_just_pressed={} R_held={} jp=[{}] demo_fid={}",
+        r_jp, r_held, all_jp.join(","), demo.demo_frame_id);
+}
 
 fn check_block_place_triggers(
     keys: Res<ButtonInput<KeyCode>>,
