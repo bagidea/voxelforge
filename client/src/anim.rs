@@ -670,13 +670,19 @@ fn build_rig(
         Actor::Player => 0.86,
         Actor::Husk => 1.05,
     };
-    commands.spawn((
-        Mesh3d(p.weapon.clone()),
-        MeshMaterial3d(p.steel.clone()),
-        Transform::from_xyz(0.0, -blade_len * 0.5 + 0.06, -0.04),
-        ChildOf(hand_r),
-        RigWeapon { actor },
-    ));
+    let weapon_entity = commands
+        .spawn((
+            Mesh3d(p.weapon.clone()),
+            MeshMaterial3d(p.steel.clone()),
+            Transform::from_xyz(0.0, -blade_len * 0.5 + 0.06, -0.04),
+            ChildOf(hand_r),
+            RigWeapon { actor },
+        ))
+        .id();
+    // Proof marker for docs/anim-events.md's checklist — one line per rig built
+    // (edge-triggered by `attach_rigs`'/`spawn_husk_corpse`'s `Without<Rigged>`/
+    // `Without<Dying>` filters, never per-frame), so this is cheap to leave in.
+    println!("ANIM_RIG_WEAPON spawn actor={actor:?} entity={weapon_entity:?}");
 
     let rig = Rig {
         actor,

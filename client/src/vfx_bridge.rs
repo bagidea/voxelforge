@@ -241,6 +241,10 @@ fn attach_rig_weapon_trail(
             Actor::Husk => HUSK_BLADE_HALF,
         };
         commands.entity(weapon).insert(SwingTrail { hot: false, half, accum: 0.0 });
+        // Proof marker for docs/anim-events.md's checklist — fires once per weapon
+        // entity (the `Without<SwingTrail>` filter drops it out of this query the
+        // very next frame), never per-frame.
+        println!("VFX_RIG_WEAPON_TRAIL attach actor={:?} entity={weapon:?}", rig_weapon.actor);
     }
 }
 
@@ -261,6 +265,10 @@ fn drive_rig_weapon_trail(
         for (rig_weapon, mut trail) in &mut weapons {
             if rig_weapon.actor == s.actor {
                 trail.hot = hot;
+                // Proof marker for docs/anim-events.md's checklist — `AnimSwing` is
+                // already edge-detected (fires once per phase entry in anim.rs), so
+                // this is once per swing phase, not per-frame.
+                println!("VFX_SWING_TRAIL hot={hot} actor={:?} phase={:?}", s.actor, s.phase);
             }
         }
     }
