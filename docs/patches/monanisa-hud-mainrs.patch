@@ -1,0 +1,88 @@
+--- a/client/src/main.rs
++++ b/client/src/main.rs
+@@ -318,6 +318,12 @@
+ #[derive(Component)]
+ struct HudText;
+ 
++/// Whether the debug overlay (FPS/chunks/quads/mode/control-hints line) is
++/// shown. Hidden by default — F3 toggles it (`toggle_debug_overlay`) so the
++/// always-on debug text doesn't sit on top of the real HUD during play.
++#[derive(Resource, Default)]
++struct DebugOverlay(bool);
++
+ /// Drives the ramp benchmark: grows the visible grid every phase and records the
+ /// median FPS for each chunk count.
+ #[derive(Resource)]
+@@ -387,7 +393,8 @@
+         took_shot: false,
+         shot: cfg.shot.clone(),
+         log: String::new(),
+-    });
++    })
++    .init_resource::<DebugOverlay>();
+ 
+     if cfg.hero {
+         // A 4K directional shadow map gives the PCSS penumbra enough texels to
+@@ -519,6 +526,7 @@
+                     map_save_demo,
+                     editor_paint_demo,
+                     egui_save_load,
++                    toggle_debug_overlay,
+                     hud,
+                     bench_ramp,
+                     screenshot_once,
+@@ -856,7 +864,8 @@
+         commands.entity(cam).insert(look::base_camera_look());
+     }
+ 
+-    // HUD.
++    // Debug overlay (FPS/chunks/quads/mode/control-hints) — hidden until F3
++    // (`toggle_debug_overlay`); the real HUD (combat.rs) is what shows always.
+     commands.spawn((
+         Text::new("booting…"),
+         TextFont {
+@@ -870,6 +879,7 @@
+             left: Val::Px(10.0),
+             ..default()
+         },
++        Visibility::Hidden,
+         HudText,
+     ));
+ 
+@@ -2470,6 +2480,15 @@
+     }
+ }
+ 
++/// F3 toggles the debug overlay on/off. A bare `KeyCode::F3` check, same
++/// pattern as the existing F5/F7/F9 shortcuts — this isn't a rebindable
++/// `EditorAction`, it's a dev/QA overlay.
++fn toggle_debug_overlay(keys: Res<ButtonInput<KeyCode>>, mut overlay: ResMut<DebugOverlay>) {
++    if keys.just_pressed(KeyCode::F3) {
++        overlay.0 = !overlay.0;
++    }
++}
++
+ fn hud(
+     diagnostics: Res<bevy::diagnostic::DiagnosticsStore>,
+     world: Option<Res<World>>,
+@@ -2477,7 +2496,8 @@
+     editor: Res<Editor>,
+     selected_block: Res<editor::SelectedBlock>,
+     fly: Query<&FlyCam>,
+-    mut q: Query<&mut Text, With<HudText>>,
++    overlay: Res<DebugOverlay>,
++    mut q: Query<(&mut Text, &mut Visibility), With<HudText>>,
+ ) {
+     let fps = diagnostics
+         .get(&FrameTimeDiagnosticsPlugin::FPS)
+@@ -2523,8 +2543,9 @@
+             "FPS {fps:.0}  |  chunks {chunks}  |  quads {quads}  |  [{editmode}/{movemode}] {ctrls}  |  Tab=mode G=fill F5=save F9=load{status}"
+         )
+     };
+-    if let Ok(mut text) = q.single_mut() {
++    if let Ok((mut text, mut vis)) = q.single_mut() {
+         text.0 = line;
++        *vis = if overlay.0 { Visibility::Visible } else { Visibility::Hidden };
+     }
+ }
+ 

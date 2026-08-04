@@ -1,0 +1,185 @@
+diff --git a/client/src/combat.rs b/client/src/combat.rs
+index 2aa030a..c6c2bf1 100644
+--- a/client/src/combat.rs
++++ b/client/src/combat.rs
+@@ -1174,24 +1174,51 @@ pub fn spawn_guard_husk(
+         });
+ }
+ 
++// ===========================================================================
++// HUD theme — docs/hud-design.md §2 (4 tokens pulled verbatim from
++// look-bible.md §4 / character-bible.md §1, 4 mixed to extend the same warm
++// family — see that section for which is which). Zero teal spent here per §0.
++// ===========================================================================
++const HUD_PANEL_BG: Color = Color::srgba_u8(0x1A, 0x12, 0x0D, 224); // ~88% opacity
++const HUD_PANEL_BORDER: Color = Color::srgb_u8(0x3A, 0x27, 0x16);
++const HUD_HP_FILL: Color = Color::srgb_u8(0x96, 0x36, 0x2C);
++const HUD_HP_HILITE: Color = Color::srgb_u8(0xC4, 0x58, 0x3A);
++const HUD_STAMINA_FILL: Color = Color::srgb_u8(0xE8, 0xA9, 0x4E);
++const HUD_STAMINA_HILITE: Color = Color::srgb_u8(0xFF, 0xD9, 0x8A);
++const HUD_TEXT_CREAM: Color = Color::srgb_u8(0xE8, 0xD8, 0xB8);
++const HUD_ACCENT_AMBER: Color = Color::srgb_u8(0xF4, 0xB8, 0x60);
++const HUD_SEGMENT_LINE: Color = Color::srgba_u8(0x3A, 0x27, 0x16, 179); // ~70% opacity
++
++const HUD_BAR_LEFT: f32 = 28.0;
++const HUD_BAR_WIDTH: f32 = 200.0;
++const HUD_BAR_HEIGHT: f32 = 14.0;
++const HUD_BAR_GAP: f32 = 4.0;
++const HUD_BAR_MARGIN_BOTTOM: f32 = 28.0;
++const HUD_STAMINA_BOTTOM: f32 = HUD_BAR_MARGIN_BOTTOM;
++const HUD_HP_BOTTOM: f32 = HUD_BAR_MARGIN_BOTTOM + HUD_BAR_HEIGHT + HUD_BAR_GAP;
++
+ /// Spawn the two HUD bars (health, stamina) + numeric readouts + the lock-on reticle.
+-/// Called from `setup`. Kept as absolute-positioned Nodes whose fill width is driven
+-/// by `hud_bars` and whose text labels are updated by `hud_numbers`.
++/// Called from `setup`. Styled + positioned per `docs/hud-design.md` Option A
++/// (corner-minimal, bottom-left) — a translucent espresso plaque per bar with a
++/// carved-inlay hilite and 25/50/75% segment ticks, not a flat opaque box (§0).
++/// Fill width is driven by `hud_bars`; text labels are updated by `hud_numbers`.
+ pub fn spawn_combat_hud(commands: &mut Commands) {
+-    // Health bar (top-left, under the debug text).
+-    bar(commands, 34.0, Color::srgb(0.82, 0.20, 0.18), HealthBarTag::Health);
+-    // Stamina bar just below it.
+-    bar(commands, 50.0, Color::srgb(0.30, 0.78, 0.36), HealthBarTag::Stamina);
++    // Stamina sits screen-bottom-most; health stacks 4px above it (§3).
++    bar(commands, HUD_STAMINA_BOTTOM, HUD_STAMINA_FILL, HUD_STAMINA_HILITE, HealthBarTag::Stamina);
++    bar(commands, HUD_HP_BOTTOM, HUD_HP_FILL, HUD_HP_HILITE, HealthBarTag::Health);
+ 
+-    // Numeric readouts to the right of each bar.
+-    text_tag(commands, 30.0, "HP: 100/100", HealthText);
+-    text_tag(commands, 46.0, "ST: 100/100", StaminaText);
++    // Numeric readouts to the right of each bar — text-cream, short form (the
++    // bar itself carries the HP/ST label context, §3).
++    text_tag(commands, HUD_HP_BOTTOM, "100", HealthText);
++    text_tag(commands, HUD_STAMINA_BOTTOM, "100", StaminaText);
+ 
+     // Lock-on reticle — a centred diamond, hidden until a target is locked.
++    // Recolored to accent-amber (in-palette); the four-corner-bracket redesign
++    // in §3 is a follow-up, not done here.
+     commands.spawn((
+         Text::new("◇"),
+         TextFont { font_size: bevy::text::FontSize::from(26.0), ..default() },
+-        TextColor(Color::srgba(1.0, 0.9, 0.4, 0.95)),
++        TextColor(HUD_ACCENT_AMBER),
+         Node {
+             position_type: PositionType::Absolute,
+             top: Val::Percent(50.0),
+@@ -1209,22 +1236,30 @@ enum HealthBarTag {
+     Stamina,
+ }
+ 
+-fn bar(commands: &mut Commands, top: f32, fill: Color, tag: HealthBarTag) {
++/// One HP/ST bar: an espresso plaque track (bordered, rounded) holding a
++/// live-width fill with a 1px top hilite, plus fixed 25/50/75% segment ticks
++/// on the track itself (a Soulslike "segmented" read, not a smooth gauge).
++fn bar(commands: &mut Commands, bottom: f32, fill: Color, hilite: Color, tag: HealthBarTag) {
+     let track = commands
+         .spawn((
+             Node {
+                 position_type: PositionType::Absolute,
+-                top: Val::Px(top),
+-                left: Val::Px(10.0),
+-                width: Val::Px(220.0),
+-                height: Val::Px(12.0),
++                bottom: Val::Px(bottom),
++                left: Val::Px(HUD_BAR_LEFT),
++                width: Val::Px(HUD_BAR_WIDTH),
++                height: Val::Px(HUD_BAR_HEIGHT),
++                border: UiRect::all(Val::Px(1.0)),
++                border_radius: BorderRadius::all(Val::Px(2.0)),
+                 ..default()
+             },
+-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
++            BackgroundColor(HUD_PANEL_BG),
++            BorderColor::all(HUD_PANEL_BORDER),
+         ))
+         .id();
++
+     let mut fill_cmd = commands.spawn((
+         Node {
++            position_type: PositionType::Relative,
+             width: Val::Percent(100.0),
+             height: Val::Percent(100.0),
+             ..default()
+@@ -1240,19 +1275,54 @@ fn bar(commands: &mut Commands, top: f32, fill: Color, tag: HealthBarTag) {
+         }
+     }
+     let fill_id = fill_cmd.id();
++
++    // 1px top hilite — a child of the fill (not the track) so it shrinks with
++    // the live width instead of staying pinned to the full bar.
++    let hilite_id = commands
++        .spawn((
++            Node {
++                position_type: PositionType::Absolute,
++                top: Val::Px(0.0),
++                left: Val::Px(0.0),
++                width: Val::Percent(100.0),
++                height: Val::Px(1.0),
++                ..default()
++            },
++            BackgroundColor(hilite),
++        ))
++        .id();
++    commands.entity(fill_id).add_child(hilite_id);
+     commands.entity(track).add_child(fill_id);
++
++    for pct in [25.0, 50.0, 75.0] {
++        let tick = commands
++            .spawn((
++                Node {
++                    position_type: PositionType::Absolute,
++                    top: Val::Px(0.0),
++                    left: Val::Percent(pct),
++                    width: Val::Px(1.0),
++                    height: Val::Percent(100.0),
++                    ..default()
++                },
++                BackgroundColor(HUD_SEGMENT_LINE),
++            ))
++            .id();
++        commands.entity(track).add_child(tick);
++    }
+ }
+ 
+-/// Tiny absolute-positioned text label for the numeric HP/ST readout.
+-fn text_tag(commands: &mut Commands, top: f32, label: &str, marker: impl Component) {
++/// Tiny absolute-positioned text label for the numeric HP/ST readout, at the
++/// bar's right edge, text-cream (§2/§3).
++fn text_tag(commands: &mut Commands, bottom: f32, label: &str, marker: impl Component) {
+     commands.spawn((
+         Text::new(label),
+         TextFont { font_size: bevy::text::FontSize::from(16.0), ..default() },
+-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
++        TextColor(HUD_TEXT_CREAM),
+         Node {
+             position_type: PositionType::Absolute,
+-            top: Val::Px(top),
+-            left: Val::Px(236.0), // right of the 220 px bar + 6 px gap
++            bottom: Val::Px(bottom - 1.0),
++            left: Val::Px(HUD_BAR_LEFT + HUD_BAR_WIDTH + 8.0),
+             ..default()
+         },
+         marker,
+@@ -2061,6 +2131,8 @@ pub fn hud_bars(
+ }
+ 
+ /// Update the numeric HP / stamina readouts from live component values.
++/// Short form (`"72"`) per `docs/hud-design.md` §3 — the bar itself gives the
++/// HP/ST label context, so the readout doesn't repeat it.
+ pub fn hud_numbers(
+     player_q: Query<(&Health, &Stamina), With<FlyCam>>,
+     mut htext: Query<&mut Text, (With<HealthText>, Without<StaminaText>)>,
+@@ -2068,10 +2140,10 @@ pub fn hud_numbers(
+ ) {
+     let Ok((hp, stam)) = player_q.single() else { return };
+     if let Ok(mut t) = htext.single_mut() {
+-        t.0 = format!("HP: {:.0}/{:.0}", hp.cur.round(), hp.max);
++        t.0 = format!("{:.0}", hp.cur.round());
+     }
+     if let Ok(mut t) = stext.single_mut() {
+-        t.0 = format!("ST: {:.0}/{:.0}", stam.cur.round(), STAMINA_MAX);
++        t.0 = format!("{:.0}", stam.cur.round());
+     }
+ }
+ 

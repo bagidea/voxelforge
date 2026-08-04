@@ -135,6 +135,29 @@ mutation would silently re-skin those too. Verified with `cargo check --target-d
 - `docs/assets/hud/hud-mockup-a-corner-minimal.png` — Option A, composited on the real gate3 screenshot.
 - `docs/assets/hud/hud-mockup-b-diamond-anchor.png` — Option B, same background.
 
+---
+
+## 7. Implementation handoff (Option A, written to the spec above)
+
+I wrote the Option A styling as real code against `combat.rs`/`quest.rs`/`main.rs` to prove the token table
+and layout numbers in §2/§3 actually work in-engine, then pulled the edits back out — those three files are
+Kevin's and Sun's lanes per `docs/LANES.md`, not mine, and I don't have sign-off to land in them directly.
+The diffs are saved as ready-to-apply patches instead of a self-commit:
+
+- `docs/patches/monanisa-hud-combat.patch` — bottom-left HP/stamina bars, espresso plaque + hilite + 25/50/75%
+  segment ticks, short-form numeric readouts, accent-amber reticle. Applies to Kevin's `combat.rs`.
+- `docs/patches/monanisa-hud-quest.patch` — campfire prompt as a real plaque (`[E]` in accent-amber, separate
+  from the cream label) instead of floating text. Applies to Sun's `quest.rs`.
+- `docs/patches/monanisa-hud-mainrs.patch` — adds a `DebugOverlay` resource + F3 toggle so the FPS/chunks/quads
+  debug line doesn't sit on top of the real HUD; hidden by default. Applies to Kevin's `main.rs`. Extracted by
+  hand from a working tree that also had Kevin's in-progress `boom_trace`/`boom_walk_demo` diagnostic in the
+  same file — this patch touches neither.
+
+None of the three have been applied, built, or committed to their target files — that's Kevin/Sun's call.
+`cargo check --target-dir target-monanisa` passed on the full combined diff before I split it back out
+(scoped check, not a full build, per the build-lock rule), so the patches are known to compile together; they
+have not been verified individually or re-checked after the split.
+
 *Design: Monanisa. Palette source of truth: `docs/look-bible.md` §4, `docs/character-bible.md` §0. Numeric
 combat values referenced (HP/stamina/lock-on ranges) per `docs/combat-tuning.md` — engineering source of
 truth is Yamamoto/Kevin's code, this doc only borrows the numbers to make the mockup's readouts plausible.*
