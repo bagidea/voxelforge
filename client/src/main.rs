@@ -1475,6 +1475,7 @@ const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before st
 // ---- Third-person orbit camera (spring-arm / boom) ------------------------
 pub(crate) const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
 const BOOM_MARGIN: f32 = 0.35; // keep the camera this far off a wall it pulls up to
+const BOOM_RADIUS: f32 = 0.4; // treat the lens as a disc this wide so walls beside the boom (corners, parallel faces) pull it in too — not just a wall dead on the boom axis
 pub(crate) const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
 const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
 const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
@@ -1625,12 +1626,46 @@ fn move_body(world: &World, eye: Vec3, delta: Vec3, can_step: bool) -> (Vec3, bo
 /// avatar. Marches out from the pivot with the same `solid_at` grid test the edit
 /// raycast uses, stopping `BOOM_MARGIN` short of the first block it meets — so the
 /// camera slides in against walls instead of clipping through them.
+///
+/// The lens is treated as a disc of radius [`BOOM_RADIUS`] perpendicular to the
+/// boom, not a single point: a wall the ray *centre* threads past still clips the
+/// frustum at a corner or along a parallel face, so every step sweeps a ring of
+/// sample points around the boom tip and pulls in the instant any of them would
+/// enter a solid voxel.
 fn camera_boom(world: &World, pivot: Vec3, dir: Vec3, want: f32) -> f32 {
     const STEP: f32 = 0.1;
+
+    // Orthonormal basis in the plane perpendicular to the boom. Cross against world-Y
+    // normally, but fall back to world-X when the boom is nearly vertical so the cross
+    // product stays well-conditioned (covers the straight-up / straight-down probes).
+    let ref_axis = if dir.dot(Vec3::Y).abs() > 0.9 {
+        Vec3::X
+    } else {
+        Vec3::Y
+    };
+    let right = dir.cross(ref_axis).normalize_or_zero();
+    let upa = right.cross(dir).normalize_or_zero();
+    // Eight points on the disc rim — cardinal plus diagonal. Axis-aligned voxel
+    // corners always present at one of these angles, so nothing slips between samples.
+    let diag = BOOM_RADIUS * std::f32::consts::FRAC_1_SQRT_2;
+    let rim = [
+        right * BOOM_RADIUS,
+        -right * BOOM_RADIUS,
+        upa * BOOM_RADIUS,
+        -upa * BOOM_RADIUS,
+        (right + upa) * diag,
+        (right - upa) * diag,
+        (-right + upa) * diag,
+        (-right - upa) * diag,
+    ];
+    let solid = |p: Vec3| {
+        solid_at(world, p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32)
+    };
+
     let mut d = 0.0;
     while d < want {
-        let p = pivot + dir * (d + BOOM_MARGIN);
-        if solid_at(world, p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32) {
+        let base = pivot + dir * (d + BOOM_MARGIN);
+        if solid(base) || rim.iter().any(|off| solid(base + *off)) {
             return d;
         }
         d += STEP;
