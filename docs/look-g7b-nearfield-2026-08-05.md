@@ -213,11 +213,30 @@ so `T_FAR_DELTA` is the term doing real work here and the ratio is close to
 uninformative on any row with a dead zone. Flagged rather than banked: if A2 is
 ever re-cut, the far term is the half worth tightening.
 
-**The bake reproduces out of the box.** `ship` (env unset) and `envhd60`
-(`VOXELFORGE_LOOK_HAZEDESAT=0.60`) are identical on every graded number —
-G3 p05 21.9, G5 spread 53.6, G6 R−B 145 / L 57.5, veg sat 74.2, veg hue 90.2,
-micro-contrast 5.45, A2 far 19.84. The 0.18 / 0.21 near-band split is TAA jitter
-on a band whose true value is zero. `HAZE_DESAT` 0.60 is compiled in, not env'd.
+**The bake reproduces out of the box — stated precisely.** `ship` (env unset) and
+`envhd60` (`VOXELFORGE_LOOK_HAZEDESAT=0.60`) agree on every **single-frame**
+graded number: G3 p05 21.9, G5 spread 53.6, G6 R−B 145 / L 57.5, veg sat 74.2,
+veg hue 90.2, micro-contrast 5.45. On A2 they agree on the far band (19.84 both)
+and **differ on the near band, 0.18 vs 0.21, which carries the ratio to 112.63 vs
+96.34**. The ratio is a graded number, so this pair is *not* identical on
+everything and should not be described that way.
+
+What that split is, measured rather than asserted. A ratio whose denominator is a
+structural zero amplifies any noise without limit, so the ratio is the wrong
+instrument here; compare the frames directly instead:
+
+| pair | mean |Δ| | max |Δ| | px differing |
+|---|---|---|---|
+| ship vs **envhd60** — same value, baked vs env | **0.320** | 104 | 17.7 % |
+| ship vs **hd40** — genuinely different value (0.40) | 3.143 | 95 | 57.5 % |
+| ship vs **g7full** — different curve entirely | 12.019 | 104 | 86.8 % |
+
+Setting `HAZEDESAT=0.60` explicitly moves the shipped frame **~10× less than
+setting it to 0.40 does**, and ~40× less than swapping the curve. That is the
+claim worth making: the binary's baked value is 0.60, not 0.40, and the residual
+is renderer noise (TAA resolves temporally, so a nominally-identical pair still
+shows large max-Δ on high-contrast edges) — not an env dependency. `HAZE_DESAT`
+0.60 is compiled in.
 
 **G3 / G5 / G6 stay green, and the near-field floor lifted.** All eleven rows are
 P/P/P (`_flamingo_g7b/g7.tsv`). Interior floor G3 p05 goes **17.5 → 21.9** from
@@ -266,3 +285,30 @@ numbers above came from stale. Rose's call whether to `#[allow]` it or drop it.
 
 **Proposed, not applied:** `docs/patches/g7b-a2-sky-mask.patch` — the A2 sky-mask
 instrument fix from §2, for the Director. Not required by anything above.
+
+---
+
+## 6. Correction to `f8a1a8f`'s commit message
+
+A commit message cannot be edited once the file it ships has been handed on, so
+the correction lives here.
+
+**`f8a1a8f` says:** *"ship (env unset) and envhd60 (env set) are identical on
+every graded number. Not an env crutch."*
+
+**The first sentence is wrong as written.** They are identical on every
+single-frame graded number and on A2's far band, but A2's near band reads 0.18 vs
+0.21 and the ratio 112.63 vs 96.34 — and the ratio is graded. §4 of this document
+listed both numbers correctly two lines below the claim, so the record was never
+wrong; the summary sentence overstated it, and it went into a permanent commit
+message that way. Flagged by review, not caught by me.
+
+**The conclusion survives, on better evidence.** The env-crutch question is
+"does the binary ship 0.60", and §4's direct frame comparison answers it without
+going near the ratio: setting the env explicitly moves the frame 0.320 mean, a
+real change to 0.40 moves it 3.143. Ten to one. The bake is real.
+
+**The lesson worth keeping.** The overstatement came from reading a ratio whose
+denominator is a structural zero and treating small absolute differences in it as
+"the same". Where `HAZE_START` puts a band at zero, quote the far term or diff
+the frames — do not quote the ratio, and never round it to "identical".
