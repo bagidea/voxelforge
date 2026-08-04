@@ -269,6 +269,15 @@ fn hour() -> Hour {
     {
         h.ev100 = ev;
     }
+    if let Some([r, g, b]) = env_floats::<3>("VOXELFORGE_LOOK_SKY") {
+        h.sky = [r, g, b];
+    }
+    if let Some(lux) = std::env::var("VOXELFORGE_LOOK_AMBIENT")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+    {
+        h.ambient_lux = lux;
+    }
     h
 }
 

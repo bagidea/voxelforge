@@ -1,7 +1,37 @@
 # Look — combat & world VFX layer (`client/src/vfx.rs`)
 
-**Lane:** pixel (Flamingo) · **Files:** `client/src/vfx.rs` (new), `client/src/shot_main.rs`,
-`scripts/render_vfx.sh`, this doc · **Not touched:** `scene.rs`, `combat.rs`, `main.rs`.
+**Lane:** yamamoto (per `docs/LANES.md`'s "Animation / VFX / asset import" row —
+reassigned from pixel/Flamingo, who authored the original round documented
+below) · **Files:** `client/src/vfx.rs`, `client/src/vfx_bridge.rs`,
+`client/src/shot_main.rs`, `scripts/render_vfx.sh`, this doc · **Not touched:**
+`scene.rs`, `combat.rs`, `main.rs`.
+
+## 2026-08-04 — hit-feedback pass (yamamoto)
+
+Two bridge-only fixes, no edit to `vfx.rs` itself or to any other lane's file:
+
+* **Contact height.** `SfxEvent::HitLight/HitHeavy/HitParry/HitBlock` all carry
+  `combat.rs`'s enemy *root* transform — the husk's feet, not the point of
+  contact. Every spark/debris/flash burst was therefore centred on the ground,
+  roughly half of it clipped underground. `vfx_bridge.rs` now lifts husk hits to
+  chest height (`HUSK_CONTACT_Y`) and blends parry/block hits most of the way
+  toward the player's guard (`contact_point`) — the deflection happens at the
+  player, not at the husk's silhouette.
+* **Weapon trail rides the real blade.** The husk's swing trail used to track
+  `combat::HuskArm`, a placeholder box `anim.rs`'s `attach_rigs` hides the
+  instant a procedural rig lands on that actor — the ribbon was tracing an
+  *invisible* entity's own arc, not the blade actually on screen, and the
+  player had no trail at all. `anim.rs` now tags each rig's weapon mesh with
+  `RigWeapon { actor }`; `vfx_bridge.rs` attaches `SwingTrail` there for both
+  actors and drives `hot` off `anim::AnimSwing`'s `SwingPhase::Contact` edge
+  (docs/anim-events.md) instead of reading `combat::Enemy::state` directly.
+
+**Known gap, not in this lane:** the camera kick (`vfx::VfxCamera`) is only
+ever attached in this file's own showcase stage — the real play camera (`cam`
+in `main.rs`, the `Camera3d` + `OrbitCam` entity) never gets the marker, so
+`apply_cam_kick` has nothing to push in the shipped game yet. One line
+(`vfx::VfxCamera` added to that spawn's component tuple) in `main.rs`, which is
+outside this lane — flagged to the Director rather than edited here.
 
 ---
 
@@ -101,10 +131,12 @@ re-render reproduces the same frame and the pair can be diffed rather than eyeba
 
 ## Honest limits of this round
 
-* **Not yet visible in the game binary.** `main.rs` is another lane, so nothing here
-  runs under `--play` until the one-line hook above is added. What is proven is that
-  the layer compiles and renders — the shots come from a real build of `vfx.rs`, not
-  from a mockup.
+* **Wired into the game binary** (`vfx::VfxPlugin` + `vfx_bridge::VfxBridgePlugin`
+  in `main.rs`'s plugin list, as of the commit that added `vfx_bridge.rs`), but
+  **not yet provably running in a real play session** — `--play` currently panics
+  entering `ENTER_PLAY` on an unrelated Bevy `B0002` in `streaming.rs` (Poppy's P0,
+  in progress). The 2026-08-04 fixes above have not yet been screenshotted
+  through the real camera; that proof is blocked on the P0, not on this lane.
 * **Not graded against `look-acceptance-rubric.md`.** That rubric's gates are written
   for the interior hero shot (G2 looks for a window light-bar, G6 eyedrops sunlit
   wood); an outdoor VFX stage has none of those to measure. Grading these frames

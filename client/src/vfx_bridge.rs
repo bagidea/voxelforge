@@ -15,7 +15,8 @@
 //! | `SfxEvent::PlayerHurt`        | `combat::enemy_attack`  | `vfx::Impact` at the player, red flavour |
 //! | `SfxEvent::EnemyDeath`        | `combat::husk_ai`       | `vfx::Unravel` (death dissolve) |
 //! | `Campsite` resource           | `scene::setup_scene`    | a `vfx::CampfireVfx` emitter at `camp.fire` |
-//! | `HuskArm` component           | `combat::spawn_guard_husk` | a `vfx::SwingTrail` on the husk's blade |
+//! | `anim::RigWeapon` component   | `anim::build_rig` (this lane) | a `vfx::SwingTrail` riding the real blade |
+//! | `anim::AnimSwing` message     | `anim.rs` (this lane) | drives that trail's `hot` flag on Contact |
 //!
 //! `MessageReader` cursors are per-reader, so consuming `SfxEvent` here does NOT
 //! steal it from `audio.rs` — both lanes see every message.
@@ -26,8 +27,9 @@
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
 
+use crate::anim::{Actor, AnimSwing, RigWeapon, SwingPhase};
 use crate::audio::SfxEvent;
-use crate::combat::{Enemy, HuskArm, HuskState, PlayerCombat};
+use crate::combat::PlayerCombat;
 use crate::scene::Campsite;
 use crate::vfx::{CampfireVfx, HitFlavor, Impact, SwingTrail, Unravel};
 
@@ -45,8 +47,19 @@ const HUSK_TINT: Color = Color::srgb(0.32, 0.34, 0.40);
 const PLAYER_CHEST: f32 = -0.2;
 /// Half-extents of the player's silhouette, for the red wrap flash.
 const PLAYER_HALF: Vec3 = Vec3::new(0.40, 0.90, 0.40);
-/// The husk blade's cross-section — matches the `arm` cuboid (0.28 × 1.0 × 0.28).
-const HUSK_BLADE_HALF: Vec3 = Vec3::new(0.14, 0.50, 0.14);
+/// Height above `combat::spawn_guard_husk`'s `feet` root that actually reads as the
+/// point of contact — the torso sits at y=1.0 there, the telegraph arm at y=1.1.
+/// `SfxEvent::HitLight/HitHeavy/HitParry/HitBlock` all carry the husk's *root*
+/// transform (feet), so without this offset every spark/debris/flash burst was
+/// drawing centred on the ground, half of it clipped underground — see
+/// `contact_point` below.
+const HUSK_CONTACT_Y: f32 = 1.05;
+/// The husk blade's cross-section — matches the `weapon` cuboid `anim.rs` builds
+/// for `Actor::Husk` (0.10 × 1.05 × 0.26).
+const HUSK_BLADE_HALF: Vec3 = Vec3::new(0.05, 0.53, 0.13);
+/// The player blade's cross-section — matches `anim.rs`'s `Actor::Player` weapon
+/// cuboid (0.07 × 0.86 × 0.14).
+const PLAYER_BLADE_HALF: Vec3 = Vec3::new(0.035, 0.43, 0.07);
 
 /// Add with one line next to `VfxPlugin`:
 /// `.add_plugins((vfx::VfxPlugin, vfx_bridge::VfxBridgePlugin))`.
@@ -59,8 +72,8 @@ impl Plugin for VfxBridgePlugin {
             (
                 sfx_to_vfx,
                 light_the_campfire,
-                attach_husk_trail,
-                drive_husk_trail,
+                attach_rig_weapon_trail,
+                drive_rig_weapon_trail,
             ),
         );
     }
@@ -95,7 +108,7 @@ fn sfx_to_vfx(
             }
             SfxEvent::HitParry { position } => {
                 impacts.write(Impact {
-                    pos: position,
+                    pos: contact_point(position, player_pos),
                     dir: away_from(player_pos, position),
                     power: 1.2,
                     flavor: HitFlavor::Parry,
@@ -107,7 +120,7 @@ fn sfx_to_vfx(
                 // A blocked blow is a dull scuff: same sparks, much smaller, and the
                 // shield ate the flash.
                 impacts.write(Impact {
-                    pos: position,
+                    pos: contact_point(position, player_pos),
                     dir: away_from(player_pos, position),
                     power: 0.5,
                     flavor: HitFlavor::Parry,
@@ -144,11 +157,24 @@ fn sfx_to_vfx(
 /// Build the `Impact` for a blow the player landed on a husk.
 fn husk_hit(position: Vec3, player_pos: Option<Vec3>, power: f32) -> Impact {
     Impact {
-        pos: position,
+        pos: position + Vec3::Y * HUSK_CONTACT_Y,
         dir: away_from(player_pos, position),
         power,
         flavor: HitFlavor::Husk,
         body_half: Some(HUSK_HALF),
+    }
+}
+
+/// Where a blow actually lands, given only the husk's root position (its feet —
+/// `SfxEvent` carries no attacker/target distinction and no per-hit height).
+/// `HitParry`/`HitBlock` fire at the player's guard, not the husk's body, so this
+/// leans most of the way toward the player rather than sitting on the husk's
+/// silhouette the way `husk_hit`'s `HUSK_CONTACT_Y` does.
+fn contact_point(husk_root: Vec3, player_pos: Option<Vec3>) -> Vec3 {
+    let husk_chest = husk_root + Vec3::Y * HUSK_CONTACT_Y;
+    match player_pos {
+        Some(p) => husk_chest.lerp(p + Vec3::Y * PLAYER_CHEST, 0.7),
+        None => husk_chest,
     }
 }
 
@@ -198,32 +224,44 @@ fn light_the_campfire(
 // ② — the weapon trail
 // ---------------------------------------------------------------------------
 
-/// Every husk arm that spawns gets a (cold) trail emitter.
-fn attach_husk_trail(
+/// Every rig's weapon (player or husk — `anim::RigWeapon` is on both) gets a
+/// (cold) trail emitter, sized to that actor's actual blade cross-section.
+///
+/// This rides the entity `anim.rs` really draws, not a proxy: the husk used to
+/// get its trail from `combat::HuskArm`, a placeholder box `attach_rigs` hides
+/// the instant a rig lands on that actor — the trail was tracing an invisible
+/// entity's own, slightly different swing arc rather than the blade on screen.
+fn attach_rig_weapon_trail(
     mut commands: Commands,
-    arms: Query<Entity, (With<HuskArm>, Without<SwingTrail>)>,
+    weapons: Query<(Entity, &RigWeapon), Without<SwingTrail>>,
 ) {
-    for arm in &arms {
-        commands.entity(arm).insert(SwingTrail {
-            hot: false,
-            half: HUSK_BLADE_HALF,
-            accum: 0.0,
-        });
+    for (weapon, rig_weapon) in &weapons {
+        let half = match rig_weapon.actor {
+            Actor::Player => PLAYER_BLADE_HALF,
+            Actor::Husk => HUSK_BLADE_HALF,
+        };
+        commands.entity(weapon).insert(SwingTrail { hot: false, half, accum: 0.0 });
     }
 }
 
-/// The one line the combat lane would otherwise own: the ribbon is hot exactly
-/// while the blade is in an *active* swing — not during the telegraph (which is
-/// honest wind-up, no hitbox) and not during recovery.
-fn drive_husk_trail(
-    mut arms: Query<(&ChildOf, &mut SwingTrail)>,
-    enemies: Query<&Enemy>,
+/// Light the trail up on the frame the blade actually goes fast (`SwingPhase::
+/// Contact` — the same window `combat.rs`'s hitbox is open on, per
+/// `docs/anim-events.md`) and douse it once the swing starts recovering. Windup
+/// is the telegraph — slow and deliberate on purpose — so it stays cold.
+///
+/// `AnimSwing` carries an `Actor`, not a specific entity (one rig per actor kind
+/// is the only case this game spawns today — see `docs/LANES.md`'s Guard Husk
+/// notes), so this drives every weapon of that actor kind together.
+fn drive_rig_weapon_trail(
+    mut swings: MessageReader<AnimSwing>,
+    mut weapons: Query<(&RigWeapon, &mut SwingTrail)>,
 ) {
-    for (parent, mut trail) in &mut arms {
-        let hot = enemies
-            .get(parent.parent())
-            .map(|e| matches!(e.state, HuskState::Swing1 | HuskState::Swing2))
-            .unwrap_or(false);
-        trail.hot = hot;
+    for s in swings.read() {
+        let hot = matches!(s.phase, SwingPhase::Contact);
+        for (rig_weapon, mut trail) in &mut weapons {
+            if rig_weapon.actor == s.actor {
+                trail.hot = hot;
+            }
+        }
     }
 }
