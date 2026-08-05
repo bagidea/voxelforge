@@ -200,6 +200,16 @@ with tempfile.TemporaryDirectory() as td:
         check("REFUSED" in p.stderr,
               f"{name} refused without saying REFUSED (stderr: {p.stderr[:200]!r})")
 
+    # A loose arg parser is its own unguarded door: the card takes its frames
+    # from a fixed list, so an IGNORED stray argument means someone types a frame
+    # name, watches a card appear, and believes it graded that frame.
+    p = subprocess.run([sys.executable, str(SCRIPTS / "make_gate3_verdict_card.py"), str(raw)],
+                       cwd=REPO, capture_output=True, text=True, timeout=120)
+    check(p.returncode == G.EXIT_REFUSED and p.stdout.strip() == "",
+          f"make_gate3_verdict_card.py accepted a stray positional frame instead of refusing "
+          f"(rc={p.returncode}, stdout={p.stdout[:120]!r}) — it would render a card off its "
+          f"default frames while the caller believes they graded theirs.")
+
     # render_grade.sh is the producer side of the same rule: it renders with the
     # HUD-free shot exe, so it must demand a -nohud2 output name instead of
     # handing the graders a frame they will refuse three lines later.

@@ -121,23 +121,38 @@ def stamp(path):
     return f"{os.path.basename(path)} {t:%H:%M}"
 
 
+def usage(msg):
+    print(f"REFUSED  make_gate3_verdict_card.py: {msg}\n"
+          f"         usage: make_gate3_verdict_card.py [-o out.png] "
+          f"[--frames {' '.join(f'<{k}>-nohud2.png' for k in FRAMES)}]", file=sys.stderr)
+    sys.exit(2)
+
+
 def main():
-    out = sys.argv[sys.argv.index("-o") + 1] if "-o" in sys.argv else OUT
+    # Strict, because a loose parser is its own kind of unguarded door: an
+    # ignored stray argument means someone types a frame name, watches a card
+    # appear, and believes it graded THAT frame. Nothing here is silently dropped.
+    argv, out, frames = sys.argv[1:], OUT, None
+    while argv:
+        a = argv.pop(0)
+        if a == "-o":
+            if not argv:
+                usage("-o needs a path")
+            out = argv.pop(0)
+        elif a == "--frames":
+            if len(argv) < len(FRAMES):
+                usage(f"--frames needs {len(FRAMES)} paths ({', '.join(FRAMES)})")
+            frames = [argv.pop(0) for _ in FRAMES]
+        else:
+            usage(f"unexpected argument {a!r}")
 
     # The frames may be overridden, but they may not be un-guarded: whatever
     # comes in here is measured and printed onto a card someone reads as a
     # verdict, so it goes through require_nohud2 before a single pixel is read.
-    if "--frames" in sys.argv:
-        i = sys.argv.index("--frames") + 1
-        paths = {k: p for k, p in zip(FRAMES, sys.argv[i:i + len(FRAMES)])}
-    else:
-        paths = {k: A("gate3", f"gate3-after-{k}-nohud2.png") for k in FRAMES}
-    require_nohud2([paths.get(k) for k in FRAMES if paths.get(k)],
-                   tool="make_gate3_verdict_card.py")
-    if len(paths) != len(FRAMES):
-        print(f"REFUSED  make_gate3_verdict_card.py: --frames needs {len(FRAMES)} paths "
-              f"({', '.join(FRAMES)})", file=sys.stderr)
-        sys.exit(2)
+    if frames is None:
+        frames = [A("gate3", f"gate3-after-{k}-nohud2.png") for k in FRAMES]
+    require_nohud2(frames, tool="make_gate3_verdict_card.py")
+    paths = dict(zip(FRAMES, frames))
 
     auth = colour_gate.authored_clearcolor()
     auth_rgb = tuple(c * 255.0 for c in auth)
