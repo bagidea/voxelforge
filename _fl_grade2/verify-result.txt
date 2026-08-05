@@ -1,0 +1,30 @@
+=== BUILD START 2026-08-06T06:15:40+07:00 ===
+cargo exit=0  '^error' lines=0  Finished=1
+exe mtime 2026-08-06T06:31:09+07:00  size 80492032
+=== SHOOT (no VOXELFORGE_LOOK_* overrides at all) ===
+shot exit=0  bytes=1179258
+=== P0 AXES (baked default) ===
+profile: hero
+  axes graded: warmth, blue, sat, dof, micro, p95
+
+_fl_grade2/vista-BAKED-nohud2.png
+  profile: hero  context: warmth(global)  +77.1  sat(global) 89.2%  DOF fg  9.10 bg  4.09
+  [PASS] warmth R-B (mid)     112.96   target     >= 110   (REF 120.9)
+  [PASS] blue B (mid)           6.43   target      <= 10   (REF 4.3)
+  [PASS] saturation (mid)      96.24   target      >= 90   (REF 96.1)
+  [FAIL] DOF fg:bg ratio        2.22   target       >= 3   (REF 3.5)
+  [PASS] micro-contrast         7.87   target       >= 5   (REF 5.24)
+  [PASS] highlight p95        160.69   target   150..185   (REF 165.8)
+  => FAIL (>=1 axis below target)
+
+=== COLOUR GATE (baked default) ===
+
+_fl_grade2/vista-BAKED-nohud2.png
+  [PASS] A magenta fraction     0.15%                            target <= 2%
+  [PASS] B sky order          131.4,160.1,254.6 -> B > G > R     target B > G > R
+  [PASS] B sky gain order     x0.94/x0.74/x1.20 -> B > R > G     target no red lift over G<=B
+  [PASS] C sunlit order       195.6,129.1, 46.4 -> R > G > B     target no R-dom with G~=B
+         authored ClearColor(0.53,0.72,0.92) = 135,184,235  ->  linear gain  R x0.94  G x0.74  B x1.20
+         warm-ordered R>G>B  46.80% of frame (46.91% of lit)   [context, not gated]
+  => COLOUR GATE PASS
+=== DONE 2026-08-06T06:42:59+07:00 ===

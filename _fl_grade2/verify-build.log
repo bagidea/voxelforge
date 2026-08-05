@@ -1,0 +1,291 @@
+   Compiling voxelforge v0.1.0 (E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\client)
+warning: unnecessary parentheses around `match` scrutinee expression
+   --> client\src\hero.rs:190:15
+    |
+190 |         match ((x.wrapping_mul(1103515245).wrapping_add(12345) >> 4) & 3) {
+    |               ^                                                         ^
+    |
+    = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+    |
+190 -         match ((x.wrapping_mul(1103515245).wrapping_add(12345) >> 4) & 3) {
+190 +         match (x.wrapping_mul(1103515245).wrapping_add(12345) >> 4) & 3 {
+    |
+
+warning: unused variable: `data`
+   --> client\src\quest.rs:567:9
+    |
+567 |     let data = story_data(&story);
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `kb_close`
+   --> client\src\quest.rs:738:9
+    |
+738 |     let kb_close = keys.just_pressed(KeyCode::Escape);
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_kb_close`
+
+warning: unused variable: `hint`
+    --> client\src\quest.rs:1110:17
+     |
+1110 |             let hint = obj_def.hint.as_deref().unwrap_or(&obj_def.id);
+     |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_hint`
+
+warning: field `grid` is never read
+  --> client\src\main.rs:63:5
+   |
+61 | pub(crate) struct Cfg {
+   |                   --- field in this struct
+62 |     bench: bool,
+63 |     grid: usize,
+   |     ^^^^
+   |
+   = note: `Cfg` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `settle_down` is never used
+    --> client\src\main.rs:1573:4
+     |
+1573 | fn settle_down(world: &World, eye: Vec3, max: f32) -> Vec3 {
+     |    ^^^^^^^^^^^
+
+warning: function `edit_voxels` is never used
+    --> client\src\main.rs:1902:4
+     |
+1902 | fn edit_voxels(
+     |    ^^^^^^^^^^^
+
+warning: field `combo` is never read
+  --> client\src\anim.rs:81:9
+   |
+78 | pub struct AnimSwing {
+   |            --------- field in this struct
+...
+81 |     pub combo: u8,
+   |         ^^^^^
+   |
+   = note: `AnimSwing` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `actor` and `phase` are never read
+  --> client\src\anim.rs:96:9
+   |
+95 | pub struct AnimDodge {
+   |            --------- fields in this struct
+96 |     pub actor: Actor,
+   |         ^^^^^
+97 |     pub phase: DodgePhase,
+   |         ^^^^^
+   |
+   = note: `AnimDodge` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `actor` and `phase` are never read
+   --> client\src\anim.rs:112:9
+    |
+111 | pub struct AnimParry {
+    |            --------- fields in this struct
+112 |     pub actor: Actor,
+    |         ^^^^^
+113 |     pub phase: ParryPhase,
+    |         ^^^^^
+    |
+    = note: `AnimParry` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `actor` is never read
+   --> client\src\anim.rs:122:9
+    |
+121 | pub struct AnimHit {
+    |            ------- field in this struct
+122 |     pub actor: Actor,
+    |         ^^^^^
+    |
+    = note: `AnimHit` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `actor` and `foot` are never read
+   --> client\src\anim.rs:137:9
+    |
+136 | pub struct AnimFootstep {
+    |            ------------ fields in this struct
+137 |     pub actor: Actor,
+    |         ^^^^^
+138 |     pub foot: Foot,
+    |         ^^^^
+    |
+    = note: `AnimFootstep` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: methods `route` and `frame` are never used
+   --> client\src\combat.rs:933:12
+    |
+911 | impl RKeyRoute {
+    | -------------- methods in this implementation
+...
+933 |     pub fn route(&self) -> RKeyUse {
+    |            ^^^^^
+...
+943 |     pub fn frame(&self) -> u64 {
+    |            ^^^^^
+
+warning: struct `HealthText` is never constructed
+    --> client\src\combat.rs:1079:12
+     |
+1079 | pub struct HealthText;
+     |            ^^^^^^^^^^
+
+warning: struct `StaminaText` is never constructed
+    --> client\src\combat.rs:1081:12
+     |
+1081 | pub struct StaminaText;
+     |            ^^^^^^^^^^^
+
+warning: function `spawn_combat_hud` is never used
+    --> client\src\combat.rs:1338:8
+     |
+1338 | pub fn spawn_combat_hud(commands: &mut Commands) {
+     |        ^^^^^^^^^^^^^^^^
+
+warning: enum `HealthBarTag` is never used
+    --> client\src\combat.rs:1365:6
+     |
+1365 | enum HealthBarTag {
+     |      ^^^^^^^^^^^^
+
+warning: function `bar` is never used
+    --> client\src\combat.rs:1370:4
+     |
+1370 | fn bar(commands: &mut Commands, top: f32, fill: Color, tag: HealthBarTag) {
+     |    ^^^
+
+warning: function `text_tag` is never used
+    --> client\src\combat.rs:1405:4
+     |
+1405 | fn text_tag(commands: &mut Commands, top: f32, label: &str, marker: impl Component) {
+     |    ^^^^^^^^
+
+warning: function `hud_numbers` is never used
+    --> client\src\combat.rs:2235:8
+     |
+2235 | pub fn hud_numbers(
+     |        ^^^^^^^^^^^
+
+warning: methods `is` and `clear` are never used
+   --> client\src\editor.rs:251:12
+    |
+249 | impl Selection {
+    | -------------- methods in this implementation
+250 |     /// True when `e` is the selected entity.
+251 |     pub fn is(&self, e: Entity) -> bool {
+    |            ^^
+...
+259 |     pub fn clear(&mut self) {
+    |            ^^^^^
+
+warning: function `save_config` is never used
+   --> client\src\editor_config.rs:163:8
+    |
+163 | pub fn save_config(bindings: &KeyBindings, settings: &EditorSettings) {
+    |        ^^^^^^^^^^^
+
+warning: methods `to_keycode` and `to_mouse_button` are never used
+   --> client\src\input_map.rs:123:12
+    |
+121 | impl Key {
+    | -------- methods in this implementation
+122 |     /// Convert to Bevy's `KeyCode` (keyboard keys only — returns `None` for mouse).
+123 |     pub fn to_keycode(self) -> Option<KeyCode> {
+    |            ^^^^^^^^^^
+...
+207 |     pub fn to_mouse_button(self) -> Option<MouseButton> {
+    |            ^^^^^^^^^^^^^^^
+
+warning: function `action_just_pressed` is never used
+   --> client\src\input_map.rs:471:8
+    |
+471 | pub fn action_just_pressed(
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `action_pressed` is never used
+   --> client\src\input_map.rs:489:8
+    |
+489 | pub fn action_pressed(
+    |        ^^^^^^^^^^^^^^
+
+warning: function `first_action_just_pressed` is never used
+   --> client\src\input_map.rs:507:8
+    |
+507 | pub fn first_action_just_pressed(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `report_voxel_overlaps` is never used
+   --> client\src\hero.rs:959:8
+    |
+959 | pub fn report_voxel_overlaps(
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `HAZE_DENSITY` is never used
+   --> client\src\look.rs:233:11
+    |
+233 | pub const HAZE_DENSITY: f32 = 0.0100;
+    |           ^^^^^^^^^^^^
+
+warning: field `0` is never read
+   --> client\src\quest.rs:307:18
+    |
+307 |     OpenDialogue(String),      // dialogue id
+    |     ------------ ^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `DialogueActionType` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+307 -     OpenDialogue(String),      // dialogue id
+307 +     OpenDialogue(()),      // dialogue id
+    |
+
+warning: variants `CompleteObjective`, `AdvanceQuest`, `SetFlag`, and `None` are never constructed
+   --> client\src\quest.rs:304:5
+    |
+303 | pub enum DialogueActionType {
+    |          ------------------ variants in this enum
+304 |     CompleteObjective(String), // objective id
+    |     ^^^^^^^^^^^^^^^^^
+305 |     AdvanceQuest(String),      // quest id
+    |     ^^^^^^^^^^^^
+306 |     SetFlag(String),           // flag name
+    |     ^^^^^^^
+307 |     OpenDialogue(String),      // dialogue id
+308 |     None,
+    |     ^^^^
+    |
+    = note: `DialogueActionType` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `action_type` is never read
+   --> client\src\quest.rs:313:9
+    |
+312 | pub struct DialogueAction {
+    |            -------------- field in this struct
+313 |     pub action_type: DialogueActionType,
+    |         ^^^^^^^^^^^
+    |
+    = note: `DialogueAction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: `voxelforge` (bin "voxelforge_shot") generated 1 warning (run `cargo fix --bin "voxelforge_shot" -p voxelforge` to apply 1 suggestion)
+warning: `voxelforge` (bin "voxelforge") generated 31 warnings (1 duplicate) (run `cargo fix --bin "voxelforge" -p voxelforge` to apply 3 suggestions)
+warning: field `dist` is never read
+  --> client\src\perf_main.rs:77:16
+   |
+76 | pub(crate) struct OrbitCam {
+   |                   -------- field in this struct
+77 |     pub(crate) dist: f32,
+   |                ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `enabled_for` is never used
+   --> client\src\look.rs:837:8
+    |
+837 | pub fn enabled_for(cfg: &crate::Cfg) -> bool {
+    |        ^^^^^^^^^^^
+
+warning: `voxelforge` (bin "voxelforge_perf") generated 3 warnings (1 duplicate)
+    Finished `release` profile [optimized] target(s) in 27m 01s

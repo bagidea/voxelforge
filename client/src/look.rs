@@ -113,28 +113,85 @@ pub const HAZE_START: f32 = 20.0;
 /// Distance (blocks) at which the shipped haze is FULLY opaque — the `Linear`
 /// end.
 ///
-/// TWO CONSTRAINTS, AND 250 IS WHERE THEY MEET.
+/// TWO CONSTRAINTS, AND THE FIT IS WHERE THEY MEET.
 ///
 /// 1. Keep the look that was signed off. The whole point of moving to a ramp is
 ///    the near field; the mid and far bands were reviewed and approved as they
-///    are. Fitting `Linear{20, end}` against `ExponentialSquared`(0.0072) over
-///    the framing's measured depth span (26–78 blocks) puts the least-squares
-///    optimum at **248** (rms 0.79 pp); 250 is the round number next door, rms
-///    0.80 pp and **max deviation 1.83 pp** anywhere in the set
-///    (`scripts/_flamingo_g7_curvefit.py`). Across everything the player can
-///    see, the new curve and the old one are the same picture.
+///    are. So this end is not chosen, it is FITTED: least-squares `Linear{20,
+///    end}` against the `ExponentialSquared` curve the look was approved on,
+///    over the framing's measured depth span (26–78 blocks).
 /// 2. Actually close. `ExponentialSquared` only ASYMPTOTES — it is 99.51 % at
 ///    [`RENDER_RADIUS`], so half a percent of a popping chunk shows through
-///    forever. A ramp reaches 1.0 and stays there: from 250 out, the last 70
-///    blocks of the streaming radius are buried outright. The streaming contract
-///    is met with margin instead of in the limit, and `HAZE_FULL <=
-///    RENDER_RADIUS` is the invariant to keep (asserted below).
+///    forever. A ramp reaches 1.0 and stays there, burying the rest of the
+///    streaming radius outright. The streaming contract is met with margin
+///    instead of in the limit, and `HAZE_FULL <= RENDER_RADIUS` is the invariant
+///    to keep (asserted below).
+///
+/// 250 → 150, 2026-08-06. THE TARGET OF THE FIT MOVED; THE METHOD DID NOT.
+/// 250 fitted `ExpSq(0.0072)`. Commit bd3cde5 verified the vista grade at haze
+/// density **0.0100** — and it did so through `VOXELFORGE_LOOK_HAZE=0.0100`,
+/// which per [`haze_falloff`] does not bump a density on this ramp, it SWAPS THE
+/// FALLOFF back to `ExponentialSquared`. So the air that carries ~25 points of
+/// the graded warmth was never on the shipped path at all: measured on one
+/// binary, the baked default came out warmth **99.20** against **124.65** for
+/// the same binary under the env row. [`HAZE_DENSITY`] was a dead constant and
+/// baking it changed nothing.
+///
+/// Re-running the SAME fit against `ExpSq(0.0100)` puts the optimum at **150**,
+/// rms **0.79 pp**, max deviation **1.92 pp** across the set
+/// (`scripts/_flamingo_haze_refit.py`) — the same fit quality that justified 250
+/// against the old curve. Measured on the vista framing by the BAKED DEFAULT —
+/// `scripts/verify_baked_grade.sh`, which builds and then shoots with no look
+/// override of any kind, because an env row is what caused this bug once
+/// already. It sets exactly two `VOXELFORGE_LOOK_*` vars, `_CAM` (boom pose) and
+/// `_QUALITY=ultra` (effect tier), which is the framing every row in this
+/// investigation was shot on; not one grade, light, haze or colour value is
+/// overridden. So measured — `grade_axes.py` gives warmth **112.96** / blue **6.43** / sat
+/// **96.24** / micro 7.87 / p95 160.69, and `colour_gate.py` PASSes all four
+/// gates at 0.15 % magenta. The env row it replaces (`FOG=20,150`) read 112.97 /
+/// 6.43 / 96.24: the default now reproduces the verified row to 0.01, which is
+/// the whole claim of this change.
+///
+/// THE SIXTH AXIS, DOF fg:bg, FAILS AT 2.22 AND IS NOT THIS LANE'S. It is
+/// intrinsic to the framing, not to the air: the baseline the CEO approved
+/// measures 0.17 against the same target of 3.0
+/// (`docs/look-acceptance-rubric.md`, and `docs/look-audit-2026-08-05-flamingo.md`
+/// §5 — "แก้จากงานสีไม่ได้"). Haze moved it the right way for free, 1.74 -> 2.22;
+/// closing it needs a real focus separation and is a handoff, so it is reported
+/// here rather than hidden by quoting only the five axes that pass.
+///
+/// AND IT KEEPS THE THING THE RAMP EXISTS FOR, which shipping the density would
+/// have thrown away. `Linear{20, end}` is 0.00 % opaque at 16 and 20 blocks for
+/// EVERY end, so the dead zone f8a1a8f measured the near-field wash out of is
+/// unconditional; `ExpSq(0.0100)` applies 2.53 % at 16 blocks and has no offset
+/// parameter to fix it. `grade_g7.py` A2, same off-frame for all three:
+///
+/// | shipped curve            | far/near ratio | need | verdict |
+/// |---|---|---|---|
+/// | `Linear{20,250}` (was)   | 94.45 | >= 2.5 | PASS |
+/// | `Linear{20,150}` (this)  | 66.15 | >= 2.5 | PASS |
+/// | `ExpSq(0.0100)` (naive bake) | **1.15** | >= 2.5 | **FAIL** |
+///
+/// Those three rows are one method — same off-frame, all three driven the same
+/// way — so they are comparable to each other. The BAKED DEFAULT re-measures A2
+/// at **46.19**, same PASS, and the number to read there is the far-band delta
+/// (35.14 vs the row's 34.99, i.e. the same air): the ratio's denominator is a
+/// near band of well under one level, so it swings on rounding while the far
+/// band does not. Nothing in this axis is close to the 2.5 it must clear.
+///
+/// NOT 160, WHICH ALSO CLEARS. On the same sweep rows, 160 lands warmth 110.94
+/// against a target of 110 — 0.94 of margin on an axis that moves ~3 points per
+/// 10 blocks of end, i.e. a number that passes today and fails on the next scene
+/// edit. 150 clears by **2.96 baked** AND is the fit; 140 is warmer still
+/// (115.82) but drifts to rms 2.50 pp off the approved curve, which is spending
+/// the signed-off look on margin.
 ///
 /// Note for the streaming lane: nothing between `HAZE_FULL` and
-/// [`RENDER_RADIUS`] is visible any more, so that 70-block shell is now pure
-/// draw cost. Tightening `RENDER_RADIUS` to `HAZE_FULL` is available and is
-/// Kevin's call, not this lane's — which is why this const does not make it.
-pub const HAZE_FULL: f32 = 250.0;
+/// [`RENDER_RADIUS`] is visible any more, so that shell — now **170 blocks**,
+/// grown from 70 by this change — is pure draw cost. Tightening `RENDER_RADIUS`
+/// toward `HAZE_FULL` is available and is Kevin's call, not this lane's, which is
+/// why this const does not make it. It is worth more now than it was.
+pub const HAZE_FULL: f32 = 150.0;
 
 const _: () = assert!(
     HAZE_FULL <= RENDER_RADIUS,
@@ -185,6 +242,18 @@ const _: () = assert!(
 /// reads as ruins receding rather than as fog: 63 % at 100 blocks, and paired
 /// with the warm [`Hour::haze`] hue it is worth ~26 points of warmth
 /// (`v20-t05nohz` 97.5 → `v21-t05hz100` 123.1) at no cost to any other axis.
+///
+/// READ THAT PARAGRAPH AS A REFERENCE CURVE, NOT AS A SHIPPED LEVER — 2026-08-06.
+/// This constant is NOT on the shipped path and has not been since f8a1a8f: per
+/// [`haze_falloff`], unset env gives `Linear{HAZE_START, HAZE_FULL}` and this
+/// value is only reachable through `VOXELFORGE_LOOK_HAZE=<density>`. Every number
+/// above was therefore measured on a curve the binary does not run, which is why
+/// bd3cde5 moved this constant and the baked default did not budge (warmth 99.20
+/// baked against 124.65 for the same binary under the env row). The warmth lives
+/// in [`HAZE_FULL`] now, refitted to THIS density — so the two agree by
+/// construction and the `VOXELFORGE_LOOK_HAZE=0.0100` A/B is still the shipped
+/// picture rather than a different one. Change this and [`HAZE_FULL`] drifts off
+/// its own fit; re-run `scripts/_flamingo_haze_refit.py` if you do.
 pub const HAZE_DENSITY: f32 = 0.0100;
 
 /// How far the haze colour is pushed from the sky's own hue toward white.
