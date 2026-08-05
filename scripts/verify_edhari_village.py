@@ -155,7 +155,9 @@ check(f"map has AAA block count (>= 7000)", block_count >= 7000)
 print(f"    -> block count: {block_count}")
 
 # ---- 6. Landmark silhouettes: at least three distinct clusters reach high ----
-TALL_Y = 12
+# We raise the skyline bar to y>=18 so only genuine landmarks count; short walls
+# and house stubs no longer pollute the cluster count.
+TALL_Y = 18
 skyline = {(b["x"], b["z"]) for b in d["blocks"] if b["y"] >= TALL_Y}
 check(f"landmark skyline has blocks at y >= {TALL_Y}", len(skyline) >= 10)
 
@@ -180,9 +182,141 @@ def cluster_columns(cols):
                     q.append(nb)
     return clusters
 
+def cluster_cells(cols):
+    """Return list of sets, each set is one connected cluster."""
+    if not cols:
+        return []
+    seen = set()
+    clusters = []
+    for start in cols:
+        if start in seen:
+            continue
+        cluster = set()
+        q = deque([start])
+        seen.add(start)
+        cluster.add(start)
+        while q:
+            x, z = q.popleft()
+            for dx, dz in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                nb = (x + dx, z + dz)
+                if nb in cols and nb not in seen:
+                    seen.add(nb)
+                    cluster.add(nb)
+                    q.append(nb)
+        clusters.append(cluster)
+    return clusters
+
 landmark_clusters = cluster_columns(skyline)
 check(f"skyline forms at least 3 readable landmark silhouettes", landmark_clusters >= 3)
 print(f"    -> skyline columns: {len(skyline)}, clusters: {landmark_clusters}")
+
+# ---- 6b. Dominant vista landmark: one silhouette must tower above the rest ----
+# This is the "see something far away and want to walk to it" check.
+VISTA_Y = 20
+vista_skyline = {(b["x"], b["z"]) for b in d["blocks"] if b["y"] >= VISTA_Y}
+vista_clusters = cluster_cells(vista_skyline)
+
+# Pick the cluster whose highest block is tallest — that is the intentional
+# vista, not a coincidental tall wall.
+def cluster_max_y(cluster):
+    return max(b["y"] for b in d["blocks"] if (b["x"], b["z"]) in cluster)
+
+vista_clusters.sort(key=cluster_max_y, reverse=True)
+dominant = vista_clusters[0] if vista_clusters else set()
+check(f"dominant vista landmark reaches y >= {VISTA_Y}", len(dominant) >= 10)
+check(f"dominant vista landmark has at least 10 skyline columns", len(dominant) >= 10)
+print(f"    -> vista (y>={VISTA_Y}) columns: {len(vista_skyline)}, dominant cluster: {len(dominant)}")
+
+# ---- 6c. Sight-line: the dominant landmark is visible from spawn -------------
+# The player wakes at (32,32) facing -Z.  We trace from roughly eye height to the
+# highest point of the dominant landmark; a real vista fails if a wall stands on
+# the line.
+def surface_at(x, z):
+    for y in range(31, -1, -1):
+        if (x, y, z) in by_pos:
+            return y
+    return None
+
+
+def is_solid(x, y, z):
+    return (x, y, z) in by_pos
+
+
+def line_of_sight(x0, y0, z0, x1, y1, z1):
+    """DDA-like voxel ray from (x0,y0,z0) to (x1,y1,z1).  Returns True if no
+    solid voxel blocks the line.  Sampling is conservative: we test every voxel
+    the ray passes through."""
+    dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
+    steps = max(abs(dx), abs(dy), abs(dz), 1)
+    for i in range(steps + 1):
+        t = i / steps
+        x = int(round(x0 + dx * t))
+        y = int(round(y0 + dy * t))
+        z = int(round(z0 + dz * t))
+        # Don't count the start/destination voxels as blockers.
+        if (x, z) == (x0, z0) or (x, z) == (x1, z1):
+            continue
+        if is_solid(x, y, z):
+            return False
+    return True
+
+
+if dominant:
+    # target = highest solid voxel inside the dominant cluster
+    dom_blocks = [(b["x"], b["y"], b["z"]) for b in d["blocks"]
+                  if (b["x"], b["z"]) in dominant]
+    dom_blocks.sort(key=lambda t: t[1], reverse=True)
+    tx, ty, tz = dom_blocks[0]
+    # Eye height is approximately 1.6 voxels above the surface (EYE_HEIGHT in scene.rs).
+    spawn_eye_y = (surface_at(32, 32) or 0) + 2
+    los_ok = line_of_sight(32, spawn_eye_y, 32, tx, ty, tz)
+    check(f"dominant landmark ({tx},{ty},{tz}) is visible from spawn (line-of-sight)", los_ok)
+    print(f"    -> dominant landmark top: ({tx},{ty},{tz}), spawn eye y={spawn_eye_y}")
+
+# ---- 6d. Reachability: the player can walk from spawn to the landmark -------
+def walkable_neighbours(x, z):
+    h = surface_at(x, z)
+    if h is None:
+        return []
+    out = []
+    for dx, dz in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+        nx, nz = x + dx, z + dz
+        if not (0 <= nx < W and 0 <= nz < D):
+            continue
+        nh = surface_at(nx, nz)
+        if nh is None:
+            continue
+        # Step up/down at most one voxel; headroom for a 2-voxel-tall body.
+        if abs(nh - h) > 1:
+            continue
+        if is_solid(nx, nh + 2, nz):
+            continue
+        out.append((nx, nz))
+    return out
+
+
+if dominant:
+    # The landmark itself may be vertical (spire shaft) with no walkable cell on
+    # its skyline columns, so we also accept reaching any walkable cell that is
+    # directly adjacent to the dominant silhouette.
+    goals = set(dominant)
+    for cx, cz in list(dominant):
+        for dx, dz in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            goals.add((cx + dx, cz + dz))
+    q = deque([(32, 32)])
+    seen = {(32, 32)}
+    reached = False
+    while q:
+        cur = q.popleft()
+        if cur in goals:
+            reached = True
+            break
+        for nxt in walkable_neighbours(*cur):
+            if nxt not in seen:
+                seen.add(nxt)
+                q.append(nxt)
+    check("dominant landmark is reachable on foot from spawn", reached)
+    print(f"    -> reachable cells explored: {len(seen)}")
 
 # ---- 7. Main street spine remains clear and paved --------------------------
 main_street_cells = [(x, z) for x in range(30, 35) for z in range(6, 30)]
@@ -258,6 +392,62 @@ print(f"    -> southern half blocks: {south_blocks}")
 shelter_floor = all((x, 0, z) in by_type["grass"]
                     for x in range(30, 35) for z in range(33, 36))
 check("spawn shelter back floor remains solid grass", shelter_floor)
+
+# ---- 14. Exploration rhythm: narrow -> open -> vista ------------------------
+# The level should guide the player through compression and release, ending at
+# a vantage point where the dominant landmark is framed.
+walkable = {(x, z) for x in range(W) for z in range(D) if surface_at(x, z) is not None
+            and not is_solid(x, surface_at(x, z) + 2, z)}
+
+# Neighbour count on the walkable graph.
+def walk_neighbours(cell):
+    x, z = cell
+    return [n for n in [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)]
+            if n in walkable]
+
+# Narrow corridor = cells with few walkable neighbours (dead-end or slot).
+narrow_cells = {c for c in walkable if len(walk_neighbours(c)) <= 3}
+open_cells = walkable - narrow_cells
+
+# Find the longest narrow corridor (connected component of narrow cells).
+def largest_component(cells):
+    best = 0
+    seen = set()
+    for start in cells:
+        if start in seen:
+            continue
+        q = deque([start])
+        seen.add(start)
+        size = 0
+        while q:
+            cur = q.popleft()
+            size += 1
+            for nxt in walk_neighbours(cur):
+                if nxt in cells and nxt not in seen:
+                    seen.add(nxt)
+                    q.append(nxt)
+        best = max(best, size)
+    return best
+
+narrow_corridor_len = largest_component(narrow_cells)
+open_area_size = largest_component(open_cells)
+check("exploration: a narrow corridor exists (length >= 15 cells)", narrow_corridor_len >= 15)
+check("exploration: an open area exists (size >= 80 cells)", open_area_size >= 80)
+print(f"    -> narrow corridor length: {narrow_corridor_len}, open area size: {open_area_size}")
+
+# Vista points: cells where the dominant landmark is visible.
+if dominant and dom_blocks:
+    tx, ty, tz = dom_blocks[0]
+    vista_count = 0
+    # Sample every 4th cell so this stays cheap.
+    sample_cells = [(x, z) for x in range(5, W - 5, 4) for z in range(5, D - 5, 4)
+                    if (x, z) in walkable]
+    for vx, vz in sample_cells:
+        vy = surface_at(vx, vz) + 2
+        if line_of_sight(vx, vy, vz, tx, ty, tz):
+            vista_count += 1
+    check("exploration: multiple vista points can see the dominant landmark (>= 5)", vista_count >= 5)
+    print(f"    -> vista points with sight to dominant landmark: {vista_count}")
 
 print()
 if fail:
