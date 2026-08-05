@@ -28,6 +28,7 @@ Thumbs.db
 *.out
 *.done
 *.meta
+*.nohup
 bench-out.txt
 logs_*.txt
 # stray build-output notes dropped inside the client crate
@@ -189,3 +190,9 @@ _*.patch
 # Add to this list only when a TRACKED file requires the path.
 # tests/test_nohud2_guard.py fails if either of these stops being tracked.
 !scripts/_flamingo_dehud2.py
+
+# ── Superseded / one-shot artifacts (2026-08-06 Kevin cleanup) ──
+# v1 no-HUD gate3 shot — replaced by nohud2 variants already tracked.
+/docs/assets/gate3/gate3-after-boot-nohud.png
+# One-shot rebuild script with a hardcoded local path.
+/scripts/tests/step2_rebuild_audio.ps1

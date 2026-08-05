@@ -36,7 +36,8 @@ the other agent a build.
 | Editor camera / gizmos | `client/src/editor_camera.rs`, `client/src/gizmo.rs` | **yamamoto** | |
 | Animation / VFX / asset import | `client/src/anim.rs`, `client/src/vfx.rs`, `client/src/vfx_bridge.rs`, `client/src/import.rs` | **yamamoto** | Anim clips + the parry timeline, particle/impact VFX and the bridge that fires them, `.vox` import. |
 | Dodge & parry | `client/src/dodge_parry.rs` | **kevin** | i-frames + parry→riposte; moves with the combat lane. |
-| Voxel core / map loader | `client/src/voxel.rs`, `client/src/mapfile.rs` | **shiba** | Greedy meshing + the JSON map schema the levels are graded against. |
+| Voxel core / map loader | `client/src/voxel.rs`, `client/src/mapfile.rs` | **poppy** (on loan from shiba) | Greedy meshing + the JSON map schema the levels are graded against. Lent to poppy 2026-08-05 while shiba's brain is rate-limited; reverts to shiba when he is back. |
+| Block palette / block table | `sim/src/block.rs` | **poppy** | The `base_color()` table `voxel.rs::tile_base()` reads. Assigned 2026-08-05 — file was unowned, which was blocking monanisa's palette hexes from landing. Colour *values* are monanisa's call; poppy only lands them. |
 | Proof scripts | `scripts/prove_*.sh` | **shino (Director)** | These are the office's grading rules. Propose a gate; don't loosen one. |
 | Independent cross-checks | `scripts/_shino_*.py` | **shino (Director)** | Re-implementations written from the Rust source, *not* from another checker — they exist to be able to disagree with it. Don't delete one because another checker "already covers it". |
 | Map verification | `scripts/verify_edhari_village.py` | **shiba** | Grades `maps/edhari.json` against the loader schema, so it moves with the map lane above. |
