@@ -1,0 +1,37 @@
+# Colour Gate allowlist — paths/globs exempted from specific gates.
+# Format: <glob>  <reason>  [gates]
+#   glob   = relative path from repo root (e.g. docs/assets/steam/*.png)
+#   reason = why this file/pattern is exempt
+#   gates  = comma-separated list of gates to skip: A, B, C
+#            omit to skip ALL gates (file is fully exempt)
+# Lines starting with # are comments. Empty lines are ignored.
+# Matching: fnmatch against each file path; first match wins.
+# If a file matches NO allowlist entry, all gates apply normally.
+
+# ── Verdict cards ── intentionally show bugs for documentation ──
+# Only the PRE-FIX card is exempt: it renders the db25758 magenta sky as evidence (6.99%).
+# The current card (gate3-colour-verdict.png) is NOT listed on purpose — it now measures
+# 0.22% and passes A/C unaided, so leaving it exempt would hide a future regression in it.
+docs/assets/gate3/gate3-colour-verdict-prefix.png  pre-fix verdict card — intentionally displays the db25758 magenta bug as the record of it
+
+# ── REJECTED / NOTGRADEABLE frames ── preserved for reference ──
+# Match anywhere under docs/assets — the keyword in the filename is the signal.
+docs/assets/**/*REJECTED*.png  REJECTED frame — preserved for reference, not meant to pass colour gate
+docs/assets/**/*NOTGRADEABLE*.png  NOTGRADEABLE frame — not meant to pass colour gate
+
+# ── Steam capsule artwork ── hand-painted, no rendered sky ──
+# Gate B (sky ordering/gain) is meaningless on a painting.
+# Gate A (magenta fraction) is STILL enforced — a painted capsule could still have a magenta cast.
+docs/assets/steam/header-capsule-920x430.png  hand-painted steam capsule artwork (no rendered sky)  B
+docs/assets/steam/main-capsule-1232x706.png  hand-painted steam capsule artwork (no rendered sky)  B
+docs/assets/steam/page-background-1438x810.png  hand-painted steam capsule artwork (no rendered sky)  B
+docs/assets/steam/small-capsule-462x174.png  hand-painted steam capsule artwork (no rendered sky)  B
+
+# ── Magenta-fix before frames ── intentionally document the magenta bug ──
+# Only *-before*.png and *-before-vs-after.png are exempt — they show the broken render.
+# *-after.png frames are NOT exempt: they are the proof the fix worked.
+docs/assets/magenta-fix/*-before*.png  intentional before-frame documenting the magenta bug
+
+# Gate C edhari-village-topdown is no longer allowlisted — the R_DOMINANT_MARGIN
+# (5-point minimum R-G lead) in colour_gate.py handles mid-gray surfaces structurally.
+# A mid-gray surface with R~G~B all within 2 points no longer trips r_dominant.
