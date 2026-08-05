@@ -11,6 +11,20 @@
 //! is driven by env vars parsed in `main::read_cfg`, so the scene can be tuned and
 //! re-screenshotted WITHOUT another (slow) Bevy recompile.
 
+/// Set to `true` when the overlap gate fails. A static atomic so Bevy's window
+/// close handler (which resets `AppExit` to `Success` during shutdown) cannot
+/// overwrite it — the owning binary reads it AFTER `app.run()` returns and
+/// calls `std::process::exit` with the right code.
+pub static GATE_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Gate verdict resource — mutated by systems that detect FAIL, read by exit points.
+/// Mirrors the static `GATE_FAILED` so systems that run before `app.run()` returns
+/// can still check it without a static read. (Use `GATE_FAILED` after `app.run()`.)
+#[derive(Resource, Default)]
+pub struct GateVerdict {
+    pub failed: bool,
+}
+
 use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{
@@ -945,6 +959,7 @@ impl VoxelGrid {
 pub fn report_voxel_overlaps(
     mut done: Local<bool>,
     q: Query<(&Transform, &MeshMaterial3d<StandardMaterial>)>,
+    mut verdict: ResMut<GateVerdict>,
 ) {
     if *done {
         return;
@@ -971,7 +986,12 @@ pub fn report_voxel_overlaps(
         })
         .collect();
     conflicts.sort();
-    println!("VOXEL_OVERLAPS={}", conflicts.len());
+    let n = conflicts.len();
+    if n > 0 {
+        verdict.failed = true;
+        GATE_FAILED.store(true, std::sync::atomic::Ordering::Release);
+    }
+    println!("VOXEL_OVERLAPS={n}");
     for ((x, y, z), n) in conflicts.iter().take(32) {
         println!(
             "  OVERLAP at ({:.3}, {:.3}, {:.3}) {} distinct materials",

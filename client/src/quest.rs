@@ -460,7 +460,16 @@ impl Plugin for QuestPlugin {
                     // These two MUST run after quest_demo so they see keys
                     // the demo pressed this frame (just_pressed is cleared
                     // next PreUpdate, so check_* before quest_demo = lost).
-                    check_block_place_triggers.after(quest_demo),
+                    //
+                    // `.before(combat::gather_input)` is the other load-bearing
+                    // edge: R is shared with lock-on (§2.3) and `just_pressed`
+                    // consumes nothing, so whoever reads it second reads it too.
+                    // The build prompt gets first refusal and claims
+                    // `combat::RKeyRoute`; lock-on takes what is left.
+                    check_block_place_triggers
+                        .after(quest_demo)
+                        .after(combat::r_route_probe)
+                        .before(combat::gather_input),
                     check_lore_read_triggers.after(quest_demo),
                     // INPUT_TRACE: snapshot just_pressed(R) AFTER the handler.
                     // Proves flag survived the full pipeline to end-of-frame.
@@ -1252,12 +1261,34 @@ fn input_trace_after_handler(
         r_jp, r_held, all_jp.join(","), demo.demo_frame_id);
 }
 
+/// Is there an active, incomplete `place_block` objective within its radius of
+/// `pos`?
+///
+/// The same test the loop in `check_block_place_triggers` applies, split out so
+/// the R-key arbiter can be asked *before* anything is mutated — and so the
+/// routing rule ("R only builds when the prompt is actually in reach") is
+/// unit-testable without standing up an App.
+fn place_block_in_reach(journal: &QuestJournal, data: &StoryData, pos: &Vec3) -> bool {
+    data.quests.iter().any(|qdef| {
+        let Some(prog) = journal.quests.get(&qdef.id) else { return false };
+        if prog.status != QuestStatus::Active { return false; }
+        let Some(obj) = qdef.objectives.get(prog.current_objective) else { return false };
+        if obj.kind != "place_block" { return false; }
+        if prog.completed_objectives.contains(&obj.id) { return false; }
+        let Some(target) = obj.position else { return false };
+        let dx = pos.x - target.x;
+        let dz = pos.z - target.z;
+        (dx * dx + dz * dz).sqrt() <= obj.radius.unwrap_or(4.0)
+    })
+}
+
 fn check_block_place_triggers(
     keys: Res<ButtonInput<KeyCode>>,
     player_q: Query<&Transform, With<FlyCam>>,
     mut journal: ResMut<QuestJournal>,
     story: Res<StoryDataRes>,
     demo: Res<QuestDemo>,
+    mut route: ResMut<combat::RKeyRoute>,
 ) {
     // INSTRUMENTATION: capture demo frame-id to verify ordering (must be > 0
     // when check runs, proving quest_demo already ran this frame).
@@ -1295,6 +1326,22 @@ fn check_block_place_triggers(
     let q4_done = q4.map(|p| p.completed_objectives.join(",")).unwrap_or_default();
     println!("QUEST_DEBUG_BLOCK q4_state status={} cur_obj={} done=[{}]",
         q4_status, q4_obj, q4_done);
+
+    // R is shared with combat lock-on (§2.3). This system is ordered
+    // `.before(combat::gather_input)`, so it gets first refusal on the press —
+    // but it may only take it when a `place_block` objective is really in reach.
+    // Anything else falls through and R stays a lock-on toggle. Asking *before*
+    // touching the journal is what keeps the two out of the same frame; see
+    // `combat::RKeyRoute`.
+    if !place_block_in_reach(&journal, data, &ptf.translation) {
+        println!("QUEST_DEBUG_BLOCK no place_block objective in reach - R left to lock-on");
+        return;
+    }
+    if !route.claim(combat::RKeyUse::QuestPlace, "quest::check_block_place_triggers") {
+        println!("QUEST_DEBUG_BLOCK R already claimed by {} - build objective skipped this frame",
+            route.claimed_by());
+        return;
+    }
 
     let mut found_any = false;
     for qdef in &data.quests {
@@ -1433,6 +1480,17 @@ const TALK_DIST: f32 = 4.3;
 /// Stop inside `guard_post_east` (x 48-56, z 4-12) — far enough in that the region
 /// trigger has fired, close enough that Garren's 12-block aggro picks the player up.
 const POST_STOP_X: f32 = 49.5;
+/// The lane the demo walks east on to reach the post.
+///
+/// The straight z≈6.9 line it used to take is a wall on the current
+/// `maps/edhari.json`: a 5-high column stands at (43,7) over ground at y=2, and
+/// step-up is one block, so the body wedges against it and Garren walks over to
+/// beat on it — `QUEST_WALK_GUARD_POST timeout x=42.7 z=6.9 hp=30 => FAIL`,
+/// reproduced with the probe off, so it is the map and not the R key. Surveying
+/// the map file, z=8 is clear ground (top y=2) from x=40 all the way to x=52,
+/// and `guard_post_east` spans z 4-12 — so this lane still stops inside the
+/// region that fires the trigger.
+const POST_LANE_Z: f32 = 8.5;
 /// Close to this before swinging: melee reach is 2.0 + half-width + 0.6.
 const MELEE_CLOSE: f32 = 2.2;
 /// Scripted taps alternate release → press on this cadence. `just_pressed` only
@@ -1485,15 +1543,31 @@ fn set_key(keys: &mut ButtonInput<KeyCode>, key: KeyCode, down: bool) {
     if down { keys.press(key); } else { keys.reset(key); }
 }
 
-/// Hold the WASD keys that walk the body toward a target offset. WASD is
-/// camera-relative and a headless run never moves the mouse, so yaw stays 0:
-/// W = -Z, S = +Z, D = +X, A = -X. Holding the key toward the target also turns
-/// the avatar to face it, which is what puts a swing's 60° cone on an enemy.
-fn steer(keys: &mut ButtonInput<KeyCode>, dx: f32, dz: f32, tol: f32) {
-    set_key(keys, KeyCode::KeyD, dx > tol);
-    set_key(keys, KeyCode::KeyA, dx < -tol);
-    set_key(keys, KeyCode::KeyS, dz > tol);
-    set_key(keys, KeyCode::KeyW, dz < -tol);
+/// Hold the WASD keys that walk the body toward a target offset, given the
+/// camera's current yaw. Holding the key toward the target also turns the avatar
+/// to face it, which is what puts a swing's 60° cone on an enemy.
+///
+/// The yaw argument is not decoration. WASD is camera-relative — `fly_camera`
+/// builds its wish vector from the orbit camera's flat forward/right
+/// (`main.rs:1374-1379`) — and "the mouse never moves, so yaw stays 0" stopped
+/// being true when lock-on landed: `combat::lock_on_camera` writes `orbit.yaw`
+/// itself (`combat.rs:2145`). One R press was enough to rotate the whole
+/// scripted route. Measured on the same binary (target-combat/perf, 17:15):
+/// with `VOXELFORGE_RKEY_PROBE=1` the demo walked west out of the village and
+/// timed out at the world edge (`QUEST_WALK_TO_GATE timeout leg=0 at
+/// (1.3,59.7)`); without the probe it walked the identical route in 9 s
+/// (`leg=4 t=9.0`). Rotating the heading into camera space here is what keeps
+/// the route walkable with the camera pointing anywhere.
+fn steer(keys: &mut ButtonInput<KeyCode>, cam_yaw: f32, dx: f32, dz: f32, tol: f32) {
+    // Flattened camera basis: fwd = (-sin y, 0, -cos y), right = (cos y, 0, -sin y).
+    // At yaw 0 this is exactly the old world-axis mapping (fwd = -dz, right = dx).
+    let (s, c) = cam_yaw.sin_cos();
+    let fwd = -dx * s - dz * c;
+    let right = dx * c - dz * s;
+    set_key(keys, KeyCode::KeyD, right > tol);
+    set_key(keys, KeyCode::KeyA, right < -tol);
+    set_key(keys, KeyCode::KeyS, fwd < -tol);
+    set_key(keys, KeyCode::KeyW, fwd > tol);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1505,6 +1579,9 @@ fn quest_demo(
     journal: Res<QuestJournal>,
     player_q: Query<(&Transform, &combat::Health), With<FlyCam>>,
     mut fly_q: Query<&mut FlyCam>,
+    // Read-only, and disjoint from `fly_q` — the boom is its own entity
+    // (`combat::lock_on_camera` filters the same way).
+    cam_q: Query<&crate::OrbitCam, Without<FlyCam>>,
     npcs: Query<&Transform, With<Npc>>,
     enemies: Query<(&Transform, &combat::Health), With<combat::Enemy>>,
     mut exit: bevy::ecs::message::MessageWriter<AppExit>,
@@ -1516,6 +1593,9 @@ fn quest_demo(
     demo.demo_frame_id = demo.demo_frame_id.wrapping_add(1);
     let t = time.elapsed_secs();
     let Ok((ptf, php)) = player_q.single() else { return };
+    // Every `steer` below is expressed in world space and rotated into the
+    // camera's basis with this yaw — lock-on turns the camera mid-route.
+    let cam_yaw = cam_q.single().map(|o| o.yaw).unwrap_or(0.0);
 
     if t < 1.5 { return; }
     if demo.stamp.is_none() { demo.stamp = Some(t); }
@@ -1523,7 +1603,7 @@ fn quest_demo(
     macro_rules! enter { ($p:expr) => {{ demo.phase = $p; demo.stamp = Some(t); }}; }
     macro_rules! hands_off {
         () => {{
-            steer(&mut key_input, 0.0, 0.0, 1.0);
+            steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
             if let Some(k) = demo.tap_down.take() { key_input.reset(k); }
         }};
     }
@@ -1553,13 +1633,13 @@ fn quest_demo(
                 let to = etf.translation - ptf.translation;
                 let flat = Vec3::new(to.x, 0.0, to.z);
                 if flat.length() > MELEE_CLOSE {
-                    steer(&mut key_input, flat.x, flat.z, 0.4);
+                    steer(&mut key_input, cam_yaw, flat.x, flat.z, 0.4);
                 } else {
-                    steer(&mut key_input, 0.0, 0.0, 1.0);
+                    steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                 }
                 press_key(&mut demo, &mut key_input,KeyCode::KeyX, t);
             } else {
-                steer(&mut key_input, dx, dz, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL);
             }
             let tick = phase_t as u32;
             if tick > 0 && tick % 3 == 0 && tick != demo.debug_tick {
@@ -1568,14 +1648,14 @@ fn quest_demo(
                 demo.debug_tick = tick;
             }
             if phase_t > 90.0 {
-                steer(&mut key_input, 0.0, 0.0, 1.0);
+                steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                 println!("QUEST_WALK_TO_GATE timeout leg={} at ({:.1},{:.1}) => FAIL",
                     demo.leg, ptf.translation.x, ptf.translation.z);
                 demo.phase = 99;
             }
             return;
         }
-        steer(&mut key_input, 0.0, 0.0, 1.0);
+        steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
         demo.walked_to_gate = true;
         println!("QUEST_WALK_TO_GATE z={:.1} => reached gate_square", ptf.translation.z);
         // By now the approach trigger has closed out q1 (campfire) and the area
@@ -1610,16 +1690,16 @@ fn quest_demo(
             let d = ptf.translation.distance(mtf.translation);
             if d > TALK_DIST && !dialogue.open {
                 let to = mtf.translation - ptf.translation;
-                steer(&mut key_input, to.x, to.z, 0.3);
+                steer(&mut key_input, cam_yaw, to.x, to.z, 0.3);
                 if phase_t > 8.0 {
-                    steer(&mut key_input, 0.0, 0.0, 1.0);
+                    steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     println!("QUEST_INTERACT unreachable — Maren {d:.1} blocks away => FAIL");
                     demo.phase = 99;
                 }
                 return;
             }
         }
-        steer(&mut key_input, 0.0, 0.0, 1.0);
+        steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
 
         // Release whatever was held, then press the right key for this time slice.
         // 0.35 s hold + 0.15 s gap = 0.5 s per key press → 10 keys in 5 s.
@@ -1660,16 +1740,24 @@ fn quest_demo(
             .map(|p| p.completed_objectives.iter().any(|o| o == "o2_observe"))
             .unwrap_or(false);
         if !observed && ptf.translation.x < POST_STOP_X {
-            steer(&mut key_input, POST_STOP_X - ptf.translation.x, 0.0, WAYPOINT_TOL);
+            // Two legs, not one: drop off the gate plateau onto the clear lane
+            // first (POST_LANE_Z), then walk east along it. Steering straight at
+            // the post from z≈6.9 walks into the (43,7) column.
+            let dz = POST_LANE_Z - ptf.translation.z;
+            if dz.abs() > WAYPOINT_TOL {
+                steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
+            } else {
+                steer(&mut key_input, cam_yaw, POST_STOP_X - ptf.translation.x, 0.0, WAYPOINT_TOL);
+            }
             if phase_t > 25.0 {
-                steer(&mut key_input, 0.0, 0.0, 1.0);
+                steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                 println!("QUEST_WALK_GUARD_POST timeout x={:.1} z={:.1} hp={:.0} => FAIL",
                     ptf.translation.x, ptf.translation.z, php.cur);
                 demo.phase = 99;
             }
             return;
         }
-        steer(&mut key_input, 0.0, 0.0, 1.0);
+        steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
         println!("QUEST_WALK_GUARD_POST reached x={:.1} z={:.1} hp={:.0}",
             ptf.translation.x, ptf.translation.z, php.cur);
         enter!(3);
@@ -1687,6 +1775,9 @@ fn quest_demo(
             hands_off!();
             demo.killed_garren = true;
             enter!(4);
+            // Reset tap timer so the first press_key call in Phase 4 is never
+            // blocked by Phase 3's combat key cooldown (TRIAGE §5-F1).
+            demo.tap_t = 0.0;
             return;
         }
         // Only fight what is actually at the post — the village husk 20 blocks
@@ -1700,9 +1791,9 @@ fn quest_demo(
             let to = etf.translation - ptf.translation;
             let flat = Vec3::new(to.x, 0.0, to.z);
             if flat.length() > MELEE_CLOSE {
-                steer(&mut key_input, flat.x, flat.z, 0.4);
+                steer(&mut key_input, cam_yaw, flat.x, flat.z, 0.4);
             } else {
-                steer(&mut key_input, 0.0, 0.0, 1.0);
+                steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
             }
             press_key(&mut demo, &mut key_input,KeyCode::KeyX, t);
         }
@@ -1729,6 +1820,17 @@ fn quest_demo(
     // o1_build: walk to (50,9), press R (place_block). o2_ledger: walk to (46,24),
     // press E (interact lore_village_ledger). o3_offering: walk to (33,14), press E.
     if demo.phase == 4 {
+        // Guard: q4 must be Active before the demo can complete its objectives.
+        // On the frame q3→q4 transitions, q4 may be Locked for one frame.
+        // Wait instead of silently failing (status=Locked → place_block trigger
+        // ignores the R press → timeout — TRIAGE §5-F3).
+        let q4_status = journal.quests.get("q4_what_walls_remember")
+            .map(|p| p.status).unwrap_or(QuestStatus::Locked);
+        if q4_status != QuestStatus::Active {
+            hands_off!();
+            println!("QUEST_DEBUG_P4 waiting for q4 activation (status={:?})", q4_status);
+            return;
+        }
         let q4_done = journal.quests.get("q4_what_walls_remember")
             .map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
         if q4_done {
@@ -1752,9 +1854,9 @@ fn quest_demo(
         match cur {
             0 => { let (tx, tz) = (50.0, 9.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
-                if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
+                if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyR, t); }
-                else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
                 // DEBUG: log walk progress every second
                 let tick = phase_t as u32;
                 if tick > 0 && tick != demo.debug_tick && tick % 3 == 0 {
@@ -1767,16 +1869,16 @@ fn quest_demo(
                         ptf.translation.x, ptf.translation.z, cur); demo.phase = 99; } }
             1 => { let (tx, tz) = (46.0, 24.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
-                if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
+                if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
-                else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
                 if phase_t > 30.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o2_ledger => FAIL (timeout)"); demo.phase = 99; } }
             2 => { let (tx, tz) = (33.0, 14.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
-                if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
+                if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
-                else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
                 if phase_t > 30.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o3_offering => FAIL (timeout)"); demo.phase = 99; } }
             _ => { hands_off!(); enter!(5); }
@@ -1796,10 +1898,10 @@ fn quest_demo(
             .map(|p| p.current_objective).unwrap_or(0);
         if stage5 < 2 {
             if ptf.translation.x < 35.0 && ptf.translation.z < 3.0 {
-                steer(&mut key_input, 0.0, 0.0, 1.0);
+                steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
             } else if ptf.translation.x > 36.0 || ptf.translation.z > 8.0 {
-                steer(&mut key_input, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, WAYPOINT_TOL);
-            } else { steer(&mut key_input, 0.0, -1.0, 0.0); }
+                steer(&mut key_input, cam_yaw, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, WAYPOINT_TOL);
+            } else { steer(&mut key_input, cam_yaw, 0.0, -1.0, 0.0); }
             if phase_t > 40.0 { hands_off!();
                 println!("QUEST_STAGE_COMPLETE q5 gate => FAIL (timeout at z={:.1})", ptf.translation.z);
                 demo.phase = 99; }
@@ -2326,5 +2428,45 @@ mod tests {
         assert_eq!(end.trigger_quest, "q5_sigil_that_knew_you");
         assert!(!end.final_line.is_empty(), "final line must not be empty");
         assert!(!end.beats.is_empty(), "cliffhanger beats must not be empty");
+    }
+
+    // ---------------------------------------------------------------------------
+    // R-key routing: the build prompt only takes R when it can actually act
+    // ---------------------------------------------------------------------------
+
+    /// q4 active on its `place_block` objective — the one state where R builds.
+    fn journal_on_q4_build(data: &StoryData) -> QuestJournal {
+        let mut j = fresh_journal(data);
+        let prog = j.quests.get_mut("q4_what_walls_remember").unwrap();
+        prog.status = QuestStatus::Active;
+        prog.current_objective = 0;
+        j
+    }
+
+    #[test]
+    fn place_block_in_reach_only_at_the_build_site() {
+        let data = act1();
+        let j = journal_on_q4_build(&data);
+        // o1_build sits at (50, 9) with the default 4-block radius.
+        assert!(place_block_in_reach(&j, &data, &Vec3::new(50.0, 9.0, 9.0)));
+        assert!(place_block_in_reach(&j, &data, &Vec3::new(52.0, 9.0, 11.0)));
+        // Standing anywhere else, R belongs to lock-on.
+        assert!(!place_block_in_reach(&j, &data, &Vec3::new(20.0, 9.0, 20.0)));
+        assert!(!place_block_in_reach(&j, &data, &Vec3::new(56.0, 9.0, 9.0)));
+    }
+
+    #[test]
+    fn place_block_out_of_reach_when_the_quest_is_not_there_yet() {
+        let data = act1();
+        // A fresh journal has q4 locked — same spot, no claim.
+        let locked = fresh_journal(&data);
+        assert!(!place_block_in_reach(&locked, &data, &Vec3::new(50.0, 9.0, 9.0)));
+
+        // Already built: the objective is done and the quest moved on.
+        let mut done = journal_on_q4_build(&data);
+        let prog = done.quests.get_mut("q4_what_walls_remember").unwrap();
+        prog.completed_objectives.push("o1_build".to_string());
+        prog.current_objective = 1;
+        assert!(!place_block_in_reach(&done, &data, &Vec3::new(50.0, 9.0, 9.0)));
     }
 }

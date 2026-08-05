@@ -139,8 +139,20 @@ struct Probe {
 fn main() {
     let mode = Mode::from_env();
 
+    // Pin assets to the exe directory — see the identical block in main.rs for
+    // the full rationale (Bevy 0.19 `get_base_path()` CARGO_MANIFEST_DIR hijack).
+    let exe_dir = std::env::current_exe()
+        .expect("current exe path")
+        .parent()
+        .expect("exe has no parent dir")
+        .to_path_buf();
+    let asset_path = exe_dir.join("assets");
+
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+    app.add_plugins(
+        DefaultPlugins
+            .set(AssetPlugin { file_path: asset_path.to_string_lossy().to_string(), ..default() })
+            .set(WindowPlugin {
         primary_window: Some(Window {
             title: format!("Voxelforge — perf probe [{}]", mode.label()),
             // Same back buffer the game ships at. Every effect in this stack is

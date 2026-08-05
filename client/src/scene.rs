@@ -24,6 +24,7 @@ use bevy::prelude::*;
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::CHUNK_SIZE as CHUNK;
 
+use crate::audio::SfxEvent;
 use crate::combat;
 use crate::editor::AppState;
 use crate::hud;
@@ -591,6 +592,7 @@ fn respawn_at_campfire(
     >,
     mut fade_q: Query<&mut BackgroundColor, With<DeathFade>>,
     mut notice_q: Query<&mut TextColor, With<RestNotice>>,
+    mut sfx: MessageWriter<SfxEvent>,
 ) {
     let dt = time.delta_secs();
 
@@ -651,6 +653,7 @@ fn respawn_at_campfire(
             reset += 1;
         }
         death.notice = NOTICE;
+        sfx.write(SfxEvent::PlayerRespawn);
         println!(
             "RESPAWN at campfire ({:.1},{:.1},{:.1}) hp=full enemies_reset={reset}",
             respawn_eye.x, respawn_eye.y, respawn_eye.z

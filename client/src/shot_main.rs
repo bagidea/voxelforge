@@ -31,6 +31,8 @@ use bevy::window::PresentMode;
 #[derive(Resource, Clone)]
 pub struct Cfg {
     pub shot: Option<String>,
+    /// `VOXELFORGE_STRICT_EXIT=1`: exit code ≠0 when a gate FAILs (the overlap check).
+    pub strict_exit: bool,
     pub cam: Option<[f32; 7]>, // ex,ey,ez, tx,ty,tz, fov_deg
     pub sun: Option<[f32; 3]>, // elevation_deg, azimuth_deg, illuminance
     pub dof: Option<[f32; 2]>, // focal_distance, aperture_f_stops
@@ -69,6 +71,7 @@ fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
 fn read_cfg() -> Cfg {
     Cfg {
         shot: std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty()),
+        strict_exit: std::env::var("VOXELFORGE_STRICT_EXIT").is_ok(),
         cam: env_floats("VOXELFORGE_CAM"),
         sun: env_floats("VOXELFORGE_SUN"),
         dof: env_floats("VOXELFORGE_DOF"),
@@ -108,13 +111,24 @@ struct ShotState {
     at_frame: Option<u32>,
 }
 
-fn main() {
+fn main() -> AppExit {
     let cfg = read_cfg();
     let shot = cfg.shot.clone();
 
+    // Pin assets to the exe directory — see the identical block in main.rs for
+    // the full rationale (Bevy 0.19 `get_base_path()` CARGO_MANIFEST_DIR hijack).
+    let exe_dir = std::env::current_exe()
+        .expect("current exe path")
+        .parent()
+        .expect("exe has no parent dir")
+        .to_path_buf();
+    let asset_path = exe_dir.join("assets");
+
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins.set(WindowPlugin {
+        DefaultPlugins
+            .set(AssetPlugin { file_path: asset_path.to_string_lossy().to_string(), ..default() })
+            .set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Voxelforge — hero shot".into(),
                 resolution: (1280u32, 720u32).into(),
@@ -128,6 +142,7 @@ fn main() {
     .insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 })
     .insert_resource(cfg)
     .insert_resource(ShotState { path: shot, took: false, frame: 0, at_frame: None })
+    .insert_resource(hero::GateVerdict::default())
     .add_systems(Update, screenshot_once);
 
     // `VOXELFORGE_VFX=off|impact|dissolve|fire` swaps the locked golden KITCHEN for
@@ -184,7 +199,8 @@ fn main() {
         }
     }
 
-    app.run();
+    app.add_systems(Last, check_gate_on_exit);
+    app.run()
 }
 
 /// SELF-TEST for `hero::report_voxel_overlaps` (default OFF).
@@ -261,6 +277,22 @@ fn screenshot_once(
         println!("SHOT saved to {path} (frame {})", state.frame);
     }
     if state.took && quit {
+        // Exit code is decided via AppExit messages inside the ECS —
+        // `check_gate_on_exit` in Last picks up GATE_FAILED and injects
+        // an error exit that `should_exit()` finds before Success.
         exit.write(AppExit::Success);
+    }
+}
+
+/// If `--strict-exit` is active and any gate printed FAIL, inject a non-zero
+/// `AppExit` message so `fn main() -> AppExit` produces exit code ≠0.
+/// Runs in `Last` so gate systems in `Update` have already set `GATE_FAILED`
+/// by the time we look.
+fn check_gate_on_exit(
+    cfg: Res<Cfg>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if cfg.strict_exit && hero::GATE_FAILED.load(std::sync::atomic::Ordering::Acquire) {
+        exit.write(AppExit::error());
     }
 }

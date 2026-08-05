@@ -186,18 +186,44 @@ impl SfxCounter {
     }
 }
 
+/// TEMPORARY proof resource — fires every [`SfxEvent`] variant after entering Play
+/// so the real `play_sfx` system prints `AUDIO_PLAY:` for every audio path.
+/// Only active when `VOXELFORGE_AUDIO_PROOF=1` — see [`AudioProofMode`].
+/// REMOVE after the audio proof log shows every path count ≥1.
+#[derive(Resource)]
+struct SfxProof {
+    frames: u32,
+}
+
+/// TEMPORARY — gates [`sfx_proof_driver`] and shortens the `dump_sfx_summary`
+/// interval. Off by default so the debug SFX spam never ships in a normal
+/// build; set `VOXELFORGE_AUDIO_PROOF=1` to enable for verification runs.
+/// REMOVE alongside `SfxProof`/`sfx_proof_driver`.
+#[derive(Resource)]
+struct AudioProofMode(bool);
+
+fn audio_proof_enabled(proof: Res<AudioProofMode>) -> bool {
+    proof.0
+}
+
 pub struct AudioPlugin;
 
 impl Plugin for AudioPlugin {
     fn build(&self, app: &mut App) {
+        let proof_mode = std::env::var("VOXELFORGE_AUDIO_PROOF")
+            .map(|v| v == "1")
+            .unwrap_or(false);
         app
             .insert_resource(AudioSettings::default())
             .insert_resource(StepTracker::default())
             .insert_resource(AmbientEnts::default())
             .insert_resource(SfxCounter::default())
+            .insert_resource(SfxProof { frames: 0 })
+            .insert_resource(AudioProofMode(proof_mode))
             .add_message::<SfxEvent>()
             .add_systems(Update, (
                 attach_listener,
+                sfx_proof_driver.run_if(audio_proof_enabled),
                 play_sfx,
                 footstep_tracker,
                 update_volumes,
@@ -384,18 +410,71 @@ fn despawn_ambient(mut commands: Commands, mut ents: ResMut<AmbientEnts>) {
 }
 
 // ---------------------------------------------------------------------------
+// TEMPORARY proof driver — fire every SFX variant so real systems print PASS
+// ---------------------------------------------------------------------------
+
+/// TEMPORARY: Fire every [`SfxEvent`] variant once per frame for the first ~2
+/// seconds after entering Play, so `play_sfx` prints `AUDIO_PLAY:` for every
+/// audio path and `dump_sfx_summary` reports all counts ≥1.
+///
+/// Does NOT print PASS — only the real `play_sfx` / `dump_sfx_summary` print.
+/// REMOVE after the audio proof log confirms `AUDIO_SUMMARY:total=XX` with
+/// every path ≥1 and no missing assets (asset+routing proven, gameplay trigger
+/// ยังไม่ proven — trigger จริงต้องรอ sun ปิดบั๊ก synthetic input ก่อน).
+fn sfx_proof_driver(
+    mut proof: ResMut<SfxProof>,
+    mut events: MessageWriter<SfxEvent>,
+    player_q: Query<&Transform, With<FlyCam>>,
+) {
+    proof.frames += 1;
+    // Fire for ~2 seconds (≈120 frames at 60fps), then go quiet.
+    // That's long enough for the 5-second `dump_sfx_summary` to catch every path.
+    if proof.frames > 120 {
+        return;
+    }
+    let pos = player_q.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
+
+    // ---- Footsteps: all 4 surfaces ----
+    for &surface in &[
+        FootstepSurface::Grass,
+        FootstepSurface::Stone,
+        FootstepSurface::Wood,
+        FootstepSurface::Sand,
+    ] {
+        events.write(SfxEvent::Footstep { surface, position: pos });
+    }
+
+    // ---- Combat positional: 7 events ----
+    events.write(SfxEvent::SwingLight { position: pos });
+    events.write(SfxEvent::SwingHeavy { position: pos });
+    events.write(SfxEvent::HitLight { position: pos });
+    events.write(SfxEvent::HitHeavy { position: pos });
+    events.write(SfxEvent::HitBlock { position: pos });
+    events.write(SfxEvent::HitParry { position: pos });
+    events.write(SfxEvent::EnemyDeath { position: pos });
+
+    // ---- Player events: 3 that need no position ----
+    events.write(SfxEvent::PlayerHurt);
+    events.write(SfxEvent::PlayerDeath);
+    events.write(SfxEvent::PlayerRespawn);
+}
+
+// ---------------------------------------------------------------------------
 // Diagnostic — periodic counter dump
 // ---------------------------------------------------------------------------
 
-/// Every 5 seconds, print a summary of all SFX counters to stdout so a
-/// verification harness can grep for `AUDIO_SUMMARY:` and confirm every sound
-/// file was spawned at least once.
+/// Every 5 seconds (0.5s under `VOXELFORGE_AUDIO_PROOF=1` — short-lived demos
+/// like `combat_demo` exit at t=4.0s, before a 5s cadence would ever flush),
+/// print a summary of all SFX counters to stdout so a verification harness
+/// can grep for `AUDIO_SUMMARY:` and confirm every sound file played ≥1 time.
 fn dump_sfx_summary(
     time: Res<Time>,
     mut counter: ResMut<SfxCounter>,
+    proof: Res<AudioProofMode>,
 ) {
+    let interval = if proof.0 { 0.5 } else { 5.0 };
     counter.since_dump += time.delta_secs();
-    if counter.since_dump < 5.0 || counter.total == 0 {
+    if counter.since_dump < interval || counter.total == 0 {
         return;
     }
     counter.since_dump = 0.0;

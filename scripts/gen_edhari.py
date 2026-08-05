@@ -360,6 +360,70 @@ def fallen_monolith(cx, cz, height):
         add(cx + dx, 1, cz + 1, "stone")
 
 
+def sentinel_spire(cx, cz, height, y_base=1):
+    """Tall north-eastern landmark: the first thing the player sees on waking.
+
+    Rises behind the dungeon gate so it reads as a far destination from spawn
+    (32,32, facing -Z).  A spiral stair is carved into the cliff-like shaft so
+    the vista is reachable on foot.
+    """
+    top = y_base + height
+    # Main shaft: a 3x3 core that tapers to a 1x1 needle.
+    for y in range(y_base + 1, top + 1):
+        rel = y - y_base
+        if rel <= height - 6:
+            # broad base (3x3) with corners clipped for a rounded silhouette
+            for dx in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if abs(dx) == 1 and abs(dz) == 1 and rel > 4:
+                        continue  # clip corners above the foundation
+                    add(cx + dx, y, cz + dz, "stone")
+        elif rel <= height - 2:
+            # narrower collar
+            for dx in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if abs(dx) == 1 and abs(dz) == 1:
+                        continue
+                    add(cx + dx, y, cz + dz, "stone")
+        else:
+            # needle tip
+            add(cx, y, cz, "stone")
+
+    # Crenellated crown just below the needle.
+    crown_y = top - 4
+    for dx in (-2, -1, 0, 1, 2):
+        for dz in (-2, -1, 0, 1, 2):
+            if abs(dx) == 2 and abs(dz) == 2:
+                continue
+            add(cx + dx, crown_y, cz + dz, "stone")
+    # gaps in the crown so it reads as a ruined lookout, not a solid cap
+    for dx in (-1, 0, 1):
+        for dz in (-1, 0, 1):
+            if dx == 0 and dz == 0:
+                continue
+            blocks.pop((cx + dx, crown_y, cz + dz), None)
+
+    # Spiral stair on the south-west face (the side facing the village).
+    # It climbs from the pedestal up to a vista ledge near the top.
+    stair_y = y_base + 2
+    for step in range(15):
+        sx = cx - 2 + (step % 3)
+        sz = cz + 2 - (step // 3)
+        if not in_bounds(sx, sz):
+            continue
+        add(sx, stair_y, sz, "stone")
+        if step % 2 == 0:
+            stair_y += 1
+
+    # Vista ledge facing south-west toward spawn.
+    for dx in range(-2, 1):
+        for dz in range(0, 3):
+            add(cx + dx, top - 8, cz + dz, "stone")
+    # Safety parapet so the ledge reads as intentional.
+    for dx in range(-2, 1):
+        add(cx + dx, top - 7, cz + 2, "stone")
+
+
 # ---------------------------------------------------------------------------
 # Village fixtures
 # ---------------------------------------------------------------------------
@@ -588,6 +652,32 @@ stairs(MAIN_X0, MAIN_X1, 11, 8, y_start=1, rise=1)
 # Gate plateau surface
 paved_rect(24, 40, 3, 11, "stone", y=2)
 
+# ---- 6b. Vista terrace: the open moment before the sealed gate -------------
+# A raised stone balcony east of the gate.  The player walks out, the dungeon
+# gate frames the near foreground, and the Sentinel Spire rises behind it.
+VISTA_X0, VISTA_X1 = 41, 53
+VISTA_Z0, VISTA_Z1 = 3, 11
+paved_rect(VISTA_X0, VISTA_X1, VISTA_Z0, VISTA_Z1, "stone", y=2)
+# Railing on the east and north sides so it reads as a deliberate overlook.
+for x in range(VISTA_X0, VISTA_X1 + 1):
+    add(x, 3, VISTA_Z0, "stone")
+    add(x, 3, VISTA_Z1, "stone")
+for z in range(VISTA_Z0, VISTA_Z1 + 1):
+    add(VISTA_X0, 3, z, "stone")
+    add(VISTA_X1, 3, z, "stone")
+# Gaps in the railing for the approach path and the spire path.
+for z in range(6, 9):
+    blocks.pop((VISTA_X0, 3, z), None)  # entrance from the gate plateau
+for x in range(46, 50):
+    blocks.pop((x, 3, VISTA_Z0), None)  # exit toward the spire
+
+# Approach path from the main street / bridge onto the vista terrace.
+paved_rect(35, 40, 6, 11, "stone", y=2)
+# A second, lower switchback from the southern field for explorers returning.
+paved_rect(45, 50, 12, 14, "stone", y=1)
+for x in range(45, 51):
+    add(x, 2, 12, "stone")
+
 # ---- 7. Sealed dungeon gate (northern anchor) -----------------------------
 dungeon_gate(SPAWN_X, z_near=3, z_far=5, y_base=2, half_span=6, height=9)
 
@@ -615,6 +705,19 @@ petrified_tree(10, 10, height=18)
 ruined_keep_wall(4, 16, 8, 28, height=12)
 # Fallen monolith in the south, giving the empty half a focal point.
 fallen_monolith(32, 55, height=10)
+
+# Sentinel Spire: the dominant vista in the north-east.  Rises behind the
+# dungeon gate, directly in the player's forward view on waking (yaw 0 -> -Z).
+# A paved terrace and spiral stair make it reachable on foot.
+# Pedestal is two blocks tall so the courtyard around the shaft is walkable.
+for sx in range(46, 51):
+    for sz in range(2, 7):
+        add(sx, 3, sz, "stone")
+        add(sx, 4, sz, "stone")
+sentinel_spire(48, 4, height=24, y_base=4)
+# Torch-like markers leading from the terrace entrance to the spire base.
+lantern_post(43, 7, y_base=2, height=2)
+lantern_post(45, 5, y_base=2, height=2)
 
 # Small framed arch near the bridge on the west side, a side-path teaser.
 stone_arch(18, 14, y_base=1, height=4, span=2, width=1, axis="z")

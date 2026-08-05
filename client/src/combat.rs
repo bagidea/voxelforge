@@ -867,6 +867,164 @@ pub struct LockOn {
     pub target: Option<Entity>,
 }
 
+// ===========================================================================
+// R-key routing — one key, two consumers
+// ===========================================================================
+
+/// What the R press resolved to this frame.
+///
+/// R is read by two independent systems: `gather_input` (lock-on toggle, §2.3)
+/// and `quest::check_block_place_triggers` (the `place_block` objective). Bevy's
+/// `ButtonInput::just_pressed` is a *query*, not a consume — the flag stays set
+/// for every later reader until the next `PreUpdate` — so without an arbiter a
+/// single press fired both in the same frame: the build objective completed AND
+/// the camera snapped onto an enemy.
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RKeyUse {
+    /// Nobody has taken the press yet this frame.
+    #[default]
+    Unclaimed,
+    /// A `place_block` objective was in reach → the press builds.
+    QuestPlace,
+    /// Nothing contextual wanted it → the press toggles lock-on.
+    LockOn,
+}
+
+/// Per-frame owner of the R key. Cleared in `First`, claimed by exactly one
+/// consumer per frame, read by everyone who wants to act on R.
+///
+/// The priority is encoded as *system order*, not as an if-chain spread across
+/// two files: the contextual consumer runs first (`check_block_place_triggers`
+/// is ordered `.before(combat::gather_input)`) and only claims when it can
+/// actually act; lock-on is the fallback and takes whatever is left. First
+/// claimer wins, every later claimer is denied and must leave the key alone.
+#[derive(Resource, Default)]
+pub struct RKeyRoute {
+    route: RKeyUse,
+    by: &'static str,
+    frame: u64,
+    /// `VOXELFORGE_RKEY_LOG=1` (or the probe) prints one line per claim/denial —
+    /// the ordering proof reads those lines instead of assuming an order.
+    pub log: bool,
+}
+
+impl RKeyRoute {
+    /// Try to take this frame's R press. Returns `false` when another system
+    /// already took it — the caller must then do nothing with the key.
+    pub fn claim(&mut self, want: RKeyUse, who: &'static str) -> bool {
+        if self.route != RKeyUse::Unclaimed {
+            if self.log {
+                println!(
+                    "R_ROUTE frame={} DENY  want={:?} who={} already={:?} claimed_by={}",
+                    self.frame, want, who, self.route, self.by
+                );
+            }
+            return false;
+        }
+        self.route = want;
+        self.by = who;
+        if self.log {
+            println!("R_ROUTE frame={} CLAIM {:?} who={}", self.frame, want, who);
+        }
+        true
+    }
+
+    /// Who owns the key this frame (`Unclaimed` until someone claims it).
+    pub fn route(&self) -> RKeyUse {
+        self.route
+    }
+
+    /// Name of the claiming system.
+    pub fn claimed_by(&self) -> &'static str {
+        self.by
+    }
+
+    /// Monotonic frame counter, stamped by [`reset_r_route`].
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+}
+
+/// Clears the route at the top of every frame.
+///
+/// Runs in `First` — before Bevy's own input clearing in `PreUpdate` and before
+/// any `Update` reader — and unconditionally: state-gating it would leave a
+/// stale claim behind on the frame Play is entered or left, and a stale claim
+/// silently eats the next real press.
+pub fn reset_r_route(mut route: ResMut<RKeyRoute>) {
+    route.frame = route.frame.wrapping_add(1);
+    route.route = RKeyUse::Unclaimed;
+    route.by = "";
+}
+
+/// When the routing probe taps R, in seconds of elapsed run time.
+///
+/// `VOXELFORGE_RKEY_PROBE=1` takes the default pair; `VOXELFORGE_RKEY_PROBE=12,40`
+/// retimes the taps without a rebuild — a 25-minute link is too expensive to spend
+/// on "the enemy hadn't spawned yet".
+#[derive(Resource)]
+pub struct RKeyProbe {
+    pub taps: Vec<f32>,
+}
+
+impl Default for RKeyProbe {
+    fn default() -> Self {
+        // Lock on, then lock off, both early enough that no `place_block`
+        // objective can be in reach yet.
+        Self { taps: vec![2.0, 2.6] }
+    }
+}
+
+impl RKeyProbe {
+    /// Parse `VOXELFORGE_RKEY_PROBE`. Anything that is not a comma-separated list
+    /// of seconds (including the plain `1` that just switches the probe on) keeps
+    /// the default pair.
+    fn from_env(raw: &str) -> Self {
+        let taps: Vec<f32> = raw
+            .split(',')
+            .filter_map(|s| s.trim().parse::<f32>().ok())
+            .filter(|t| *t > 1.0)
+            .collect();
+        if taps.is_empty() { Self::default() } else { Self { taps } }
+    }
+}
+
+/// Scripted R presses for the routing proof (`VOXELFORGE_RKEY_PROBE=1`).
+///
+/// The two R states have to be *shown*, not argued. The quest demo already
+/// presses R standing on the `place_block` objective; this taps R early in the
+/// same run, while no build objective is anywhere near the player, so one log
+/// carries a `CLAIM LockOn` next to the later `CLAIM QuestPlace`.
+///
+/// Ordered `.before(gather_input)` and ahead of the quest trigger, so both
+/// consumers see the synthetic press on the frame it is made — `just_pressed` is
+/// cleared next `PreUpdate`, and a press made after them is a press nobody sees.
+pub fn r_route_probe(
+    time: Res<Time>,
+    probe: Res<RKeyProbe>,
+    mut keys: ResMut<ButtonInput<KeyCode>>,
+    mut tap: Local<usize>,
+    mut held: Local<bool>,
+) {
+    // Release the previous tap first: `just_pressed` only fires on a rising edge.
+    // Once the taps are spent this also hands the key back for good — the quest
+    // demo needs R for its own press in phase 4.
+    if *held {
+        keys.reset(KeyCode::KeyR);
+        *held = false;
+        return;
+    }
+    let Some(at) = probe.taps.get(*tap) else { return };
+    let t = time.elapsed_secs();
+    if t < *at {
+        return;
+    }
+    keys.press(KeyCode::KeyR);
+    *held = true;
+    *tap += 1;
+    println!("R_PROBE tap={} t={:.2}", *tap, t);
+}
+
 /// Screen-shake accumulator (§5.3). Diminishing sine decay applied to the
 /// camera after the follow system positions it.
 ///
@@ -1269,15 +1427,24 @@ pub fn gather_input(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut intent: ResMut<CombatIntent>,
+    mut route: ResMut<RKeyRoute>,
 ) {
     let light_pressed = mouse.just_pressed(MouseButton::Left) || keys.just_pressed(KeyCode::KeyX);
+    // R is shared with the quest build prompt. The contextual consumer runs first
+    // (`quest::check_block_place_triggers`, ordered `.before(gather_input)`) and
+    // claims the press when a `place_block` objective is in reach; lock-on is the
+    // fallback, so it only toggles while the press is still unclaimed. The `&&`
+    // short-circuits on purpose — no press, no claim, or lock-on would eat every
+    // frame's route and starve the quest side.
+    let lock_toggle =
+        keys.just_pressed(KeyCode::KeyR) && route.claim(RKeyUse::LockOn, "combat::gather_input");
     *intent = CombatIntent {
         light: light_pressed,
         heavy_down: keys.pressed(KeyCode::KeyC),
         dodge: keys.just_pressed(KeyCode::Space),
         block: mouse.pressed(MouseButton::Right),
         parry: keys.just_pressed(KeyCode::KeyV),
-        lock_toggle: keys.just_pressed(KeyCode::KeyR),
+        lock_toggle,
         lock_switch: keys.just_pressed(KeyCode::KeyQ),
     };
 }
@@ -1329,11 +1496,15 @@ pub fn player_combat(
     }
 
     // Lock-on toggle (§2.3): pick nearest enemy inside range + acquisition cone.
+    // Only reached when `RKeyRoute` handed R to lock-on this frame — the log line
+    // is what makes "which of the two R consumers acted" readable in a real run.
     if intent.lock_toggle {
         if lock.target.is_some() {
             lock.target = None;
+            info!("LOCK_ON off");
         } else {
             lock.target = nearest_target(&ptf.translation, pc_facing(&ptf), &enemy_q);
+            info!("LOCK_ON on target={:?}", lock.target);
         }
     }
     // Switch target (§2.3): only meaningful while already locked; picks the
@@ -2362,11 +2533,26 @@ impl Plugin for CombatFeelPlugin {
     fn build(&self, app: &mut App) {
         let probe = std::env::var("VOXELFORGE_FEEL_PROBE").is_ok();
         let log = probe || std::env::var("VOXELFORGE_FEEL_LOG").is_ok();
+        // The R-key arbiter rides along here so no other file has to change: the
+        // resource, its once-per-frame reset, and the scripted routing probe.
+        let r_probe_env = std::env::var("VOXELFORGE_RKEY_PROBE").ok();
+        let r_probe = r_probe_env.is_some();
+        let r_log = r_probe || std::env::var("VOXELFORGE_RKEY_LOG").is_ok();
         app.add_message::<ImpactEvent>()
             .add_message::<StaggerEvent>()
             .add_message::<DodgeEvent>()
             .insert_resource(FeelLog { enabled: log })
             .insert_resource(FeelProbe { enabled: probe, ..default() })
+            .insert_resource(RKeyRoute { log: r_log, ..default() })
+            .insert_resource(
+                r_probe_env
+                    .as_deref()
+                    .map(RKeyProbe::from_env)
+                    .unwrap_or_default(),
+            )
+            // Not state-gated: a claim left over from the last Play frame would
+            // silently eat the first press of the next one.
+            .add_systems(First, reset_r_route)
             .add_systems(
                 Update,
                 (
@@ -2374,6 +2560,9 @@ impl Plugin for CombatFeelPlugin {
                         .before(gather_input)
                         .before(crate::fly_camera)
                         .run_if(|p: Res<FeelProbe>| p.enabled),
+                    r_route_probe
+                        .before(gather_input)
+                        .run_if(move || r_probe),
                     apply_knockback
                         .after(player_combat)
                         .before(husk_ai),
@@ -2950,5 +3139,108 @@ mod tests {
         let origin = Vec3::ZERO;
         let candidates = [(cur, Vec3::new(2.0, 0.0, 0.0), false)];
         assert_eq!(cycle_target(cur, &origin, &candidates), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // R-key routing — one key, two consumers (`RKeyRoute`)
+    // -----------------------------------------------------------------------
+
+    /// Stands in for `quest::check_block_place_triggers`: claims R when the build
+    /// prompt is in reach. Runs first, exactly like the real one does via
+    /// `.before(combat::gather_input)`.
+    fn stub_quest_claim(keys: Res<ButtonInput<KeyCode>>, mut route: ResMut<RKeyRoute>) {
+        if keys.just_pressed(KeyCode::KeyR) {
+            route.claim(RKeyUse::QuestPlace, "test::stub_quest_claim");
+        }
+    }
+
+    /// A frame with the same wiring the app has: reset in `First`, the contextual
+    /// consumer ahead of `gather_input` in `Update`. `quest_in_reach` decides
+    /// whether the build prompt is there to claim the press.
+    fn r_route_app(quest_in_reach: bool) -> App {
+        let mut app = App::new();
+        app.init_resource::<RKeyRoute>()
+            .init_resource::<CombatIntent>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_systems(First, reset_r_route);
+        if quest_in_reach {
+            app.add_systems(Update, (stub_quest_claim, gather_input).chain());
+        } else {
+            app.add_systems(Update, gather_input);
+        }
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyR);
+        app
+    }
+
+    #[test]
+    fn quest_claim_starves_lock_on_in_the_same_frame() {
+        let mut app = r_route_app(true);
+        app.update();
+        // One press, one consumer: the build prompt took it, so the intent the
+        // combat state machine reads carries no lock toggle at all.
+        assert_eq!(app.world().resource::<RKeyRoute>().route(), RKeyUse::QuestPlace);
+        assert_eq!(
+            app.world().resource::<RKeyRoute>().claimed_by(),
+            "test::stub_quest_claim"
+        );
+        assert!(!app.world().resource::<CombatIntent>().lock_toggle);
+    }
+
+    #[test]
+    fn lock_on_takes_r_when_nothing_contextual_claims_it() {
+        let mut app = r_route_app(false);
+        app.update();
+        assert_eq!(app.world().resource::<RKeyRoute>().route(), RKeyUse::LockOn);
+        assert!(app.world().resource::<CombatIntent>().lock_toggle);
+    }
+
+    #[test]
+    fn an_unpressed_frame_claims_nothing() {
+        let mut app = r_route_app(false);
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset(KeyCode::KeyR);
+        app.update();
+        // Lock-on must not squat on the route while R is idle — the quest side
+        // would then be denied on the frame the player actually presses it.
+        assert_eq!(app.world().resource::<RKeyRoute>().route(), RKeyUse::Unclaimed);
+        assert!(!app.world().resource::<CombatIntent>().lock_toggle);
+    }
+
+    #[test]
+    fn the_route_is_cleared_every_frame() {
+        let mut app = r_route_app(true);
+        app.update();
+        let f1 = app.world().resource::<RKeyRoute>().frame();
+        // Second frame, same held key: the reset must have wiped the claim, so
+        // the claim below is a fresh one rather than a leftover.
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+        app.update();
+        let route = app.world().resource::<RKeyRoute>();
+        assert_eq!(route.frame(), f1 + 1);
+        assert_eq!(route.route(), RKeyUse::Unclaimed);
+    }
+
+    #[test]
+    fn probe_taps_come_from_the_env_but_fall_back_to_the_default_pair() {
+        // `VOXELFORGE_RKEY_PROBE=1` is the "just switch it on" form.
+        assert_eq!(RKeyProbe::from_env("1").taps, RKeyProbe::default().taps);
+        assert_eq!(RKeyProbe::from_env("").taps, RKeyProbe::default().taps);
+        // A retimed pair survives whitespace and is taken verbatim.
+        assert_eq!(RKeyProbe::from_env("12, 40.5").taps, vec![12.0, 40.5]);
+    }
+
+    #[test]
+    fn a_second_claim_in_one_frame_is_denied() {
+        let mut route = RKeyRoute::default();
+        assert!(route.claim(RKeyUse::QuestPlace, "first"));
+        assert!(!route.claim(RKeyUse::LockOn, "second"));
+        assert_eq!(route.route(), RKeyUse::QuestPlace);
+        assert_eq!(route.claimed_by(), "first");
     }
 }

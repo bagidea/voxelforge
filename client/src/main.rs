@@ -83,6 +83,10 @@ pub(crate) struct Cfg {
     combat_demo: bool,
     /// Scripted quest demo (headless proof of accept→complete→reward→next quest opens).
     pub(crate) quest_demo: bool,
+    /// `--strict-exit`: exit code ≠0 when any gate FAILs. Without this flag the
+    /// process always exits 0 even when a gate prints FAIL — the caller grades the
+    /// log line itself. With it, the exit code IS the verdict.
+    pub(crate) strict_exit: bool,
     /// Scripted editor proof (headless proof that a click places/breaks a voxel
     /// through the same `paint_at_cursor` path the interactive editor uses).
     editor_demo: bool,
@@ -168,6 +172,7 @@ fn read_cfg() -> Cfg {
         walk_demo: std::env::var("VOXELFORGE_WALK_DEMO").is_ok(),
         combat_demo,
         quest_demo,
+        strict_exit: has_arg("--strict-exit") || std::env::var("VOXELFORGE_STRICT_EXIT").is_ok(),
         editor_demo: std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok(),
         map_load: std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty()),
         map_save: std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty()),
@@ -338,7 +343,7 @@ const WARMUP: f32 = 1.2;
 const PHASE: f32 = 2.0;
 const MAX_SIDE: i32 = 32; // up to 1024 chunks (ramp stops early once FPS dips <55)
 
-fn main() {
+fn main() -> AppExit {
     let mut cfg = read_cfg();
 
     // `--play` boots the game, so the scene — not the caller — decides which world
@@ -498,6 +503,7 @@ fn main() {
             .insert_resource(MapSaveDemo { done: false })
             .insert_resource(EditorPaintDemo { done: false })
             .insert_resource(Encounter { spawned: false })
+            .insert_resource(hero::GateVerdict::default())
             // Combat layer (docs/combat-design.md §8) — all client-side gameplay.
             .insert_resource(combat::CombatIntent::default())
             .insert_resource(combat::LockOn::default())
@@ -571,7 +577,21 @@ fn main() {
             );
     }
 
-    app.run();
+    app.add_systems(Last, check_gate_on_exit);
+    app.run()
+}
+
+/// If `--strict-exit` is active and any gate printed FAIL, inject a non-zero
+/// `AppExit` message so `fn main() -> AppExit` produces exit code ≠0.
+/// Runs in `Last` so gate systems in `Update` have already set `GATE_FAILED`
+/// by the time we look.
+fn check_gate_on_exit(
+    cfg: Res<Cfg>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if cfg.strict_exit && hero::GATE_FAILED.load(std::sync::atomic::Ordering::Acquire) {
+        exit.write(AppExit::error());
+    }
 }
 
 /// The env-var combat demo (`VOXELFORGE_COMBAT_DEMO=1`) drives `CombatIntent`
@@ -2127,6 +2147,7 @@ fn editor_paint_demo(
     mut world: ResMut<World>,
     mut editor: ResMut<Editor>,
     mut exit: MessageWriter<AppExit>,
+    mut verdict: ResMut<hero::GateVerdict>,
 ) {
     if !cfg.editor_demo || demo.done {
         return;
@@ -2203,6 +2224,11 @@ fn editor_paint_demo(
 
     editor.status = format!("editor demo: place={} break={}", place_ok, break_ok);
     let sandbox_ok = husk_count == 0;
+    let pass = sandbox_ok && place_ok && break_ok;
+    if !pass {
+        verdict.failed = true;
+        hero::GATE_FAILED.store(true, std::sync::atomic::Ordering::Release);
+    }
     println!(
         "EDITOR_DEMO husk_in_sandbox={} screen_place quads {quads_before}->{quads_after_place} ({}) \
          break ->{quads_after_break} ({}) => {}",
@@ -2213,6 +2239,7 @@ fn editor_paint_demo(
     );
 
     // Exit now for a pure headless proof; defer to the screenshot path otherwise.
+    // The real exit code is decided after app.run() via the GATE_FAILED static.
     if cfg.shot.is_none() {
         exit.write(AppExit::Success);
     }
@@ -2319,6 +2346,7 @@ fn walk_demo(
     mut demo: ResMut<WalkDemo>,
     world: Option<Res<World>>,
     cam: Query<(&Transform, &FlyCam)>,
+    mut verdict: ResMut<hero::GateVerdict>,
 ) {
     if !cfg.walk_demo || demo.done {
         return;
@@ -2358,12 +2386,17 @@ fn walk_demo(
     let buried = body_collides(world, Vec3::new(eye.x, ground_probe + EYE_HEIGHT, eye.z));
     let sky = body_collides(world, Vec3::new(eye.x, surf as f32 + 40.0 + EYE_HEIGHT, eye.z));
 
+    let land_pass = land_ok && buried && !sky;
+    if !land_pass {
+        verdict.failed = true;
+        hero::GATE_FAILED.store(true, std::sync::atomic::Ordering::Release);
+    }
     println!(
         "WALK_DEMO grounded feet_y={feet_y} surface={surf} expect_feet={expect} \
          land={} buried_solid={buried} sky_empty={} => {}",
         if land_ok { "PASS" } else { "FAIL" },
         !sky,
-        if land_ok && buried && !sky { "PASS" } else { "FAIL" }
+        if land_pass { "PASS" } else { "FAIL" }
     );
 
     // Camera-boom collision: the spring-arm must pull in toward a wall (solid ground
@@ -2371,9 +2404,14 @@ fn walk_demo(
     // grid test the aim raycast uses, so a wall can never come between cam & avatar.
     let boom_down = camera_boom(world, eye, Vec3::NEG_Y, BOOM_DIST);
     let boom_up = camera_boom(world, eye, Vec3::Y, BOOM_DIST);
+    let boom_pass = boom_down < BOOM_DIST - 0.5 && boom_up >= BOOM_DIST;
+    if !boom_pass {
+        verdict.failed = true;
+        hero::GATE_FAILED.store(true, std::sync::atomic::Ordering::Release);
+    }
     println!(
         "CAM_BOOM into_ground={boom_down:.2} into_sky={boom_up:.2} => {}",
-        if boom_down < BOOM_DIST - 0.5 && boom_up >= BOOM_DIST { "PASS" } else { "FAIL" }
+        if boom_pass { "PASS" } else { "FAIL" }
     );
 
     // The step-up proof below scans procedural terrain for a 1-block ledge; on a
@@ -2393,6 +2431,10 @@ fn walk_demo(
             }
             let front = e.x + PLAYER_HALF_W; // leading face of the body
             let blocked = front <= wx as f32; // never entered the wall voxel [wx, wx+1)
+            if !blocked {
+                verdict.failed = true;
+                hero::GATE_FAILED.store(true, std::sync::atomic::Ordering::Release);
+            }
             println!(
                 "WALK_WALL wall_x={wx} start_x={:.2} stopped_x={:.2} front={:.2} => {}",
                 eye.x,
@@ -2441,9 +2483,14 @@ fn walk_demo(
     if let Some((x, z)) = ledge1 {
         let climb = probe(x, z, true);
         let blocked = probe(x, z, false);
+        let step_pass = climb == 1 && blocked == 0;
+        if !step_pass {
+            verdict.failed = true;
+            hero::GATE_FAILED.store(true, std::sync::atomic::Ordering::Release);
+        }
         println!(
             "STEP_DEMO ledge x={x} z={z} assisted_climb={climb} gated_climb={blocked} => {}",
-            if climb == 1 && blocked == 0 { "PASS" } else { "FAIL" }
+            if step_pass { "PASS" } else { "FAIL" }
         );
     } else {
         println!("STEP_DEMO ledge NONE-FOUND => SKIP");
@@ -2555,6 +2602,7 @@ fn bench_ramp(
             bench.max_60, chunks
         );
         println!("{summary}");
+        // Exit code decided after app.run() via the GATE_FAILED static.
         exit.write(AppExit::Success);
         return;
     }
@@ -2591,6 +2639,7 @@ fn screenshot_once(
         println!("SHOT saved to {path}");
     }
     if bench.took_shot && now > 4.4 {
+        // Exit code decided after app.run() via the GATE_FAILED static.
         exit.write(AppExit::Success);
     }
 }
