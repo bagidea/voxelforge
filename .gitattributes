@@ -1,0 +1,15 @@
+# Shell scripts must land on disk with LF, on every OS.
+#
+# Found while proving the grading guard survives a fresh clone: `git clone` on a
+# Windows box with the (very common) global `core.autocrlf=true` checked out
+# scripts/render_grade.sh with CRLF, and bash then read the `\r` as part of the
+# command --
+#     scripts/render_grade.sh: line 15: set: -\n: invalid option
+#     scripts/render_grade.sh: line 16: cd: $'scripts/..\r': No such file
+# -- so the script died on its second line. Every .sh in this repo (the render
+# chains, the proof harnesses, the gate wrappers) had the same fate waiting.
+#
+# Zero churn to apply: every tracked .sh is already LF in the index (checked with
+# `git ls-files --eol -- '*.sh'` -- 0 CRLF entries). This only pins the checkout
+# so autocrlf cannot undo it.
+*.sh text eol=lf
