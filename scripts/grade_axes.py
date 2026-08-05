@@ -1,5 +1,8 @@
-import sys, argparse, numpy as np
+import os, sys, argparse, numpy as np
 from PIL import Image, ImageFilter
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 
 # ============================================================================
 # P0-AXES — SINGLE SOURCE OF TRUTH for the look-acceptance numeric axes.
@@ -124,9 +127,15 @@ def main():
     )
     parser.add_argument(
         "images", nargs="+",
-        help="PNG frame(s) to grade"
+        help="de-HUDded PNG frame(s) to grade - must be named *-nohud2.png"
     )
     args = parser.parse_args()
+
+    # HARD GUARD — first thing after arg parsing, before any measurement or any
+    # printed number. Every axis here is only meaningful on a de-HUDded frame:
+    # HUD glyphs sit at ~250 and drag the p95 axis up to the UI. Placed after
+    # parse_args only so `--help` still works; nothing is measured before it.
+    require_nohud2(args.images, tool="grade_axes.py")
 
     profile = args.profile
     active_axes = PROFILES[profile]

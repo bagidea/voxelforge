@@ -1,10 +1,20 @@
-import sys, numpy as np
+import os, sys, numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
 
 # Midtone-band probe: the 3 P0 axes Pixel graded (kill blue-wash).
 # Midtone = pixels in a central luminance band (exclude crushed shadows &
 # blown highlights), measured on the same 1024 resample as grade_beauty.
-CUR = sys.argv[1] if len(sys.argv) > 1 else "hero-look-final.png"
+#
+# HARD GUARD — the band is picked by luminance percentile over the WHOLE frame,
+# so HUD glyphs at ~250 shift the p35/p75 cut points themselves: every number
+# below moves, not just the ones in the glyph pixels. Usage:
+#   grade_midtone.py <frame>-nohud2.png [LO_PCT HI_PCT]
+require_nohud2(sys.argv[1:2], tool="grade_midtone.py")
+
+CUR = sys.argv[1]
 LO = float(sys.argv[2]) if len(sys.argv) > 2 else 35.0
 HI = float(sys.argv[3]) if len(sys.argv) > 3 else 75.0
 

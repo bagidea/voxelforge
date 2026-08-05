@@ -24,17 +24,21 @@ and shadow desaturates ground exactly the way haze does. An axis that scores a
 frame with provably no fog in it as "has aerial perspective" is not a gate. A2
 is the gate.
 
-Usage:
-  grade_g7.py --frame <on.png>                  # axis C + A1 context
-  grade_g7.py --ab-haze <off.png> <on.png>      # axis A2
-  grade_g7.py --ab-ao   <off.png> <on.png>      # axis B
+Usage (every frame must be de-HUDded — see the guard note in main()):
+  grade_g7.py --frame <on-nohud2.png>                       # axis C + A1 context
+  grade_g7.py --ab-haze <off-nohud2.png> <on-nohud2.png>    # axis A2
+  grade_g7.py --ab-ao   <off-nohud2.png> <on-nohud2.png>    # axis B
 Exit 0 iff every graded axis PASSes.
 """
 import argparse
 import colorsys
+import os
 import sys
 
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, called in main())
 
 # ---------------------------------------------------------------------------
 # REFERENCE + TARGETS
@@ -212,6 +216,19 @@ def main():
     a = ap.parse_args()
     if not (a.frame or a.ab_haze or a.ab_ao):
         ap.error("nothing to grade")
+
+    # HARD GUARD — after parse_args (so --help still works), before anything is
+    # loaded or measured. Every axis here is a mean/percentile over a masked
+    # BAND of the frame: axis C over hue 40..150 vegetation, A2 over a far band,
+    # B over an A/B darkening delta. HUD glyphs land inside those masks and
+    # there is no per-pixel result to sanity-check afterwards — one poisoned
+    # frame just moves a number a plausible amount. All paths are checked in one
+    # call so an A/B pair reports both bad names at once.
+    require_nohud2(
+        [p for p in ([a.frame] if a.frame else []) + list(a.ab_haze or []) + list(a.ab_ao or [])],
+        tool="grade_g7.py",
+    )
+
     results = []
     if a.frame:
         img = load(a.frame)

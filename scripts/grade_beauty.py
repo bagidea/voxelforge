@@ -1,8 +1,23 @@
+import os
+import sys
 import numpy as np
 from PIL import Image, ImageFilter
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+# HARD GUARD — whole-frame luminance/warmth/DOF stats compared against the
+# golden ref, so a HUD in CUR is a difference the ref does not have and every
+# delta printed below is that HUD. The frame used to be HARDCODED
+# (`CUR = "hero-look-final.png"`), which is the same defect one step worse than
+# an implicit argv default: you could not even tell from the command line which
+# frame produced the numbers. Now it must be named, and named de-HUDded.
+#   Usage: grade_beauty.py <frame>-nohud2.png
+# REF is exempt on purpose: the golden ref is curated artwork, never a capture.
+require_nohud2(sys.argv[1:2], tool="grade_beauty.py")
+
 REF = "docs/assets/golden-beauty-shot-ref.png"
-CUR = "hero-look-final.png"
+CUR = sys.argv[1]
 
 def load(p, size=(1024,1024)):
     im = Image.open(p).convert("RGB").resize(size, Image.LANCZOS)

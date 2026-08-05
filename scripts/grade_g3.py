@@ -2,11 +2,22 @@
 """Generic G3 grader for ANY frame. Measures the two things the rubric's G3 gate
 needs from one image: interior p05 luminance (is the whole shade crushed to black?)
 and the darkest representative shade patch's tone (warm R>=G>=B, or gone cold/blue?).
-Usage: grade_g3.py <frame.png>"""
+Usage: grade_g3.py <frame>-nohud2.png"""
+import os
 import sys
 from PIL import Image
 
-path = sys.argv[1] if len(sys.argv) > 1 else "tune-v2.png"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+# HARD GUARD — before a single number. Both things this script prints are
+# HUD-poisoned on a raw capture: the `[E]` prompt glyphs sit at ~250 ON THE
+# GROUND, i.e. inside the interior the p05-L reads, and the darkest-shade patch
+# search walks the same pixels. The implicit `argv[1] or "tune-v2.png"` default
+# went with it — an unnamed frame is how a stale capture gets graded.
+require_nohud2(sys.argv[1:2], tool="grade_g3.py")
+
+path = sys.argv[1]
 img = Image.open(path).convert("RGB")
 W, H = img.size
 px = img.load()

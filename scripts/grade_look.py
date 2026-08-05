@@ -10,12 +10,22 @@ G1 (voxel 90-deg edges) is still a visual call — printed as INFO, never as a P
 we didn't measure. The point of this file is to stop over-claiming: every line says
 whether it is MEASURED or a VISUAL check.
 
-Usage: grade_look.py <frame.png>
+Usage: grade_look.py <frame>-nohud2.png
 """
+import os
 import sys
 from PIL import Image, ImageFilter
 
-path = sys.argv[1] if len(sys.argv) > 1 else "hero.png"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+# HARD GUARD — this script reuses grade_gate.py's G3/G5/G6 eyedropper logic, so
+# it inherits the same failure exactly: HUD glyphs at ~250 read as a blown
+# window (G5). The penumbra/AO probes it adds measure the floor band the `[E]`
+# prompts sit on. The `argv[1] or "hero.png"` default is gone with it.
+require_nohud2(sys.argv[1:2], tool="grade_look.py")
+
+path = sys.argv[1]
 img = Image.open(path).convert("RGB")
 W, H = img.size
 px = img.load()

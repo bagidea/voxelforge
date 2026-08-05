@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Grade a hero frame against the 6 gates + monochrome-collapse check.
-Usage: python scripts/grade_hero.py hero-XX.png
+Usage: python scripts/grade_hero.py hero-XX-nohud2.png
 Style mirrors grade_ref2.py (PIL eyedrop, fixed sample logic)."""
+import os
 import sys
 from PIL import Image
 
-path = sys.argv[1] if len(sys.argv) > 1 else "hero-01.png"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+# HARD GUARD — same 6 gates as grade_gate.py on the same kind of frame, so the
+# same rule: no numbers off a HUDded capture. (grade_ref2.py, whose sampling
+# this mirrors, is exempt — it grades the golden ref, not a capture. See
+# nohud2_guard.EXEMPT.) The `argv[1] or "hero-01.png"` default is gone.
+require_nohud2(sys.argv[1:2], tool="grade_hero.py")
+
+path = sys.argv[1]
 img = Image.open(path).convert("RGB")
 W, H = img.size
 px = img.load()

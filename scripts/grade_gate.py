@@ -2,11 +2,22 @@
 """Full numeric GATE readout for ANY frame (G3 + G5 + G6 — the three the rubric grades
 by eyedropper). Auto-locates the window highlight so it works on any framing, not just
 the ref. Prints PASS/FAIL per gate so a G3 fix can be confirmed to not regress G5/G6.
-Usage: grade_gate.py <frame.png>"""
+Usage: grade_gate.py <frame>-nohud2.png"""
+import os
 import sys
 from PIL import Image
 
-path = sys.argv[1] if len(sys.argv) > 1 else "tune-v2.png"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+# HARD GUARD — refuse anything that is not a de-HUDded frame, before a single
+# number is printed. The `[E]` prompt glyphs are ~250 and sit on the ground, so a
+# raw --play capture false-FAILs G5 and drags p95 up to the UI. See nohud2_guard.
+# (The old `argv[1] or "tune-v2.png"` default is gone with it: an implicit frame
+# is exactly how a stale capture gets graded without anyone naming it.)
+require_nohud2(sys.argv[1:2], tool="grade_gate.py")
+
+path = sys.argv[1]
 img = Image.open(path).convert("RGB")
 W, H = img.size
 px = img.load()

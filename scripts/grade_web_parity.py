@@ -43,6 +43,7 @@ from PIL import Image
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 from grade_axes import measure  # noqa: E402  single source of truth for the 6 axes
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, called in main())
 from hero_recipe import (  # noqa: E402  the recipe lives in render_wide_hero.sh, not here
     BASELINE_PNG, diff_query, load_recipe, query_string,
 )
@@ -138,11 +139,23 @@ def penumbra(path):
 
 def gates(path):
     """Absolute G3/G5/G6 on the web frame -- framing-robust, so no native pair needed."""
-    _, out = run([str(SCRIPTS / "grade_gate.py"), str(path)])
+    rc, out = run([str(SCRIPTS / "grade_gate.py"), str(path)])
     res = {}
     for g in ("G3", "G5", "G6"):
         m = re.search(rf"## {g}\b.*?-> (PASS|FAIL)", out, re.S)
         res[g] = m.group(1) if m else "?"
+    # A non-zero exit means grade_gate.py REFUSED to grade (its nohud2 guard, a
+    # missing file, a decode error) -- it printed no gate lines at all. The regex
+    # above then leaves every gate "?", and the caller's `if v != "PASS"` turns
+    # each one into a reported FAIL. That is the exact failure mode this whole
+    # guard exists to prevent, one layer up: three invented FAILs with no reason
+    # attached. So a refusal is a hard stop that carries grade_gate's own words.
+    if rc != 0 and any(v == "?" for v in res.values()):
+        print("\n[STOP] grade_gate.py refused this frame -- no absolute gate was measured:")
+        for line in (out.strip() or "(no output)").splitlines():
+            print(f"       {line}")
+        print("\n=> NOT GRADEABLE. Nothing below would mean anything; fix the frame and re-run.")
+        sys.exit(2)
     return res, out
 
 
@@ -213,6 +226,16 @@ def main():
                                       "auto-detected from <web>.console.txt if that file exists")
     ap.add_argument("--json")
     a = ap.parse_args()
+
+    # HARD GUARD — the pair being compared, not --baseline. Every delta in
+    # section C is |web - native| over whole-frame percentiles, so a HUD on ONE
+    # side is a difference the other side does not have: the parity report would
+    # blame the web backend for the game's own UI. --baseline is deliberately
+    # NOT guarded — it is the CEO-approved golden docs/assets/wide-hero-final.png,
+    # curated artwork rather than a capture (see nohud2_guard.EXEMPT for the same
+    # reasoning applied to grade_ref.py).
+    require_nohud2([a.web, a.native], tool="grade_web_parity.py")
+
     if not a.console:
         d = Path(a.web + ".console.txt")
         if d.exists():

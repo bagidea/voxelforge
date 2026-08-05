@@ -7,12 +7,22 @@ edge) and measure the horizontal distance over which luminance climbs from 20% t
 80% of that local dark->light range. A hard PCF/TAA edge is ~1-2px regardless; a
 real PCSS penumbra WIDENS as soft_shadow_size grows and with occluder distance.
 
-Usage: measure_penumbra.py <frame.png> [rows_lo_frac rows_hi_frac]
+Usage: measure_penumbra.py <frame>-nohud2.png [rows_lo_frac rows_hi_frac]
 Prints per-row widths (top rows = far/deep floor, bottom rows = near floor) + mean.
 """
+import os
 import sys
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+# HARD GUARD — this measures the STRONGEST luminance step per row in the floor
+# band, and the `[E]` prompt glyphs are ~250 sitting on exactly that floor. A
+# glyph edge is a far stronger step than a shadow edge, so on a raw capture this
+# script does not measure a soft penumbra at all: it measures text.
+require_nohud2(sys.argv[1:2], tool="measure_penumbra.py")
 
 path = sys.argv[1]
 lo = float(sys.argv[2]) if len(sys.argv) > 2 else 0.55

@@ -170,3 +170,22 @@ _*.sh
 _*.ps1
 _*.marker
 _*.patch
+
+# ── Shipped grading infrastructure that lives under a `_` name ────────────
+# These blanket rules mean "scratch", and they were right to — but a TRACKED
+# script must never depend on a file the repo refuses to carry. That already
+# happened once: scripts/grade_gate.py and grade_axes.py imported a guard module
+# named `_nohud2_guard.py`, which `_[!_]*.py` swallowed, so a fresh clone would
+# have had both graders die on ModuleNotFoundError before printing anything.
+# The guard itself was fixed by RENAMING it (scripts/nohud2_guard.py) — the
+# honest fix, because it was never scratch.
+#
+# `_flamingo_dehud2.py` is the other half of that chain: it is the tool the
+# guard's refusal message tells you to run, and docs/look-acceptance-rubric.md
+# (tracked) names it as the de-HUD step. It keeps its `_` name only because ~8
+# scripts across three lanes already call it by that path; renaming it mid-flight
+# would break other agents' running chains. So it is un-ignored in place.
+#
+# Add to this list only when a TRACKED file requires the path.
+# tests/test_nohud2_guard.py fails if either of these stops being tracked.
+!scripts/_flamingo_dehud2.py
