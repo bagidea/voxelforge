@@ -177,7 +177,15 @@ const _: () = assert!(
 /// promises the haze is opaque where chunks stop existing; anything under
 /// `0.00673` leaves >1% of a popping chunk visible at 320 blocks. 0.0072 clears
 /// that only in the limit (99.5%) — [`HAZE_FULL`] closes it outright.
-pub const HAZE_DENSITY: f32 = 0.0072;
+/// 0.0072 → 0.0100, 2026-08-05. The bound above was always "how much world are
+/// you willing to lose": row `v10-thick` at 0.0140 took warmth 58.0 → 105.9 on
+/// its own, and also drowned the far ruins in soup (86 % opacity at 100 blocks
+/// against the shipped 40 %) — the numbers moved and the picture died, which is
+/// this axis's whole failure mode. 0.0100 is the rung where the far skyline still
+/// reads as ruins receding rather than as fog: 63 % at 100 blocks, and paired
+/// with the warm [`Hour::haze`] hue it is worth ~26 points of warmth
+/// (`v20-t05nohz` 97.5 → `v21-t05hz100` 123.1) at no cost to any other axis.
+pub const HAZE_DENSITY: f32 = 0.0100;
 
 /// How far the haze colour is pushed from the sky's own hue toward white.
 ///
@@ -226,10 +234,28 @@ pub const FOG_END: f32 = 320.0;
 /// `FOG_START = 0.35 * RENDER_RADIUS`); don't let the two drift apart silently.
 pub const RENDER_RADIUS: f32 = FOG_END;
 
-/// Horizon haze colour, day. Reads as "air", not as a brown filter: the old
-/// (0.50, 0.42, 0.28) orange haze dyed distant geometry the same hue as the
-/// foreground and flattened depth instead of describing it.
-pub const FOG_COLOR_DAY: [f32; 3] = [0.60, 0.72, 0.88];
+/// Horizon haze colour, day — the hue [`haze_color`] dissolves distant geometry
+/// toward, carried on [`Hour::fog`] so it travels with the hour.
+///
+/// (0.60, 0.72, 0.88) → (0.94, 0.66, 0.26), 2026-08-05. This value was DEAD code
+/// for the day hour until now — `haze_color` derived the day haze from
+/// [`Hour::sky`] and only read `Hour::fog` at night — so this is the first time
+/// the constant's own docs have had to be true.
+///
+/// THE OLD WARNING STILL STANDS, AND THIS IS NOT IT. The (0.50, 0.42, 0.28) haze
+/// that got reverted failed because it was DARK: an sRGB triple mixed into
+/// already-exposed radiance, landing ~2.5× under the sky, so distant terrain went
+/// muddy and receded into brown instead of into air. This value goes through the
+/// same `desat`/`sky_gain` path the blue one did (see [`haze_color`]), so it
+/// dissolves toward a horizon BRIGHTER than the geometry, which is what reads as
+/// depth. What it changes is hue only — and hue is the axis where the blue was
+/// wrong: at 17° sun elevation the horizon has the most air between it and the
+/// eye, which is exactly where blue has been scattered out, not concentrated.
+///
+/// Measured on the vista framing, this hue with [`HAZE_DENSITY`] 0.0100:
+/// warmth 97.5 → 123.1, blue 3.7 → 6.2, saturation 97.5 → 96.5, magenta 0.16 %,
+/// all four `colour_gate.py` gates PASS (`_fl_grade2/vista-v21-t05hz100-*.png`).
+pub const FOG_COLOR_DAY: [f32; 3] = [0.94, 0.66, 0.26];
 
 /// Horizon haze colour, night.
 pub const FOG_COLOR_NIGHT: [f32; 3] = [0.05, 0.08, 0.17];
@@ -281,13 +307,71 @@ mod grade {
     /// outdoor frame needs is carried by the LIGHTS ([`super::Hour::key`] /
     /// [`super::Hour::ambient`]), which the flat sky clear does not receive,
     /// instead of by a global matrix, which it does.
-    pub const TEMPERATURE: f32 = 0.02;
+    /// 0.02 → 0.05, 2026-08-05 (vista sweep round 7). 0.02 was set as "5× under
+    /// the magenta onset" and that safety margin turned out to be the single
+    /// biggest thing standing between this frame and the warmth axis. Measured on
+    /// the vista framing, moving ONLY this constant took warmth R−B 59.7 → 97.0
+    /// and blue 10.4 → 5.6 (`_fl_grade2/vista-v12-temp05-nohud2.png`) — a bigger
+    /// step than the whole 1.05 → 2.05 saturation ladder bought, because the
+    /// adaptation matrix multiplies what is blue in the frame and the vista band
+    /// is 28 % hazed atmosphere.
+    ///
+    /// THE CEILING IS 0.05, AND IT IS MEASURED, NOT ASSUMED. `scripts/wb_matrix.py`
+    /// puts the magenta onset at ≈0.099, but that is the onset on the SKY CLEAR in
+    /// isolation; row `v22-t07` shot the real frame at 0.07 and
+    /// `scripts/colour_gate.py` Gate B failed it outright — sky ordering `B > R > G`
+    /// with per-channel gains ×1.35/×0.68/×1.07, i.e. red lifted over unity while
+    /// green was crushed onto blue, the exact chromatic-adaptation signature the
+    /// 2026-08-01 review named. 0.05 passes all four gates at 0.16 % magenta. The
+    /// usable headroom is half what the CPU model predicted; do not raise this
+    /// without re-running `colour_gate.py` on a real frame.
+    pub const TEMPERATURE: f32 = 0.05;
 
     /// Saturation push. TonyMcMapface (see [`super::base_camera_look`]) is a
     /// neutral transform that neither adds nor removes saturation, so this is a
-    /// small deliberate lift toward the reference's vivid leaves and sky — NOT
-    /// the repair job AcesFitted's ~80% flattening used to need.
-    pub const POST_SATURATION: f32 = 1.05;
+    /// deliberate lift toward the reference's vivid leaves and sky — NOT the
+    /// repair job AcesFitted's ~80% flattening used to need.
+    ///
+    /// 1.05 → 1.35, 2026-08-05. 1.05 was set on the reasoning that a neutral
+    /// tonemapper needs no repair, and that reasoning is sound but the number
+    /// under-shot: measured on the current `--play` boot frame, the midtone band
+    /// came out `(145, 107, 80)` — a 45 %-saturated tan — against the golden
+    /// ref's `(125, 49, 4)` at 97 %. The frame was not neutral, it was washed,
+    /// and washed is what let the sunlit patch drift back to `R > B > G`: gate C
+    /// in `scripts/colour_gate.py` FAILED on the shipped default (192.4, 176.7,
+    /// 181.3 → G−B = −4.6 against a `SUN_GB_MIN` of 20). Saturation is the knob
+    /// that pulls G back off B, so this fixes the gate and the axes together.
+    ///
+    /// BOUNDED ABOVE BY THE PICTURE, NOT BY THE AXES — and that bound is the
+    /// whole finding. `scripts/_flamingo_grade_sweep.sh` walked 1.05 → 3.10 on
+    /// this scene. The P0 chromatic axes do not clear until ≈1.75 (warmth 123.1,
+    /// blue 12.5, sat 90.6) and only fully at the 2026-08-01 prescription's
+    /// B-drained lights (1.90 → warmth 151.8, blue 6.6, sat 96.0) — but from
+    /// ≈1.45 up the Edhari ruin stops reading as sunlit limestone and starts
+    /// reading as a mustard poster, and the one block material whose albedo is
+    /// already `R > B > G` turns from a soft warm pink into a violet slab. 1.35
+    /// is the last rung where the frame still reads as stone at golden hour
+    /// (warmth 95.7, blue 53.0, sat 64.7 — see
+    /// `docs/look-audit-2026-08-05-flamingo.md` for the sweep table and frames).
+    ///
+    /// The remaining gap to warmth ≥110 / blue ≤10 / sat ≥90 is NOT reachable
+    /// from this constant — and 1.35 → 1.90, 2026-08-05, does not contradict that,
+    /// it depends on it. The vista sweep (`scripts/vista_grade_sweep.sh`,
+    /// 21 rendered rows) closed the gap with [`TEMPERATURE`] and the haze hue;
+    /// saturation alone still tops out at warmth ≈58 no matter how far it is
+    /// pushed (row `v06-hz2s205`, sat 2.05 → warmth 58.0). What changed is that
+    /// once the other two levers carry the warmth, 1.90 is no longer buying
+    /// mustard: rows `v21`/`v23` sit at 123.1 and 119.9 warmth with the ruin still
+    /// reading as lit stone, because the chroma is coming from the light and the
+    /// air rather than from a global multiplier on an already-green frame.
+    ///
+    /// WHY SATURATION CANNOT SUPPLY WARMTH HERE, measured rather than argued:
+    /// `scripts/band_map.py` shows 60 % of the vista midtone band is
+    /// green-dominant grass, and on those pixels saturation pushes RED DOWN —
+    /// green-px mean R fell 65.1 → 41.3 across sat 1.05 → 1.35. It is the right
+    /// knob for the `sat` axis and the wrong one for `warmth`; treating them as
+    /// one knob is what stalled this at 1.35 for a day.
+    pub const POST_SATURATION: f32 = 1.90;
 
     /// Midtone contrast — spreads values off mid-grey, which is the
     /// micro-contrast / voxel-grain axis. Lit wood grain and edge detail live in
@@ -395,10 +479,27 @@ impl Hour {
         elev_deg: 17.0,
         azim_deg: 205.0,
         illuminance: 11_000.0,
-        key: [1.00, 0.84, 0.62],
+        // G LIFTED, B HELD — 2026-08-05. `docs/gate3-colour-review-2026-08-01.md`
+        // §5.4 rule 1 is the safety envelope that keeps a warm frame out of
+        // magenta: `G − B >= 0.30` AND `G >= 0.85 × R`, on BOTH key and ambient.
+        // The shipped hues violated the first clause — key G−B was 0.22, ambient
+        // 0.18 — which is exactly why raising [`grade::POST_SATURATION`] on them
+        // GREW the magenta fraction instead of shrinking it (measured: 4.8 % →
+        // 7.5 % across sat 1.05 → 2.70 on the shipped hues).
+        //
+        // The 2026-08-01 prescription satisfied the rule by DRAINING B (key
+        // 0.62 → 0.52, ambient 0.66 → 0.38). That was measured on the campsite,
+        // and §5.5 flagged the deeper shade as the one open taste call. On the
+        // Edhari ruin the answer to that call is no: the scene is
+        // ambient-dominated pale limestone, so pulling blue out of the fill
+        // turns the whole frame mustard (`_fl_grade_sweep/boot-r06-*`,
+        // `boot-r15-*`). Lifting G instead satisfies the same rule from the
+        // other side — key G−B 0.30, G/R 0.92; ambient G−B 0.30, G/R 0.94 — and
+        // keeps the blue in open shade that makes the stone read as stone.
+        key: [1.00, 0.92, 0.62],
         sky: [0.36, 0.60, 0.90],
         sky_gain: 2.4,
-        ambient: [0.96, 0.84, 0.66],
+        ambient: [0.96, 0.90, 0.60],
         ambient_lux: 1100.0,
         // 11.0 was this lane's own value and it cost 1.3 stops against Bevy's
         // implicit `Exposure::BLENDER` (9.7): measured on the vista frame it
@@ -758,7 +859,22 @@ fn haze_color() -> Color {
     let over = env_floats::<4>("VOXELFORGE_LOOK_HAZECOL");
     let (hue, gain) = match over {
         Some([r, g, b, gain]) => ([r, g, b], gain),
-        None => (h.sky, HAZE_GAIN),
+        // THE HOUR'S HORIZON HUE, NOT ITS ZENITH — changed 2026-08-05 from
+        // `h.sky`. The paragraph above is right that the haze must never be an
+        // independent decision that can drift from the hour; it was wrong that
+        // "not independent" has to mean "identical to the zenith". At golden hour
+        // the horizon is where the sun is: the same Rayleigh path length that
+        // washes it out is the path length that has scattered the blue OUT of it,
+        // which is why [`FOG_SUN_GLOW`] already had to bolt a warm term back on
+        // around the sun direction. Reading [`Hour::fog`] here makes that hue part
+        // of the hour itself, so it still cannot drift and the special case
+        // shrinks instead of growing.
+        //
+        // Measured, on the vista framing: this alone (0.36,0.60,0.90 →
+        // 0.94,0.66,0.26) is worth blue 25.8 → 19.2 and saturation 78.2 → 84.2,
+        // and paired with [`HAZE_DENSITY`] 0.0100 it carries most of the warmth
+        // that used to be asked of [`grade::POST_SATURATION`].
+        None => (h.fog, HAZE_GAIN),
     };
     let desat = std::env::var("VOXELFORGE_LOOK_HAZEDESAT")
         .ok()
