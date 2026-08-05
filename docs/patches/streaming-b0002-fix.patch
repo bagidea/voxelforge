@@ -1,0 +1,28 @@
+﻿diff --git a/client/src/streaming.rs b/client/src/streaming.rs
+index 12698c5..37ef00b 100644
+--- a/client/src/streaming.rs
++++ b/client/src/streaming.rs
+@@ -249,7 +249,6 @@ fn build_lod_children(
+ #[allow(clippy::too_many_arguments)]
+ fn streaming_tick(
+     player_q: Query<&Transform, With<crate::FlyCam>>,
+-    world: Option<Res<crate::World>>,
+     mut commands: Commands,
+     mut meshes: ResMut<Assets<Mesh>>,
+     mut world_res: ResMut<crate::World>,
+@@ -257,12 +256,9 @@ fn streaming_tick(
+     mut state: ResMut<StreamState>,
+ ) {
+     // ── 1. seed loaded set from existing World.chunks (first run / map load) ──
+-    if let Some(w) = world.as_ref() {
+-        for &key in w.chunks.keys() {
+-            if state.loaded.insert(key) {
+-                let ent = w.chunks[&key].entity;
+-                state.chunk_entities.insert(key, (ent, 0u8));
+-            }
++    for (&key, slot) in world_res.chunks.iter() {
++        if state.loaded.insert(key) {
++            state.chunk_entities.insert(key, (slot.entity, 0u8));
+         }
+     }
+ 

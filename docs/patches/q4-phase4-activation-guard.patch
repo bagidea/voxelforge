@@ -1,0 +1,42 @@
+diff --git a/client/src/quest.rs b/client/src/quest.rs
+index 7a380c0..74659f7 100644
+--- a/client/src/quest.rs
++++ b/client/src/quest.rs
+@@ -442,6 +442,9 @@ impl Plugin for QuestPlugin {
+                     // Ordering: before quest_demo → captures baseline state.
+                     input_trace_before_inject.before(quest_demo),
+                     quest_demo
++                        // Must run AFTER kill triggers so q3→q4 transition is
++                        // visible before Phase 4 reads q4's status (TRIAGE §5).
++                        .after(check_kill_triggers)
+                         .before(npc_interact)
+                         .before(combat::gather_input)
+                         .before(crate::fly_camera),
+@@ -1687,6 +1690,9 @@ fn quest_demo(
+             hands_off!();
+             demo.killed_garren = true;
+             enter!(4);
++            // Reset tap timer so the first press_key call in Phase 4 is never
++            // blocked by Phase 3's combat key cooldown (TRIAGE §5-F1).
++            demo.tap_t = 0.0;
+             return;
+         }
+         // Only fight what is actually at the post — the village husk 20 blocks
+@@ -1729,6 +1735,17 @@ fn quest_demo(
+     // o1_build: walk to (50,9), press R (place_block). o2_ledger: walk to (46,24),
+     // press E (interact lore_village_ledger). o3_offering: walk to (33,14), press E.
+     if demo.phase == 4 {
++        // Guard: q4 must be Active before the demo can complete its objectives.
++        // On the frame q3→q4 transitions, q4 may be Locked for one frame.
++        // Wait instead of silently failing (status=Locked → place_block trigger
++        // ignores the R press → timeout — TRIAGE §5-F3).
++        let q4_status = journal.quests.get("q4_what_walls_remember")
++            .map(|p| p.status).unwrap_or(QuestStatus::Locked);
++        if q4_status != QuestStatus::Active {
++            hands_off!();
++            println!("QUEST_DEBUG_P4 waiting for q4 activation (status={:?})", q4_status);
++            return;
++        }
+         let q4_done = journal.quests.get("q4_what_walls_remember")
+             .map(|p| p.status == QuestStatus::Completed).unwrap_or(false);
+         if q4_done {

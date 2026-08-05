@@ -1,0 +1,31 @@
+--- a/client/src/quest.rs
++++ b/client/src/quest.rs
+@@ -1753,8 +1753,17 @@ fn quest_demo(
+             0 => { let (tx, tz) = (50.0, 9.0);
+                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                 if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, 0.0, 0.0, 1.0);
++                    // DIAGNOSTIC: log BEFORE press_key to capture the pre-press state.
++                    // This tells us (a) whether tap cooldown will block the press,
++                    // (b) whether R is already in `pressed` (would make press() a no-op).
++                    let gap = t - demo.tap_t;
++                    let r_already_pressed = key_input.pressed(KeyCode::KeyR);
++                    println!("QUEST_DEBUG_P4_PRESS_TRY t={:.3} gap_since_last_tap={:.3} tap_cooldown={} r_already_pressed={} pt=({:.1},{:.1})",
++                        t, gap, gap <= TAP_PERIOD, r_already_pressed,
++                        ptf.translation.x, ptf.translation.z);
+                     press_key(&mut demo, &mut key_input,KeyCode::KeyR, t); }
+                 else { steer(&mut key_input, dx, dz, WAYPOINT_TOL); }
+-                // DEBUG: log walk progress every second
++                // DEBUG: log walk progress every 3 seconds
++                // NOTE: tick-based rate limiting shares demo.debug_tick with the
++                // phase-level P4 debug logger (line 1748) — they WILL stomp each
++                // other on seconds divisible by both 3 and 2 (e.g. t=6,12,18).
++                // That's fine: we get one line instead of two on those seconds.
+                 let tick = phase_t as u32;
+-                if tick > 0 && tick != demo.debug_tick && tick % 3 == 0 {
++                let should_log = tick > 0 && tick != demo.debug_tick && tick % 3 == 0;
++                if should_log {
+                     println!("QUEST_DEBUG_P4_WALK tx={:.0} tz={:.0} pt=({:.1},{:.1}) dx={:.1} dz={:.1} in_range={}",
+                         tx, tz, ptf.translation.x, ptf.translation.z, dx, dz,
+                         dx.abs() <= 2.0 && dz.abs() <= 2.0);
++                    demo.debug_tick = tick;
+                 }
