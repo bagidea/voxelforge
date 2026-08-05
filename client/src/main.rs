@@ -349,6 +349,19 @@ fn main() {
     }
     let cfg = cfg;
 
+    // Pin the asset root to the executable's directory so Bevy always finds the
+    // assets build.rs copies into `target/<profile>/assets/`. Without this,
+    // Bevy's `get_base_path()` resolves via `CARGO_MANIFEST_DIR` during
+    // `cargo run`, redirecting to `client/assets/` which doesn't exist (the
+    // assets are next to the exe, not inside the source tree). An absolute path
+    // replaces `get_base_path()` entirely via Rust's Path::join behaviour.
+    let exe_dir = std::env::current_exe()
+        .expect("current exe path")
+        .parent()
+        .expect("exe has no parent dir")
+        .to_path_buf();
+    let asset_path = exe_dir.join("assets");
+
     let present_mode = match cfg.present.as_deref() {
         Some("vsync") => PresentMode::AutoVsync,
         Some("novsync") => PresentMode::AutoNoVsync,
@@ -374,7 +387,8 @@ fn main() {
                 }),
                 ..default()
             })
-            .set(ImagePlugin::default_nearest()),
+            .set(ImagePlugin::default_nearest())
+            .set(AssetPlugin { file_path: asset_path.to_string_lossy().to_string(), ..default() }),
     )
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_resource(ClearColor(Color::srgb(0.53, 0.72, 0.92)))
