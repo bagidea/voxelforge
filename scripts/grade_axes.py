@@ -81,6 +81,13 @@ def fmt_target(cmp, bound):
     if cmp == "band": return f"{bound[0]:g}..{bound[1]:g}"
 
 def measure(path):
+    # HARD GUARD, AT THE MEASUREMENT — not only in main(). This module is
+    # imported: `make_gate3_verdict_card.py` called measure() directly and put
+    # the result on a verdict card a human reads, walking straight past the
+    # guard sitting in main(). A gate on the CLI door only is not a gate while
+    # `import grade_axes` is a door too. Calling it again from main() is
+    # harmless (the check is pure).
+    require_nohud2([path], tool="grade_axes.measure()")
     im = Image.open(path).convert("RGB").resize((1024, 1024), Image.LANCZOS)
     a = np.asarray(im).astype(np.float32)
     R, G, B = a[..., 0], a[..., 1], a[..., 2]

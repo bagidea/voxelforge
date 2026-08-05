@@ -1,11 +1,34 @@
 """DOF reversal proof: near-bowl vs far-wall sharpness, current bake vs golden ref.
 Flamingo, 2026-07-26. Emits labeled crops + a 2x2 comparison sheet + a sharpness table.
+
+    Usage: dof_crop_compare.py <frame>-nohud2.png
+
+HARD GUARD (see scripts/nohud2_guard.py). This prints LapVar per crop and an
+fg:bg ratio next to the golden ref's — the same class of number `grade_beauty.py`
+prints — and it used to read a HARDCODED `hero-look-final.png` with no argv at
+all, so you could not tell from the command line which bake produced the table.
+That frame is a `voxelforge.exe` capture (render_charm2.sh) and it does carry the
+HUD: `_flamingo_dehud2.py` lifts 8,442 prompt-glyph px out of it. Measured
+honestly, the effect on THIS number is small — fg:bg 1.57 raw vs 1.56 de-HUDded,
+because neither crop box lands on the top band or the [E] block — so the guard
+here is about frame identity and about a Laplacian variance being the most
+HUD-sensitive statistic in the repo, not about a verdict that flipped.
+REF is exempt on purpose: the golden ref is curated artwork, never a capture.
 """
+import os
+import sys
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, must run first)
+
+require_nohud2(sys.argv[1:2], tool="dof_crop_compare.py")
+
 ROOT = "E:/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge/"
-hero = Image.open(ROOT + "hero-look-final.png").convert("RGB")     # 1280x720 current bake
+HERO = sys.argv[1]
+hero = Image.open(HERO).convert("RGB")                            # 1280x720 current bake
 gold = Image.open(ROOT + "docs/assets/golden-beauty-shot-ref.png").convert("RGB")  # 1024x1024
 
 # crop boxes (left,top,right,bottom)
@@ -15,6 +38,17 @@ BOX = {
     "gold_bowl": (150, 745, 575, 975),   # golden subject bowl (is SHARP)
     "gold_wall": (385, 110, 815, 470),   # golden background cabinets (is SOFT)
 }
+
+# The hero boxes were authored against the RAW 1280x720 capture, and
+# `_flamingo_dehud2.py` crops the top HUD band off — so on a -nohud2 frame the
+# same content sits `720 - height` px higher. Without this shift the guard would
+# have made the numbers WORSE: right suffix, wrong pixels.
+BASE_H = 720
+
+
+def shift(b, im):
+    dy = BASE_H - im.height
+    return (b[0], b[1] - dy, b[2], b[3] - dy)
 
 def lap_var(im):
     """variance of Laplacian -> higher = sharper (more high-freq edge energy)."""
@@ -27,7 +61,8 @@ def lap_var(im):
 
 crops = {}
 for name,box in BOX.items():
-    c = (hero if name.startswith("hero") else gold).crop(box)
+    src = hero if name.startswith("hero") else gold
+    c = src.crop(shift(box, src) if name.startswith("hero") else box)
     crops[name] = c
     c.save(ROOT + f"dof_{name}.png")
 

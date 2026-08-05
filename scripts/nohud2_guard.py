@@ -62,11 +62,58 @@ EXIT_REFUSED = 2
 # fails if a tracked grading entry point is in neither list, which means a NEW
 # grader cannot be added without deciding, in writing, which side it is on.
 #
-# Grading entry points = tracked `scripts/*.py` matching these globs.
+# WHY THE REGISTRY IS NOT DISCOVERED BY FILENAME
+#     It was, and the number it reported ("13 entry points classified") was 13 of
+#     a GLOB, not 13 of "ways to print a number about a frame". `dof_crop_compare.py`
+#     — hardcoded `hero-look-final.png`, no argv, prints a sharpness table and an
+#     fg:bg ratio against the golden ref — is the `grade_beauty.py` defect
+#     verbatim, and it sailed past because its name does not start with `grade_`.
+#     The globs themselves admitted the flaw: `measure_penumbra.py` had to be
+#     hand-added to the tuple for exactly that reason.
+#
+#     So discovery now reads what a script DOES. A tracked `scripts/*.py` is a
+#     grading entry point if it either
+#       (a) opens an image AND computes a statistic over the pixels, or
+#       (b) imports one of this repo's grading modules (the import path is how
+#           `make_gate3_verdict_card.py` reached `grade_axes.measure()` while the
+#           guard sat in `grade_axes.main()` — a door beside the guarded one).
+#     The globs are kept as a union term, not as the definition: a file named
+#     `grade_*.py` must be classified even if it is currently a stub.
 ENTRY_POINT_GLOBS = ("grade_*.py", "colour_gate.py", "measure_penumbra.py")
+
+# (a) reads pixels ...
+_READS_PIXELS = r"Image\.open|imread|imageio"
+# ... and reduces them to a number a human could quote.
+_MEASURES = (r"\.(var|mean|std|sum|min|max|median|histogram|getextrema)\(|"
+             r"np\.(var|mean|std|median|percentile|count_nonzero|histogram)")
+# (b) reaches a measurement function through an import instead of a CLI.
+_GRADING_MODULES = ("grade_axes", "grade_gate", "grade_beauty", "grade_g3", "grade_g7",
+                    "grade_hero", "grade_look", "grade_midtone", "grade_ref", "grade_ref2",
+                    "grade_web_parity", "colour_gate", "measure_penumbra")
+
+
+def is_entry_point(name, src):
+    """Does this script have a way to print a number measured off frame pixels?
+
+    `name` is the bare filename, `src` its source text. Deliberately over-eager:
+    a false positive costs one line in EXEMPT with a reason, a false negative
+    costs a HUD-graded number on a card someone believes.
+    """
+    import fnmatch
+    import re
+
+    if any(fnmatch.fnmatch(name, g) for g in ENTRY_POINT_GLOBS):
+        return True
+    if re.search(_READS_PIXELS, src) and re.search(_MEASURES, src):
+        return True
+    stem = name[:-3] if name.endswith(".py") else name
+    return any(re.search(rf"^\s*(?:import|from)\s+{m}\b", src, re.M)
+               for m in _GRADING_MODULES if m != stem)
 
 # Gated: every number they print is measured off frame pixels the HUD corrupts.
 GUARDED = (
+    "dof_crop_compare.py",
+    "dof_decision_sheet.py",
     "grade_axes.py",
     "grade_beauty.py",
     "grade_g3.py",
@@ -76,6 +123,7 @@ GUARDED = (
     "grade_look.py",
     "grade_midtone.py",
     "grade_web_parity.py",
+    "make_gate3_verdict_card.py",
     "measure_penumbra.py",
 )
 
@@ -83,6 +131,15 @@ GUARDED = (
 # ritual, not a safeguard. Each entry states why - an exemption without a reason
 # is how a gate gets quietly loosened.
 EXEMPT = {
+    "_flamingo_dehud2.py":
+        "the de-HUD tool itself — a HUD-bearing capture is its INPUT by definition, and "
+        "the *-nohud2.png every guarded script demands is its output. Guarding it would "
+        "mean no frame could ever be produced.",
+    "make_vfx_pair_sheet.py":
+        "its plates come from target/*/voxelforge_shot.exe (render_vfx_pairs.sh), which "
+        "draws no HUD, and the only number it prints is a before-vs-after changed-pixel "
+        "fraction measured against a control floor captured from the SAME source — a "
+        "relative delta, not a look-acceptance axis. It never claims a frame is HUD-free.",
     "grade_ref.py":
         "grades the curated golden reference (docs/assets/golden-beauty-shot-ref.png), "
         "an artwork file that never had a HUD; requiring the suffix would mean renaming "

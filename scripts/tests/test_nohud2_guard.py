@@ -65,17 +65,55 @@ check(not (SCRIPTS / "_nohud2_guard.py").exists(),
       "scripts/_nohud2_guard.py is back — that underscore name is the one .gitignore "
       "swallows. The guard lives at scripts/nohud2_guard.py.")
 
+# ... and nobody may still be importing the old name. The rename to escape
+# .gitignore left `_flamingo_halo_probe.py` importing `_nohud2_guard` — the exact
+# bug the rename existed to fix, inverted, and invisible to a normal grep because
+# the probe is gitignored. So this walks the DISK, not `git ls-files`.
+for p in sorted(SCRIPTS.rglob("*.py")):
+    src = p.read_text(encoding="utf-8", errors="replace")
+    for line in src.splitlines():
+        s = line.strip()
+        if s.startswith(("import _nohud2_guard", "from _nohud2_guard")):
+            failures.append(
+                f"{p.relative_to(REPO)} imports the OLD guard name `_nohud2_guard` — that "
+                f"module does not exist, so this file dies on ModuleNotFoundError. "
+                f"Import `nohud2_guard`.")
+
 
 # ---------------------------------------------------------------------------
 # 2. Every tracked grading entry point is classified, and the classification is true
 # ---------------------------------------------------------------------------
+# Discovery is BEHAVIOURAL, not by filename — see nohud2_guard.is_entry_point().
+# The name-glob version reported "13 entry points classified" while
+# `dof_crop_compare.py` (hardcoded frame, prints a sharpness table and an fg:bg
+# ratio) sat outside both lists, because its name does not start with `grade_`.
 entry_points = set()
-for glob in G.ENTRY_POINT_GLOBS:
-    for p in SCRIPTS.glob(glob):
-        if tracked(f"scripts/{p.name}"):
-            entry_points.add(p.name)
+for p in sorted(SCRIPTS.glob("*.py")):
+    if not tracked(f"scripts/{p.name}"):
+        continue
+    src = p.read_text(encoding="utf-8", errors="replace")
+    if G.is_entry_point(p.name, src):
+        entry_points.add(p.name)
 
-check(bool(entry_points), "found no grading entry points at all — the globs are wrong")
+check(bool(entry_points), "found no grading entry points at all — the detector is wrong")
+
+# The detector must be doing more than re-stating the globs, or we are back to
+# classifying by filename with extra steps.
+import fnmatch  # noqa: E402
+
+by_glob = {n for n in entry_points if any(fnmatch.fnmatch(n, g) for g in G.ENTRY_POINT_GLOBS)}
+check(len(entry_points - by_glob) >= 3,
+      f"behavioural discovery found only {len(entry_points - by_glob)} entry point(s) the "
+      f"name-globs miss — either the detector regressed to matching names, or someone "
+      f"deleted the scripts it was written to catch (dof_crop_compare, dof_decision_sheet, "
+      f"make_gate3_verdict_card).")
+
+# Regression pin: the three the glob version let through by name.
+for name in ("dof_crop_compare.py", "dof_decision_sheet.py", "make_gate3_verdict_card.py"):
+    if (SCRIPTS / name).exists():
+        check(name in entry_points,
+              f"{name} is no longer detected as a grading entry point — it measures frame "
+              f"pixels and prints the numbers; it must stay classified.")
 
 classified = set(G.GUARDED) | set(G.EXEMPT)
 unclassified = entry_points - classified
@@ -144,6 +182,11 @@ with tempfile.TemporaryDirectory() as td:
     argv_for = {
         "grade_g7.py": ["--frame", str(raw)],
         "grade_web_parity.py": ["--web", str(raw), "--native", str(raw)],
+        "dof_decision_sheet.py": [str(raw), str(raw)],
+        # No frame on argv by default — it reads a fixed gate3 set. `--frames`
+        # exists so the refusal is testable end to end instead of asserted by
+        # reading the source, which is how a guard rots.
+        "make_gate3_verdict_card.py": ["--frames", str(raw), str(raw), str(raw)],
     }
     for name in G.GUARDED:
         cmd = [sys.executable, str(SCRIPTS / name)] + argv_for.get(name, [str(raw)])
