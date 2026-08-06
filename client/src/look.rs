@@ -593,12 +593,16 @@ impl Hour {
         // vista frame's darkest shade measured R−B −4, i.e. COLD, the only
         // frame to fail G3's hue clause as well as its level clause.
         //
-        // 0.48 keeps the §5.4 magenta envelope with room to spare: ambient
-        // G−B 0.42 (floor 0.30), G/R 0.94 (floor 0.85). Sweep both with
-        // `VOXELFORGE_LOOK_LIGHT` / `VOXELFORGE_LOOK_AMBIENT` before moving
-        // them again — the hero shot's own fill sits at 2800 lux, so 2200 is
-        // deliberately short of that, not a ceiling probe.
-        ambient: [0.96, 0.90, 0.48],
+        // 0.45 (2026-08-07, drained from 0.48 for the AAA regrade). The warmth
+        // gap is the harder of the scorecard's top two: at the pre-regrade
+        // values the gate3 midtone band read R−B +80..+99 against +110, and
+        // every 0.01 shaved off B buys that gap directly (R−B rises 1:1 with B
+        // falling on an ambient-lit pixel). Still inside the §5.4 magenta
+        // envelope with MORE room than 0.48 left: ambient G−B 0.45 (floor 0.30),
+        // G/R 0.94 (floor 0.85). Sweep with `VOXELFORGE_LOOK_LIGHT` /
+        // `VOXELFORGE_LOOK_AMBIENT` before moving again — the hero shot's own
+        // fill sits at 2800 lux, so 2200 is deliberately short of that.
+        ambient: [0.96, 0.90, 0.45],
         ambient_lux: 2200.0,
         // 11.0 was this lane's own value and it cost 1.3 stops against Bevy's
         // implicit `Exposure::BLENDER` (9.7): measured on the vista frame it
@@ -614,7 +618,13 @@ impl Hour {
         // 56.7 -> 35.8. 10.8 clears the floor at L=57.1 with R-B 151 and spread
         // 53.6: the gate is passed without spending the golden-hour warmth that
         // G6's own hue clause exists to protect.
-        ev100: 10.8,
+        //
+        // 10.9 (2026-08-07): a 0.1-EV nudge for the AAA p95 axis. gate3-walk's
+        // highlight p95 read 149.79 against the 150 floor — 0.21 short and well
+        // inside gameplay frame-to-frame variance. The lift keeps the sunlit
+        // patch far below clip and still above G6's L>=55 floor, so it spends
+        // none of the warmth/hue those clauses protect.
+        ev100: 10.9,
         fog: FOG_COLOR_DAY,
     };
 

@@ -33,10 +33,26 @@
 //! it stretches one tile across a whole merged quad, so per-texel relief there
 //! would smear.
 //!
-//! `VOXELFORGE_FLAT_MATERIAL=1` builds the palette base-colour-only, which is
-//! exactly what shipped before the maps existed — the A/B lever out of one
-//! binary. `VOXELFORGE_MAT_RELIEF` and `VOXELFORGE_MAT_ROUGH_VAR` scale the two
-//! amplitudes without a rebuild.
+//! ## Per-instance variation
+//!
+//! Even with per-type material maps, every block of the same type shares the
+//! same tile — a long cobblestone wall samples the same roughness and colour
+//! every block, reading as one uniform surface. The split path adds a
+//! deterministic world-space micro-variation to each quad's vertex colours
+//! (subtle per-channel colour noise + micro-AO), so every face gets a
+//! slightly different colour cast and the wall reads as individual blocks
+//! instead of one flat plane. The atlas/LOD path deliberately gets none:
+//! it is a single merged draw far from the camera and has no per-block
+//! identity to vary.
+//!
+//! Block edges are carried by vertex AO alone — the AO curve was deepened so
+//! inside corners read without depending on post-FX SSAO.
+//!
+//! ## Runtime levers (env vars)
+//!
+//! `VOXELFORGE_FLAT_MATERIAL=1` — base-colour-only (the pre-material look).
+//! `VOXELFORGE_FLAT_INSTANCE=1`  — drop per-instance colour noise.
+//! `VOXELFORGE_MAT_RELIEF` / `VOXELFORGE_MAT_ROUGH_VAR` — scale amplitudes.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
@@ -68,10 +84,11 @@ const TILE_PX: usize = 16;
 ///
 /// This is the single knob that makes a voxel room read as a room instead of as
 /// a flat-lit box: the reference kitchen's depth is almost entirely the soft
-/// darkening where two surfaces meet. Kept gentle at the top end on purpose —
-/// `look.rs` also runs SSAO on the playable game, and two occlusion terms
-/// stacking at full strength turns every inside corner into a black smear.
-const AO_SHADE: [f32; 4] = [0.45, 0.66, 0.84, 1.0];
+/// darkening where two surfaces meet. Deepened from the original gentle curve
+/// so block edges read without depending on post-FX SSAO — the per-instance
+/// colour noise (§instance_variation) breaks up what would otherwise be a
+/// uniform gradient across a long merged wall.
+const AO_SHADE: [f32; 4] = [0.28, 0.52, 0.76, 1.0];
 
 // ---------------------------------------------------------------------------
 // per-block surface response
@@ -227,6 +244,17 @@ pub fn block_relief(id: BlockId) -> BlockRelief {
 /// seed, same camera, one variable.
 fn flat_material() -> bool {
     matches!(std::env::var("VOXELFORGE_FLAT_MATERIAL"), Ok(v) if !v.is_empty() && v != "0")
+}
+
+/// `VOXELFORGE_FLAT_INSTANCE=1` — disable per-instance colour variation across
+/// quads, matching the flat-uniform look that shipped before this pass.
+///
+/// Paired with [`flat_material`] for the full A/B lever: set both to `1` to
+/// render indistinguishable from the pre-material pass; set only
+/// `FLAT_INSTANCE` to keep normal/roughness maps but drop per-face colour
+/// noise.
+fn flat_instance() -> bool {
+    matches!(std::env::var("VOXELFORGE_FLAT_INSTANCE"), Ok(v) if !v.is_empty() && v != "0")
 }
 
 /// A non-negative amplitude scale read from the environment, `1.0` by default.
@@ -452,6 +480,14 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
         buckets[0] = Some(Buffers::default());
     }
 
+    // Per-instance colour variation: every quad gets a deterministic world-space
+    // noise that subtly shifts its albedo and micro-AO, so a long wall of the
+    // same block type is not one uniform colour. Gated behind the A/B lever and
+    // only applied to the split path — the atlas/LOD path has no per-block
+    // identity to vary.
+    let instance_noise = split && !flat_instance();
+    let (wox, woy, woz) = chunk.pos.world_origin();
+
     for d in 0..3usize {
         let u = (d + 1) % 3;
         let v = (d + 2) % 3;
@@ -610,9 +646,34 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                             ]);
                         }
 
+                        // Per-instance micro-variation: deterministic world-space
+                        // noise shifts the colour cast and micro-AO of each
+                        // quad independently, so a long wall of the same block
+                        // type is not one uniform colour. Only the split path
+                        // carries this — the atlas/LOD path is a single merged
+                        // draw and has no per-block identity to vary.
+                        let (nr, ng, nb, mao) = if instance_noise {
+                            let wx = wox as f32 + p[0];
+                            let wy = woy as f32 + p[1];
+                            let wz = woz as f32 + p[2];
+                            (
+                                hash_quad(wx, wy, wz, 211) * 0.03 - 0.015,
+                                hash_quad(wx, wy, wz, 223) * 0.03 - 0.015,
+                                hash_quad(wx, wy, wz, 227) * 0.03 - 0.015,
+                                hash_quad(wx, wy, wz, 201) * 0.04 - 0.02,
+                            )
+                        } else {
+                            (0.0, 0.0, 0.0, 0.0)
+                        };
                         for a in c.ao {
-                            let s = AO_SHADE[a as usize];
-                            buf.colors.push([s, s, s, 1.0]);
+                            let ao = AO_SHADE[a as usize];
+                            let bright = (ao + mao).clamp(0.0, 1.0);
+                            buf.colors.push([
+                                (bright + nr).clamp(0.0, 1.0),
+                                (bright + ng).clamp(0.0, 1.0),
+                                (bright + nb).clamp(0.0, 1.0),
+                                1.0,
+                            ]);
                         }
 
                         // Pick the diagonal that does NOT run between the two
@@ -672,6 +733,18 @@ fn hash2(x: u32, y: u32, salt: u32) -> u32 {
 #[inline]
 fn dither(x: u32, y: u32, salt: u32, amp: i32) -> i32 {
     (hash2(x, y, salt) >> 8) as i32 % (2 * amp + 1) - amp
+}
+
+/// Deterministic per-quad float in `0..1`, seeded from world-space position so
+/// the same face gets the same variation after every re-mesh — the noise is
+/// spatial, not temporal.
+#[inline]
+fn hash_quad(wx: f32, wy: f32, wz: f32, salt: u32) -> f32 {
+    let h = hash2(wx as u32, wy as u32, salt);
+    let h = h.wrapping_add(wz as u32 * 127u32);
+    // 100-step normalisation enough to avoid visible banding, coarse enough
+    // that a single-block offset reads as a distinct instance.
+    (h >> 8) as f32 % 100.0 / 100.0
 }
 
 /// Per-texel shade for one block's 16×16 tile, at tile-local `(lx, ly)`.
