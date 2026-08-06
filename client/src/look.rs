@@ -344,7 +344,14 @@ pub const FOG_SUN_EXPONENT: f32 = 30.0;
 pub const AO_THICKNESS: f32 = 1.45;
 
 /// PCSS penumbra width for the sun, where the tier turns it on.
-pub const PCSS_WIDTH: f32 = 3.0;
+///
+/// 3.0 → 4.0 (2026-08-06). `measure_penumbra.py` read a 4 px median edge on
+/// `wide-hero-final-nohud2.png` and 3 px on the vista frame, against G4a's 5 px
+/// floor; the gameplay frames, which are shot at High and take the Gaussian
+/// path instead, already read 5–9 px. So the miss is specific to the tier that
+/// runs THIS constant, and this is the only knob it has. Sweep it with
+/// `VOXELFORGE_LOOK_PCSS=<width>` before moving it again.
+pub const PCSS_WIDTH: f32 = 4.0;
 
 /// Post-grade constants.
 ///
@@ -568,8 +575,31 @@ impl Hour {
         key: [1.00, 0.92, 0.62],
         sky: [0.36, 0.60, 0.90],
         sky_gain: 2.4,
-        ambient: [0.96, 0.90, 0.60],
-        ambient_lux: 1100.0,
+        // B DRAINED 0.60 → 0.48 and LUX DOUBLED 1100 → 2200 — 2026-08-06, the
+        // one knob the AAA scorecard (`docs/aaa-gap-scorecard-2026-08-06.md`)
+        // ranked 1st AND 2nd. Ambient is the only light in open shade, so it
+        // alone decides what the darkest 5 % of a frame looks like, and at 1100
+        // lux that band measured p05-L 2.2–3.8 % against G3's 8 % floor: the
+        // shade was not dark, it was CRUSHED — no detail left to grade. Lux is
+        // the fill knob (`ev100` above moves the SUNLIT patch and is spoken
+        // for by G6's floor), so it is this number's job alone.
+        //
+        // The same lift is the warmth lever the grade could not supply: with
+        // `TEMPERATURE` at its 0.05 magenta ceiling the midtone band still read
+        // R−B +80 to +99 against +110, and `POST_SATURATION` pushes R DOWN on
+        // the 60 % of that band which is green-dominant grass (see the note on
+        // that constant). Raising the fill raises R in shade directly, and
+        // draining its B stops the open shade reading as sky-blue wash — the
+        // vista frame's darkest shade measured R−B −4, i.e. COLD, the only
+        // frame to fail G3's hue clause as well as its level clause.
+        //
+        // 0.48 keeps the §5.4 magenta envelope with room to spare: ambient
+        // G−B 0.42 (floor 0.30), G/R 0.94 (floor 0.85). Sweep both with
+        // `VOXELFORGE_LOOK_LIGHT` / `VOXELFORGE_LOOK_AMBIENT` before moving
+        // them again — the hero shot's own fill sits at 2800 lux, so 2200 is
+        // deliberately short of that, not a ceiling probe.
+        ambient: [0.96, 0.90, 0.48],
+        ambient_lux: 2200.0,
         // 11.0 was this lane's own value and it cost 1.3 stops against Bevy's
         // implicit `Exposure::BLENDER` (9.7): measured on the vista frame it
         // held the brightest sunlit patch at RGB(209,124,55), L=53.9, under
