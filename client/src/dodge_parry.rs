@@ -44,6 +44,7 @@
 
 use bevy::prelude::*;
 
+use crate::anim::Rigged;
 use crate::combat::{
     self, CombatState, Enemy, EnemyHitOutcome, FeelLog, Health, HuskState, ImpactWeight, Knockback,
     PlayerBody, PlayerCombat, Poise, Shake, StaggerEvent, HITSTOP_PARRY, KNOCKBACK_TIME,
@@ -272,14 +273,25 @@ const GHOST_STROBE: u32 = 3;
 /// 3. **Restore** — the frame after the window shuts, scale and visibility
 ///    snap back to normal.
 ///
+/// Once `anim::attach_rigs` has dressed the player in a rig it hides the
+/// `PlayerBody` placeholder (capsule + face block) for good — the rig is what
+/// renders from then on. This strobe must not fight that: it skips the body
+/// entirely once the player carries [`Rigged`], instead of un-hiding a mesh
+/// nobody wants back (see `docs/note-to-rose-placeholder-capsule-unhidden-2026-08-06.md`).
+///
 /// Runs after `watch_windows` (needs the frame counter) and before the camera
 /// (so the pulse is visible in the frame).
 pub fn dodge_ghost_flash(
     dp: Res<DodgeParryState>,
-    player_q: Query<(&PlayerCombat, &Children), With<FlyCam>>,
+    player_q: Query<(&PlayerCombat, &Children, Has<Rigged>), With<FlyCam>>,
     mut body_q: Query<(&mut Transform, &mut Visibility), With<PlayerBody>>,
 ) {
-    let Ok((pc, children)) = player_q.single() else { return };
+    let Ok((pc, children, rigged)) = player_q.single() else { return };
+
+    if rigged {
+        // The placeholder is hidden permanently by attach_rigs; leave it alone.
+        return;
+    }
 
     let in_iframe = pc.invulnerable();
 

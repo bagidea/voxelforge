@@ -416,12 +416,17 @@ pub struct Rig {
 }
 
 /// Native-only screenshot hook — see `pose_override()` and docs/anim-events.md
-/// capture section. Set with VOXELFORGE_ANIM_POSE=attack|dodge|parry.
+/// capture section. Set with VOXELFORGE_ANIM_POSE=attack|dodge|parry|clash.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum OverridePose {
     Attack,
     Dodge,
     Parry,
+    /// Player and Husk both held at their own contact frame, so the two blades
+    /// read as meeting instead of two actors posed independently. The other
+    /// three poses only ever touch the player rig; this one also drives the
+    /// nearest `Actor::Husk` rig via `override_husk_beat()`.
+    Clash,
 }
 
 /// Read VOXELFORGE_ANIM_POSE once (cached). Returns None on wasm and in every
@@ -433,6 +438,7 @@ fn pose_override() -> Option<OverridePose> {
         Some("attack") | Some("swing") | Some("strike") => Some(OverridePose::Attack),
         Some("dodge") | Some("roll") => Some(OverridePose::Dodge),
         Some("parry") | Some("guard") => Some(OverridePose::Parry),
+        Some("clash") => Some(OverridePose::Clash),
         _ => None,
     })
 }
@@ -708,8 +714,6 @@ fn init_rig_assets(
     let pd = Dims::of(Actor::Player);
     let hd = Dims::of(Actor::Husk);
 
-    // The avatar keeps the orange it has always worn, so the play-mode screenshots
-    // still read as "the same guy" — just with limbs now.
     let player = Parts {
         pelvis: meshes.add(Cuboid::new(0.40, 0.20, 0.26)),
         torso: meshes.add(Cuboid::new(0.46, 0.58, 0.28)),
@@ -726,24 +730,25 @@ fn init_rig_assets(
         // cloak hinge.
         cloak: meshes.add(Cuboid::new(0.30, 0.62, 0.05)),
         cloth: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.92, 0.38, 0.16),
-            perceptual_roughness: 0.72,
+            base_color: Color::srgb(0.420, 0.290, 0.180), // #6B4A2E, character-bible §1 tunic
+            perceptual_roughness: 0.85,
             ..default()
         }),
         trim: materials.add(StandardMaterial {
             base_color: Color::srgb(0.34, 0.20, 0.13),
-            perceptual_roughness: 0.80,
+            perceptual_roughness: 0.65,
             ..default()
         }),
         skin: materials.add(StandardMaterial {
             base_color: Color::srgb(0.84, 0.62, 0.47),
-            perceptual_roughness: 0.68,
+            perceptual_roughness: 0.50,
             ..default()
         }),
         steel: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.72, 0.75, 0.80),
-            perceptual_roughness: 0.30,
-            metallic: 0.75,
+            base_color: Color::srgb(0.725, 0.663, 0.549), // #B9A98C, character-bible §1 sword blade
+            perceptual_roughness: 0.18,
+            metallic: 0.0,
+            reflectance: 0.7,
             ..default()
         }),
         extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(Actor::Player)),
@@ -764,25 +769,26 @@ fn init_rig_assets(
         // character-bible §2). Allocated only so `Parts` stays one struct.
         cloak: meshes.add(Cuboid::new(0.30, 0.62, 0.05)),
         cloth: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.32, 0.34, 0.40),
-            perceptual_roughness: 0.55,
-            metallic: 0.30,
+            base_color: Color::srgb(0.725, 0.663, 0.549), // #B9A98C, character-bible §2 armor plate
+            perceptual_roughness: 0.70,
+            metallic: 0.0, // stone, not metal-flake
             ..default()
         }),
         trim: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.18, 0.19, 0.24),
-            perceptual_roughness: 0.50,
+            base_color: Color::srgb(0.541, 0.478, 0.361), // #8A7A5C, character-bible §2 crumbling edges
+            perceptual_roughness: 0.90,
             ..default()
         }),
         skin: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.22, 0.25, 0.24),
+            base_color: Color::srgb(0.30, 0.27, 0.23),
             perceptual_roughness: 0.85,
             ..default()
         }),
         steel: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.46, 0.44, 0.42),
-            perceptual_roughness: 0.45,
-            metallic: 0.60,
+            base_color: Color::srgb(0.55, 0.51, 0.46),
+            perceptual_roughness: 0.20,
+            metallic: 0.0,
+            reflectance: 0.7,
             ..default()
         }),
         extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(Actor::Husk)),
@@ -912,12 +918,16 @@ fn build_rig(
         head,
     );
     // The dark face block keeps the old "which way am I looking" read (local -Z).
-    skin(
-        &p.face,
-        &p.trim,
-        Transform::from_xyz(0.0, d.face_y, d.face_z),
-        head,
-    );
+    // Husk-only per character-bible §2 (LOCKED): the Husk face is a blank, featureless
+    // slab — no visor slit. Only the Player gets the directional face-accent block.
+    if actor == Actor::Player {
+        skin(
+            &p.face,
+            &p.trim,
+            Transform::from_xyz(0.0, d.face_y, d.face_z),
+            head,
+        );
+    }
     skin(
         &p.upper_arm,
         &p.cloth,
@@ -956,9 +966,12 @@ fn build_rig(
             knee,
         );
         // Sole flush with the ground plane, toe protruding forward (-Z).
+        // Player boots are leather (trim), not the sword's chrome steel — a traveller's
+        // boots, not polished metal. The Husk's armored boots stay on steel.
+        let boot_mat = if actor == Actor::Player { &p.trim } else { &p.steel };
         skin(
             &p.foot,
-            &p.steel,
+            boot_mat,
             Transform::from_xyz(0.0, -d.shin + d.foot_h, -0.06),
             knee,
         );
@@ -1261,12 +1274,17 @@ fn animate_rigs(
                 continue;
             };
 
-        // Capture hook: hold one move's canonical frame on the player rig so a
-        // PNG of that pose can be grabbed (see docs/anim-events.md capture).
+        // Capture hook: hold one move's canonical frame so a PNG of that pose can
+        // be grabbed (see docs/anim-events.md capture). Every pose but `Clash`
+        // only ever touches the player rig; `Clash` also parks the Husk at its
+        // own contact frame so the shot reads as blades meeting, not two actors
+        // posed independently.
         let mut beat = beat;
-        if rig.actor == Actor::Player {
-            if let Some(op) = pose_override() {
-                beat = override_beat(op);
+        if let Some(op) = pose_override() {
+            match rig.actor {
+                Actor::Player => beat = override_beat(op),
+                Actor::Husk if op == OverridePose::Clash => beat = override_husk_beat(),
+                Actor::Husk => {}
             }
         }
 
@@ -2384,9 +2402,11 @@ fn swing_phase_of(beat: &Beat) -> Option<SwingPhase> {
 ///   * Attack  — the CONTACT frame (mid-LIGHT_ACTIVE): blade mid-strike.
 ///   * Dodge   — beat.t = 0.5: a quarter-turned tuck, unmistakably a roll.
 ///   * Parry   — the centre of the receive window: guard flashed up to deflect.
+///   * Clash   — the player half is identical to Attack; see
+///     `override_husk_beat()` for the Husk's half of the same beat.
 fn override_beat(p: OverridePose) -> Beat {
     match p {
-        OverridePose::Attack => {
+        OverridePose::Attack | OverridePose::Clash => {
             let a0 = combat::LIGHT_ACTIVE.0 / combat::LIGHT_TIME;
             let a1 = combat::LIGHT_ACTIVE.1 / combat::LIGHT_TIME;
             Beat {
@@ -2408,6 +2428,20 @@ fn override_beat(p: OverridePose) -> Beat {
             active: (0.0, PARRY_WINDOW_FRAC),
             combo: 0,
         },
+    }
+}
+
+/// The Husk's half of `Clash`: held at its own contact frame — the midpoint of
+/// the `(wind, 0.80)` active window `husk_beat` uses for `Swing1`/`Swing2` —
+/// so its blade is up and moving at the same instant the player's is.
+fn override_husk_beat() -> Beat {
+    const WIND: f32 = 0.62;
+    const STRIKE: f32 = 0.80;
+    Beat {
+        action: Action::Swing,
+        t: 0.5 * (WIND + STRIKE),
+        active: (WIND, STRIKE),
+        combo: 0,
     }
 }
 
@@ -2770,6 +2804,17 @@ mod tests {
         assert!(a.t > a0 && a.t < a1);
         assert_eq!(swing_phase_of(&a), Some(SwingPhase::Contact));
         assert_eq!(override_beat(OverridePose::Dodge).t, 0.5);
+    }
+
+    #[test]
+    fn clash_holds_both_actors_at_their_own_contact_frame() {
+        let player = override_beat(OverridePose::Clash);
+        assert_eq!(player.action, Action::Swing);
+        assert_eq!(swing_phase_of(&player), Some(SwingPhase::Contact));
+
+        let husk = override_husk_beat();
+        assert_eq!(husk.action, Action::Swing);
+        assert_eq!(swing_phase_of(&husk), Some(SwingPhase::Contact));
     }
 
     #[test]
