@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::combat;
+use crate::scene::nohud_requested;
 use crate::FlyCam;
 
 // =============================================================================
@@ -652,14 +653,23 @@ fn npc_interact(
     for e in prompts.iter() { commands.entity(e).despawn(); }
 
     if let Some((_, _, npc)) = nearest {
-        commands.spawn((
-            Text::new(format!("[E] Talk to {}", npc.display_name)),
-            TextFont { font_size: bevy::text::FontSize::from(18.0), ..default() },
-            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
-            Node { position_type: PositionType::Absolute, bottom: Val::Px(60.0),
-                left: Val::Percent(50.0), margin: UiRect { left: Val::Px(-120.0), ..default() }, ..default() },
-            InteractionPrompt,
-        ));
+        // Capture lane (`VOXELFORGE_NOHUD`): don't spawn it at all. `scene.rs`'s
+        // PostUpdate sweep hides `Node` UI, but this prompt is despawned and
+        // re-spawned every frame, so hiding it is a race the sweep lost twice —
+        // the only frame-proof seam is refusing the spawn. The E-key branch
+        // below is deliberately outside the gate: the scripted demo still has to
+        // open dialogue and set `walked_to_gate`, or the capture films a
+        // different run than the game.
+        if !nohud_requested() {
+            commands.spawn((
+                Text::new(format!("[E] Talk to {}", npc.display_name)),
+                TextFont { font_size: bevy::text::FontSize::from(18.0), ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+                Node { position_type: PositionType::Absolute, bottom: Val::Px(60.0),
+                    left: Val::Percent(50.0), margin: UiRect { left: Val::Px(-120.0), ..default() }, ..default() },
+                InteractionPrompt,
+            ));
+        }
 
         if keys.just_pressed(KeyCode::KeyE) && !dialogue.open {
             open_npc_dialogue(npc, &journal, &mut dialogue, story_data(&story));
@@ -1145,15 +1155,19 @@ fn campfire_rest(
     for e in prompts.iter() { commands.entity(e).despawn(); }
 
     if dist <= CAMPFIRE_REST_RANGE {
-        commands.spawn((
-            Text::new("[E] Rest at campfire"),
-            TextFont { font_size: bevy::text::FontSize::from(18.0), ..default() },
-            TextColor(Color::srgba(0.9, 0.75, 0.4, 0.9)),
-            Node { position_type: PositionType::Absolute, bottom: Val::Px(100.0),
-                left: Val::Percent(50.0),
-                margin: UiRect { left: Val::Px(-100.0), ..default() }, ..default() },
-            CampfirePrompt,
-        ));
+        // Capture lane: see `npc_interact` — refused at the spawn, not hidden
+        // after it. Resting itself still works while `VOXELFORGE_NOHUD` is set.
+        if !nohud_requested() {
+            commands.spawn((
+                Text::new("[E] Rest at campfire"),
+                TextFont { font_size: bevy::text::FontSize::from(18.0), ..default() },
+                TextColor(Color::srgba(0.9, 0.75, 0.4, 0.9)),
+                Node { position_type: PositionType::Absolute, bottom: Val::Px(100.0),
+                    left: Val::Percent(50.0),
+                    margin: UiRect { left: Val::Px(-100.0), ..default() }, ..default() },
+                CampfirePrompt,
+            ));
+        }
         if keys.just_pressed(KeyCode::KeyE) {
             if let Err(e) = save_quest_journal(&journal) {
                 eprintln!("CAMPFIRE_REST save failed: {e}");
@@ -1191,15 +1205,20 @@ fn lore_interact(
         .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     if let Some((li, _)) = nearest {
-        commands.spawn((
-            Text::new(format!("[E] Read {}", li.name)),
-            TextFont { font_size: bevy::text::FontSize::from(16.0), ..default() },
-            TextColor(Color::srgba(0.8, 0.85, 0.9, 0.9)),
-            Node { position_type: PositionType::Absolute, bottom: Val::Px(140.0),
-                left: Val::Percent(50.0),
-                margin: UiRect { left: Val::Px(-120.0), ..default() }, ..default() },
-            LorePrompt,
-        ));
+        // Capture lane: see `npc_interact` — refused at the spawn, not hidden
+        // after it. Reading lore still works while `VOXELFORGE_NOHUD` is set
+        // (the plaque it opens is an egui layer, cleared by `nohud_egui`).
+        if !nohud_requested() {
+            commands.spawn((
+                Text::new(format!("[E] Read {}", li.name)),
+                TextFont { font_size: bevy::text::FontSize::from(16.0), ..default() },
+                TextColor(Color::srgba(0.8, 0.85, 0.9, 0.9)),
+                Node { position_type: PositionType::Absolute, bottom: Val::Px(140.0),
+                    left: Val::Percent(50.0),
+                    margin: UiRect { left: Val::Px(-120.0), ..default() }, ..default() },
+                LorePrompt,
+            ));
+        }
         if keys.just_pressed(KeyCode::KeyE) && !dialogue.open {
             dialogue.speaker = li.id.clone();
             dialogue.speaker_display = li.name.clone();
@@ -1482,15 +1501,16 @@ const TALK_DIST: f32 = 4.3;
 const POST_STOP_X: f32 = 49.5;
 /// The lane the demo walks east on to reach the post.
 ///
-/// The straight z≈6.9 line it used to take is a wall on the current
-/// `maps/edhari.json`: a 5-high column stands at (43,7) over ground at y=2, and
-/// step-up is one block, so the body wedges against it and Garren walks over to
-/// beat on it — `QUEST_WALK_GUARD_POST timeout x=42.7 z=6.9 hp=30 => FAIL`,
-/// reproduced with the probe off, so it is the map and not the R key. Surveying
-/// the map file, z=8 is clear ground (top y=2) from x=40 all the way to x=52,
-/// and `guard_post_east` spans z 4-12 — so this lane still stops inside the
-/// region that fires the trigger.
-const POST_LANE_Z: f32 = 8.5;
+/// The straight z≈6.9 line it used to take WAS a wall on the then-current
+/// `maps/edhari.json`: a 5-high column used to stand at (43,7) over ground at
+/// y=2 (Shiba has since deleted it — see POST_LANE_Z note), and step-up is one
+/// block, so the body wedged against it and Garren walked over to beat on it —
+/// `QUEST_WALK_GUARD_POST timeout x=42.7 z=6.9 hp=30 => FAIL`, reproduced with
+/// the probe off, so it was the map and not the R key. Surveying the map file,
+/// z=8 is clear ground (top y=2) from x=40 all the way to x=52, and
+/// `guard_post_east` spans z 4-12 — so this lane still stops inside the region
+/// that fires the trigger.
+const POST_LANE_Z: f32 = 8.5; // z=8–9 are clear y=2 from x=30..52 (Shiba deleted pillar (43,7) + edge (41,3,9)); z=10 has head blocks (36,3),(36,4),(41,3)
 /// Close to this before swinging: melee reach is 2.0 + half-width + 0.6.
 const MELEE_CLOSE: f32 = 2.2;
 /// Scripted taps alternate release → press on this cadence. `just_pressed` only
@@ -1741,8 +1761,8 @@ fn quest_demo(
             .unwrap_or(false);
         if !observed && ptf.translation.x < POST_STOP_X {
             // Two legs, not one: drop off the gate plateau onto the clear lane
-            // first (POST_LANE_Z), then walk east along it. Steering straight at
-            // the post from z≈6.9 walks into the (43,7) column.
+            // first (POST_LANE_Z), then walk east along it. (43,7) pillar was deleted
+            // by Shiba; z=8–9 are now clear all the way from x=30..52.
             let dz = POST_LANE_Z - ptf.translation.z;
             if dz.abs() > WAYPOINT_TOL {
                 steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
@@ -1820,6 +1840,16 @@ fn quest_demo(
     // o1_build: walk to (50,9), press R (place_block). o2_ledger: walk to (46,24),
     // press E (interact lore_village_ledger). o3_offering: walk to (33,14), press E.
     if demo.phase == 4 {
+        // TRIAGE §5-F4 — phase-4 stamp is reset by enter!(4), but a stale stamp
+        // survives when the phase-4 code is reached through a path that bypasses
+        // the macro (e.g. a phase-3 timeout that lands here with stamp from
+        // phase-2).  Reset unconditionally on the first visit so phase_t starts
+        // at ~0 no matter how we entered.
+        if phase_t > 1.0 {
+            demo.stamp = Some(t);
+            demo.tap_t = 0.0;
+            println!("QUEST_DEBUG_P4 stamp was stale (phase_t={:.1}) — reset to t={:.1}", phase_t, t);
+        }
         // Guard: q4 must be Active before the demo can complete its objectives.
         // On the frame q3→q4 transitions, q4 may be Locked for one frame.
         // Wait instead of silently failing (status=Locked → place_block trigger

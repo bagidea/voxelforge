@@ -17,9 +17,11 @@
 //! It is deliberately additive: every system here is gated on `--play`, so the bench,
 //! the shots and all the existing headless proofs behave exactly as before.
 
+use bevy::camera::visibility::VisibilitySystems;
 use bevy::ecs::message::MessageReader;
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
+use bevy_egui::{EguiPostUpdateSet, EguiRenderOutput};
 
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::CHUNK_SIZE as CHUNK;
@@ -202,6 +204,196 @@ impl Plugin for ScenePlugin {
                 )
                     .run_if(playing),
             );
+
+        // ---- capture lane (env-gated; a normal launch adds nothing) ----------
+        // Both knobs exist so a trailer can be shot through the REAL game — same
+        // binary, same map, same look stack — instead of a second render path
+        // that would prove nothing about what ships. Neither is registered when
+        // its env var is absent, so `playing`/editor/bench/shot runs are byte-for
+        // -byte the sessions they were before.
+        if nohud_requested() {
+            app.add_systems(
+                PostUpdate,
+                (
+                    // PostUpdate, NOT Update: quest.rs despawns and re-spawns the
+                    // "[E] …" prompts every single frame, so a sweep in Update is
+                    // racing a spawn that has not been flushed yet — the first
+                    // take had the prompts still on screen for exactly that
+                    // reason. By PostUpdate the frame's UI entities all exist,
+                    // and hiding them lands before visibility propagates.
+                    nohud_sweep.before(VisibilitySystems::VisibilityPropagate),
+                    // egui draws through its own render path and never looks at
+                    // `Visibility`. Dropping the frame's paint jobs after they
+                    // are built is the only seam that reaches it from this lane
+                    // — and it covers the dialogue plaque, which the last clip
+                    // had to cut 79 frames to hide. `textures_delta` is left
+                    // alone: it owns texture lifetime, not pixels.
+                    nohud_egui.after(EguiPostUpdateSet::ProcessOutput),
+                ),
+            );
+        }
+        if let Some(cine) = Cine::from_env() {
+            app.insert_resource(cine).add_systems(
+                PostUpdate,
+                // After every Update writer (fly_camera, lock_on_camera, shake)
+                // and before propagation, so the scripted pose is the one that
+                // actually renders — no ordering contract with main.rs needed.
+                cine_camera.before(TransformSystems::Propagate),
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Capture lane — HUD blackout + scripted camera
+// ---------------------------------------------------------------------------
+
+/// `VOXELFORGE_NOHUD=1` — hide every screen-space widget for a capture.
+///
+/// The clip this was written for shipped with a wireframe cube stuck in frame:
+/// `highlight_target` draws the aim box through `Gizmos` and is registered with
+/// no run condition, so it draws in Play too. Cropping the HUD strip off the
+/// top and bottom never touched it — it sits wherever the player is aiming.
+/// So the switch turns off both families at once: `Node` UI (crosshair, FPS
+/// readout, objective tracker, HP/stamina bars, lock-on reticle, quest banner)
+/// and the default gizmo group (the aim box).
+///
+/// Not covered: the egui layers (dialogue box, settings, editor panels). They
+/// are not `Node`s and live in other lanes — a capture still has to avoid or
+/// cut the frames where the dialogue box is open.
+///
+/// `pub(crate)` and cached: `quest.rs` calls this per-frame from three systems to
+/// refuse to spawn the "[E] …" prompts at all (the sweep below lost that race
+/// twice), and a per-frame `env::var` in three systems is a syscall for a value
+/// that cannot change after launch.
+pub(crate) fn nohud_requested() -> bool {
+    static NOHUD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NOHUD.get_or_init(|| std::env::var("VOXELFORGE_NOHUD").is_ok_and(|v| v != "0"))
+}
+
+/// Runs every frame, not once: HUD entities are spawned late, re-spawned on
+/// every `OnEnter(AppState::Play)`, and (the prompts) rebuilt every frame — so a
+/// one-shot sweep would miss most of them.
+///
+/// A net, not the only guard: the three quest prompts are suppressed at their
+/// spawn site in `quest.rs` because hiding an entity that is despawned and
+/// re-spawned every frame is a race this lost twice.
+fn nohud_sweep(
+    mut ui: Query<&mut Visibility, With<Node>>,
+    mut gizmo_cfg: ResMut<GizmoConfigStore>,
+) {
+    for mut vis in &mut ui {
+        if *vis != Visibility::Hidden {
+            *vis = Visibility::Hidden;
+        }
+    }
+    let (cfg, _) = gizmo_cfg.config_mut::<DefaultGizmoConfigGroup>();
+    if cfg.enabled {
+        cfg.enabled = false;
+    }
+}
+
+/// Drop this frame's egui geometry — the dialogue box, the settings menu and the
+/// editor panels all render through it.
+fn nohud_egui(mut out: Query<&mut EguiRenderOutput>) {
+    for mut o in &mut out {
+        if !o.paint_jobs.is_empty() {
+            o.paint_jobs.clear();
+        }
+    }
+}
+
+/// `VOXELFORGE_CINE` — a scripted camera move, for the shots gameplay can't give.
+///
+/// The quest demo drives the body, and the boom follows the body, so every frame
+/// it produces is a third-person shot from eye height. An establishing vista of
+/// Edhari and a held closing frame are compositions, not gameplay — they need a
+/// camera that is somewhere the player never stands.
+///
+/// ```text
+/// VOXELFORGE_CINE="ex,ey,ez, ex2,ey2,ez2, ax,ay,az[, ax2,ay2,az2], secs"
+/// ```
+/// Eye dollies `e→e2`; aim point sits at `a`, or eases `a→a2` when the second
+/// triple is given. `VOXELFORGE_CINE_START` (default 1.0) parks the camera at the
+/// opening pose for that many seconds first — the map finishes streaming and the
+/// look stack settles before anything moves. `VOXELFORGE_CINE_EXIT` quits at that
+/// elapsed second, so a pass is the same length every take.
+#[derive(Resource, Clone, Copy, Debug)]
+struct Cine {
+    eye_a: Vec3,
+    eye_b: Vec3,
+    aim_a: Vec3,
+    aim_b: Vec3,
+    secs: f32,
+    start: f32,
+    exit: Option<f32>,
+}
+
+impl Cine {
+    fn from_env() -> Option<Self> {
+        let raw = std::env::var("VOXELFORGE_CINE").ok()?;
+        let v: Vec<f32> = raw
+            .split(',')
+            .filter_map(|s| s.trim().parse::<f32>().ok())
+            .collect();
+        // 10 = fixed aim point, 13 = the aim point eases too.
+        let (aim_a, aim_b, secs) = match v.len() {
+            10 => (
+                Vec3::new(v[6], v[7], v[8]),
+                Vec3::new(v[6], v[7], v[8]),
+                v[9],
+            ),
+            13 => (
+                Vec3::new(v[6], v[7], v[8]),
+                Vec3::new(v[9], v[10], v[11]),
+                v[12],
+            ),
+            n => {
+                println!("CINE ignored — need 10 or 13 numbers, got {n}");
+                return None;
+            }
+        };
+        let cine = Cine {
+            eye_a: Vec3::new(v[0], v[1], v[2]),
+            eye_b: Vec3::new(v[3], v[4], v[5]),
+            aim_a,
+            aim_b,
+            secs: secs.max(0.001),
+            start: std::env::var("VOXELFORGE_CINE_START")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1.0),
+            exit: std::env::var("VOXELFORGE_CINE_EXIT")
+                .ok()
+                .and_then(|s| s.parse().ok()),
+        };
+        println!(
+            "CINE eye {:?}->{:?} aim {:?}->{:?} secs={} start={} exit={:?}",
+            cine.eye_a, cine.eye_b, cine.aim_a, cine.aim_b, cine.secs, cine.start, cine.exit
+        );
+        Some(cine)
+    }
+}
+
+fn cine_camera(
+    time: Res<Time>,
+    cine: Res<Cine>,
+    mut cam: Query<&mut Transform, With<OrbitCam>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let Ok(mut tf) = cam.single_mut() else {
+        return;
+    };
+    let now = time.elapsed_secs();
+    let k = ((now - cine.start) / cine.secs).clamp(0.0, 1.0);
+    // Smoothstep, not linear: a dolly that starts and stops at zero velocity is
+    // the difference between a camera move and a camera jump.
+    let e = k * k * (3.0 - 2.0 * k);
+    *tf = Transform::from_translation(cine.eye_a.lerp(cine.eye_b, e))
+        .looking_at(cine.aim_a.lerp(cine.aim_b, e), Vec3::Y);
+    if cine.exit.is_some_and(|s| now > s) {
+        println!("CINE done t={now:.2} => exit");
+        exit.write(AppExit::Success);
     }
 }
 
@@ -417,13 +609,33 @@ fn place_player(
         fly.vel = Vec3::ZERO;
     }
     if let Ok((mut ctf, mut orbit)) = cam_q.single_mut() {
-        orbit.yaw = camp.yaw;
-        orbit.pitch = WAKE_PITCH;
-        orbit.dist = BOOM_DIST;
+        // Don't stomp a look-lane pose. `VOXELFORGE_LOOK_CAM=yaw,pitch,dist`
+        // (main.rs) frames the boom at spawn so a proof shot can be taken through
+        // the REAL gameplay camera; this reset then ran and threw two of its three
+        // numbers away — yaw and pitch went back to the wake pose while `want_dist`
+        // (which this function never touches) survived, so the shot silently
+        // disagreed with the pose it claimed to be. Unset ⇒ the wake pose, byte for
+        // byte what it always was.
+        let (yaw, pitch, dist) = match look_cam_pose() {
+            Some(pose) => pose,
+            None => (camp.yaw, WAKE_PITCH, BOOM_DIST),
+        };
+        orbit.yaw = yaw;
+        orbit.pitch = pitch;
+        orbit.dist = dist;
         let rot = Quat::from_axis_angle(Vec3::Y, orbit.yaw) * Quat::from_axis_angle(Vec3::X, orbit.pitch);
-        ctf.translation = camp.eye + Vec3::Y * PIVOT_UP + (rot * Vec3::Z) * BOOM_DIST;
+        ctf.translation = camp.eye + Vec3::Y * PIVOT_UP + (rot * Vec3::Z) * dist;
         ctf.rotation = rot;
     }
+}
+
+/// The `VOXELFORGE_LOOK_CAM` boom pose in radians+metres, if that override is set.
+///
+/// Same parse as the camera-spawn site in main.rs (degrees in, radians out) and the
+/// same source string, so the two cannot drift apart.
+fn look_cam_pose() -> Option<(f32, f32, f32)> {
+    crate::env_floats::<3>("VOXELFORGE_LOOK_CAM")
+        .map(|[y, p, d]| (y.to_radians(), p.to_radians(), d))
 }
 
 // ---------------------------------------------------------------------------

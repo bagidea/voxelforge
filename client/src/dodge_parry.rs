@@ -46,8 +46,8 @@ use bevy::prelude::*;
 
 use crate::combat::{
     self, CombatState, Enemy, EnemyHitOutcome, FeelLog, Health, HuskState, ImpactWeight, Knockback,
-    PlayerCombat, Poise, Shake, StaggerEvent, HITSTOP_PARRY, KNOCKBACK_TIME, PARRY_PUNISH,
-    PARRY_POSTURE, STAGGER_TIME,
+    PlayerBody, PlayerCombat, Poise, Shake, StaggerEvent, HITSTOP_PARRY, KNOCKBACK_TIME,
+    PARRY_PUNISH, PARRY_POSTURE, STAGGER_TIME,
 };
 use crate::FlyCam;
 
@@ -249,6 +249,71 @@ pub fn watch_windows(
         }
     }
     dp.prev_parry = pc.parry_frames;
+}
+
+// ===========================================================================
+// Dodge i-frame visual — ghost flash + scale pulse
+// ===========================================================================
+
+/// The fraction of the i-frame window where the ghost pulse peaks (0.0–1.0).
+const GHOST_PEAK: f32 = 0.35;
+/// How far the body scales up at the peak of the pulse (1.0 + GHOST_SCALE).
+const GHOST_SCALE: f32 = 0.18;
+/// Visibility strobes every N frames during i-frames.
+const GHOST_STROBE: u32 = 3;
+
+/// Make the player's body flash and pulse during dodge i-frames.
+///
+/// Three channels run in parallel:
+/// 1. **Scale pulse** — the body expands to 1.18× at ~35% through the window,
+///    then contracts back to 1.0×. Reads as a "whoosh" of displacement.
+/// 2. **Visibility strobe** — the body flickers every 3 frames. Reads as
+///    "phasing" — the blade passed through something immaterial.
+/// 3. **Restore** — the frame after the window shuts, scale and visibility
+///    snap back to normal.
+///
+/// Runs after `watch_windows` (needs the frame counter) and before the camera
+/// (so the pulse is visible in the frame).
+pub fn dodge_ghost_flash(
+    dp: Res<DodgeParryState>,
+    player_q: Query<(&PlayerCombat, &Children), With<FlyCam>>,
+    mut body_q: Query<(&mut Transform, &mut Visibility), With<PlayerBody>>,
+) {
+    let Ok((pc, children)) = player_q.single() else { return };
+
+    let in_iframe = pc.invulnerable();
+
+    for child in children.iter() {
+        let Ok((mut tf, mut vis)) = body_q.get_mut(child) else { continue };
+
+        if in_iframe {
+            // Scale pulse: 1.0 → 1.0+GHOST_SCALE → 1.0, symmetric around GHOST_PEAK.
+            // progress: 0.0 (window just opened) → 1.0 (about to close).
+            let total = crate::dodge_parry::DODGE_IFRAME_FRAMES as f32;
+            let elapsed = total - pc.iframe_frames as f32;
+            let progress = (elapsed / total.max(1.0)).clamp(0.0, 1.0);
+            // Triangle wave peaking at GHOST_PEAK.
+            let wave = if progress < GHOST_PEAK {
+                progress / GHOST_PEAK
+            } else {
+                1.0 - (progress - GHOST_PEAK) / (1.0 - GHOST_PEAK)
+            };
+            let scale = 1.0 + GHOST_SCALE * wave;
+            tf.scale = Vec3::splat(scale);
+
+            // Visibility strobe — flicker every GHOST_STROBE frames.
+            let visible = (dp.frame % (GHOST_STROBE as u64 * 2)) < GHOST_STROBE as u64;
+            *vis = if visible { Visibility::Visible } else { Visibility::Hidden };
+        } else {
+            // Restore — one frame after the window closed.
+            if tf.scale != Vec3::ONE {
+                tf.scale = Vec3::ONE;
+            }
+            if *vis == Visibility::Hidden {
+                *vis = Visibility::Visible;
+            }
+        }
+    }
 }
 
 // ===========================================================================
@@ -752,6 +817,9 @@ impl Plugin for DodgeParryPlugin {
                     watch_windows
                         .after(combat::player_combat)
                         .before(combat::husk_ai),
+                    dodge_ghost_flash
+                        .after(watch_windows)
+                        .before(crate::fly_camera),
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),
             );

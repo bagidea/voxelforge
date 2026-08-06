@@ -259,21 +259,21 @@ pub const COMBAT: CombatConfig = CombatConfig {
     hitstop_parry: 0.120,
     hitstop_enemy: 0.100,
     hitstop_stagger: 0.150,
-    hitstop_heavy: 0.120,
-    hitstop_critical: 0.170,
+    hitstop_heavy: 0.140,
+    hitstop_critical: 0.200,
     shake_light: (0.04, 0.10),
-    shake_heavy: (0.10, 0.20),
-    shake_enemy_hit: (0.15, 0.25),
+    shake_heavy: (0.12, 0.22),
+    shake_enemy_hit: (0.16, 0.28),
 
     // -- Weight layer: knockback --------------------------------------------
     knockback_light: 0.18,
     knockback_heavy: 0.32,
     knockback_critical: 0.55,
-    knockback_time: 0.12,
+    knockback_time: 0.15,
 
     // -- Weight layer: camera kick ------------------------------------------
     kick_light: 0.045,
-    kick_heavy: 0.100,
+    kick_heavy: 0.120,
     kick_critical: 0.155,
     kick_taken: 0.130,
     kick_time: 0.16,
@@ -1081,6 +1081,11 @@ pub struct HealthText;
 pub struct StaminaText;
 #[derive(Component)]
 pub struct LockReticle;
+
+/// Marker for the player's visible body mesh children (capsule + face block).
+/// The dodge ghost system reads this to flash/pulse the body during i-frames.
+#[derive(Component)]
+pub struct PlayerBody;
 
 /// Scripted headless combat proof (like `walk_demo`): drives `CombatIntent` on a
 /// timeline, reads back component state, prints PASS lines, then exits.
@@ -2250,11 +2255,24 @@ pub fn hud_numbers(
 // Weight-layer systems
 // ===========================================================================
 
+/// Ease-out cubic: starts fast (the blow lands), decelerates to a stop.
+/// `t` ∈ [0,1] → output ∈ [0,1]. The curve is `1 - (1-t)³`.
+#[inline]
+fn ease_out_cubic(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t).powi(3)
+}
+
 /// Slide a struck body along the blade direction (§ weight layer).
 ///
 /// Runs between `player_combat` (which books the impulse) and `husk_ai` (which
 /// re-plants the body on its surface and may walk it back in), so the shove is
 /// always resolved against the same frame's hit.
+///
+/// The slide uses an ease-out cubic curve — the body jolts back on the first
+/// frame (the impact lands with weight) and then friction tapers it to a stop.
+/// A linear slide at 0.12 s reads as "the enemy glitched three pixels left";
+/// the same distance with ease-out reads as "the blow connected and shoved it."
 pub fn apply_knockback(
     time: Res<Time>,
     feel: Res<FeelLog>,
@@ -2280,18 +2298,23 @@ pub fn apply_knockback(
         if e.hitstop > 0.0 {
             continue;
         }
-        let step = (kb.total / KNOCKBACK_TIME * dt).min(kb.left);
-        tf.translation += kb.dir * step;
-        kb.left -= step;
-        kb.slid += step;
         kb.time -= dt;
-        // Belt-and-braces, not the fix for anything observed. `left` and `time`
-        // are driven by the same running sum of `dt` — `left == total * time /
-        // KNOCKBACK_TIME` holds exactly — so the window cannot close on an
-        // undelivered remainder except through float drift. This pays out that
-        // drift rather than leaving the slide a hair short, and records what it
-        // paid in `topup` so a run can show the branch is inert (it logs 0.000)
-        // instead of the claim resting on the algebra above.
+        // Progress through the knockback window: 0 = contact frame, 1 = settled.
+        // Clamped so a late frame that overshoots the window still delivers the
+        // full distance rather than freezing the body mid-slide.
+        let progress = (1.0 - (kb.time / KNOCKBACK_TIME).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+        let eased = ease_out_cubic(progress);
+        let target = kb.total * eased;
+        // Step = how much further the body should have travelled by now, minus
+        // what it has already travelled. The eased curve front-loads the shove:
+        // ~60% of the distance lands in the first 33% of the window.
+        let step = (target - kb.slid).max(0.0);
+        tf.translation += kb.dir * step;
+        kb.slid += step;
+        kb.left = kb.total - target;
+        // Belt-and-braces, not the fix for anything observed. Float drift from
+        // the easing arithmetic can leave a sub-millimetre remainder when the
+        // window closes; this pays it out and records it in `topup`.
         if kb.time <= 0.0 && kb.left > 0.0 {
             tf.translation += kb.dir * kb.left;
             kb.slid += kb.left;

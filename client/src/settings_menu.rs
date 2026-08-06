@@ -161,6 +161,9 @@ mod theme {
     pub const WIDGET_ACTIVE: Color32 = Color32::from_rgb(200, 138, 74);
     pub const ACCENT_AMBER: Color32 = Color32::from_rgb(244, 184, 96);
     pub const TEXT_CREAM: Color32 = Color32::from_rgb(232, 216, 184);
+    /// Dimmer cream for secondary/help text — section subtext, card
+    /// descriptions — so the hierarchy reads without a second hue.
+    pub const TEXT_MUTED: Color32 = Color32::from_rgb(178, 160, 138);
 
     /// Frame for the outer `egui::Window` chrome. Set via `.frame(...)` on the
     /// `Window` builder so it never touches the shared context-level `Style`
@@ -197,6 +200,34 @@ mod theme {
         v.widgets.active.bg_fill = WIDGET_ACTIVE;
         v.widgets.active.weak_bg_fill = WIDGET_ACTIVE;
         v.widgets.active.fg_stroke.color = PANEL_BG;
+    }
+}
+
+// =============================================================================
+// Motion — small hex-only helpers for hover/select animation.
+//
+// `egui::Context::animate_bool_with_time(id, target, duration)` is the one
+// egui primitive this relies on: an animated 0..1 that eases toward `target`
+// and is safe to call every frame keyed by a stable `Id`. Two shapes:
+//   - When a widget's own `Response` already exists this frame (e.g.
+//     `ui.selectable_label(..)`), animate straight off `response.hovered()` —
+//     zero lag, see the tab underline in `settings_ui`.
+//   - When a *custom* widget's fill colour must be decided before its
+//     `Response` exists (a hand-built card `Frame`), there's no way around a
+//     one-frame-stale hover read — a standard immediate-mode trick, invisible
+//     at 1/60s. See `preset_card` below for the read/animate/write sequence.
+// =============================================================================
+
+mod motion {
+    use bevy_egui::egui::Color32;
+
+    fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+        (a as f32 + (b as f32 - a as f32) * t.clamp(0.0, 1.0)).round() as u8
+    }
+
+    /// Linear per-channel blend between two opaque colours.
+    pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+        Color32::from_rgb(lerp_u8(a.r(), b.r(), t), lerp_u8(a.g(), b.g(), t), lerp_u8(a.b(), b.b(), t))
     }
 }
 
@@ -394,16 +425,37 @@ fn settings_ui(
     }
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    let panel_width = 540.0;
-    let panel_height = 420.0;
+    // Fade + settle in on open (motion the CEO asked for isn't only
+    // hover/select — the panel itself shouldn't just snap into existence).
+    // `menu.open` is already true here, so this eases 0->1 once and holds;
+    // there is no fade-*out* leg because `settings_ui` stops running the
+    // instant `open` flips false (early return above), which is an
+    // acceptable one-frame pop on close — only open/hover/select asked for
+    // motion. Target alpha is 248/255, not fully transparent-capable: this is
+    // a text- and slider-heavy modal the player paused the game to read, not
+    // a combat HUD element, so legibility wins over the HUD's "translucent
+    // plaque" rule (hud-design.md §0) — that rule is for elements sitting
+    // over live gameplay, which this isn't (input capture pauses while open).
+    let open_t = ctx.animate_bool_with_time(egui::Id::new("settings_menu_open"), true, 0.18);
+    let fill = egui::Color32::from_rgba_unmultiplied(
+        theme::PANEL_BG.r(),
+        theme::PANEL_BG.g(),
+        theme::PANEL_BG.b(),
+        (248.0 * open_t) as u8,
+    );
+    let frame = theme::window_frame(ctx).fill(fill);
+    let settle_offset = egui::vec2(0.0, (1.0 - open_t) * 10.0);
+
+    let panel_width = 580.0;
+    let panel_height = 460.0;
 
     egui::Window::new("Settings")
         .collapsible(false)
         .resizable(false)
         .title_bar(true)
         .fixed_size(egui::vec2(panel_width, panel_height))
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .frame(theme::window_frame(ctx))
+        .anchor(egui::Align2::CENTER_CENTER, settle_offset)
+        .frame(frame)
         .show(ctx, |ui| {
             theme::apply(ui);
             ui.horizontal(|ui| {
@@ -414,12 +466,28 @@ fn settings_ui(
                     (SettingsTab::Keybinds, "Keybinds"),
                 ] {
                     let selected = menu.tab == tab;
-                    if ui.selectable_label(selected, label).clicked() {
+                    let resp = ui.selectable_label(selected, label);
+                    if resp.clicked() {
                         menu.pending_rebind = None;
                         menu.tab = tab;
                     }
+                    // Animated amber underline: grows in on hover, snaps full
+                    // width when selected, retracts on hover-out. `resp` is
+                    // this-frame-fresh (`selectable_label` interacts
+                    // synchronously), so this reads current hover with no lag.
+                    let ut = ui.ctx().animate_bool_with_time(resp.id, selected || resp.hovered(), 0.15);
+                    if ut > 0.0 {
+                        let r = resp.rect;
+                        let y = r.bottom() + 2.0;
+                        let x1 = r.left() + r.width() * ut;
+                        ui.painter().line_segment(
+                            [egui::pos2(r.left(), y), egui::pos2(x1, y)],
+                            egui::Stroke::new(2.0, theme::ACCENT_AMBER),
+                        );
+                    }
                 }
             });
+            ui.add_space(4.0);
             ui.separator();
 
             match menu.tab {
@@ -443,33 +511,102 @@ fn settings_ui(
 // Tabs
 // =============================================================================
 
+/// Quality tier, card title, and a two-line description of what that tier
+/// adds over the one below it. Mirrors the doc comments on
+/// [`LookQuality`] and the tier `match` in `look.rs::insert_stack` — that
+/// `match` is the single source of truth (rose's lane, read-only from here);
+/// if it's retuned, these strings need updating by hand to match.
+const QUALITY_PRESETS: [(LookQuality, &str, &str); 4] = [
+    (LookQuality::Low, "Low", "Contact AO + soft\nshadows only."),
+    (LookQuality::Medium, "Medium", "+ TAA, temporal\nsoft shadows."),
+    (LookQuality::High, "High", "+ High AO, god rays\n(32-step). Default."),
+    (LookQuality::Ultra, "Ultra", "+ Ultra AO, PCSS,\nfull 96-step rays."),
+];
+
+/// One clickable quality-preset card. Returns `true` if it was clicked.
+///
+/// Colour must be picked *before* the card's own `Response` exists (it's a
+/// builder argument to `Frame`), so hover can't be read live off this frame's
+/// response the way the tab underline does. Instead: read last frame's hover
+/// out of egui's per-id temp memory, animate off that, draw, then stash this
+/// frame's real hover back for next frame. One frame of lag on the hover
+/// edge, imperceptible at 60fps — a standard immediate-mode trick.
+fn preset_card(ui: &mut egui::Ui, width: f32, title: &str, desc: &str, selected: bool) -> bool {
+    let id = ui.id().with(("quality_preset", title));
+    let last_hovered = ui.ctx().data(|d| d.get_temp::<bool>(id).unwrap_or(false));
+    let t = ui.ctx().animate_bool_with_time(id, selected || last_hovered, 0.15);
+
+    let fill = motion::lerp_color(theme::WIDGET_IDLE, theme::WIDGET_ACTIVE, if selected { 1.0 } else { t });
+    let border = motion::lerp_color(theme::BORDER, theme::ACCENT_AMBER, if selected { 1.0 } else { t });
+    let text_col = if selected { theme::PANEL_BG } else { theme::TEXT_CREAM };
+    let desc_col = if selected { theme::PANEL_BG } else { theme::TEXT_MUTED };
+
+    let inner = egui::Frame::group(ui.style())
+        .fill(fill)
+        .stroke(egui::Stroke::new(if selected { 2.0 } else { 1.0 }, border))
+        .inner_margin(egui::Margin::symmetric(8, 8))
+        .show(ui, |ui| {
+            ui.set_width((width - 20.0).max(60.0));
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new(title).strong().size(15.0).color(text_col));
+                ui.add_space(3.0);
+                ui.label(egui::RichText::new(desc).size(10.5).color(desc_col));
+            });
+        });
+
+    let resp = inner.response.interact(egui::Sense::click());
+    ui.ctx().data_mut(|d| d.insert_temp(id, resp.hovered()));
+    resp.clicked()
+}
+
 fn graphics_tab(ui: &mut egui::Ui, settings: &mut GameSettings, quality: &mut LookQuality) {
     ui.heading("Graphics");
-    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Quality preset — retunes the post-processing stack live.").color(theme::TEXT_MUTED));
+    ui.add_space(10.0);
 
     let current = *quality;
-    let mut selected = current;
-    egui::ComboBox::from_label("Quality")
-        .selected_text(format!("{:?}", selected))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut selected, LookQuality::Low, "Low");
-            ui.selectable_value(&mut selected, LookQuality::Medium, "Medium");
-            ui.selectable_value(&mut selected, LookQuality::High, "High");
-            ui.selectable_value(&mut selected, LookQuality::Ultra, "Ultra");
-        });
-    if selected != current {
-        *quality = selected;
-        settings.graphics = selected;
+    let spacing = 8.0;
+    let card_w = (ui.available_width() - spacing * (QUALITY_PRESETS.len() as f32 - 1.0)) / QUALITY_PRESETS.len() as f32;
+    let mut picked = current;
+
+    ui.horizontal(|ui| {
+        for (i, &(tier, title, desc)) in QUALITY_PRESETS.iter().enumerate() {
+            if preset_card(ui, card_w, title, desc, current == tier) {
+                picked = tier;
+            }
+            if i + 1 < QUALITY_PRESETS.len() {
+                ui.add_space(spacing);
+            }
+        }
+    });
+
+    if picked != current {
+        *quality = picked;
+        settings.graphics = picked;
         save_settings(settings);
     }
 
-    ui.add_space(8.0);
+    ui.add_space(10.0);
+    egui::CollapsingHeader::new("Advanced — exact effects per tier")
+        .default_open(false)
+        .show(ui, |ui| {
+            for &(_, title, desc) in QUALITY_PRESETS.iter() {
+                ui.label(
+                    egui::RichText::new(format!("{title}: {}", desc.replace('\n', " ")))
+                        .size(11.0)
+                        .color(theme::TEXT_MUTED),
+                );
+            }
+        });
+
+    ui.add_space(10.0);
     ui.label("Changes apply to the live camera and sun immediately.");
 }
 
 fn display_tab(ui: &mut egui::Ui, settings: &mut GameSettings) {
     ui.heading("Display");
-    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Window mode and resolution.").color(theme::TEXT_MUTED));
+    ui.add_space(10.0);
 
     let mut mode = settings.display.mode;
     egui::ComboBox::from_label("Window mode")
@@ -505,7 +642,8 @@ fn audio_tab(
     audio: &mut AudioSettings,
 ) {
     ui.heading("Audio");
-    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Master, SFX, music/ambient, and UI volumes.").color(theme::TEXT_MUTED));
+    ui.add_space(10.0);
 
     fn volume_slider(ui: &mut egui::Ui, label: &str, value: &mut f32) -> bool {
         let before = *value;
@@ -534,7 +672,8 @@ fn keybinds_tab(
     settings: &mut GameSettings,
 ) {
     ui.heading("Keybinds");
-    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Click Bind, then press a key or mouse button.").color(theme::TEXT_MUTED));
+    ui.add_space(10.0);
 
     if let Some(action) = menu.pending_rebind {
         ui.label(format!("Press a key or mouse button for '{}'…", action.label()));

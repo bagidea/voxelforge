@@ -839,11 +839,13 @@ fn setup(
                 Mesh3d(body_mesh),
                 MeshMaterial3d(body_mat),
                 Transform::from_xyz(0.0, body_dy, 0.0),
+                combat::PlayerBody,
             ));
             parent.spawn((
                 Mesh3d(face_mesh),
                 MeshMaterial3d(face_mat),
                 Transform::from_xyz(0.0, body_dy + 0.55, -0.34),
+                combat::PlayerBody,
             ));
         });
 
