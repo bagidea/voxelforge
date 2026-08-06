@@ -270,7 +270,14 @@ def ruin_house(x0, z0, w, d, y_base=0, scattered=False, burned=False):
 
 
 def spawn_shelter(cx, cz, r=3):
-    """Crumbling stone shelter around spawn; north wall collapsed open."""
+    """Crumbling stone shelter that frames the hero against the vista.
+
+    The north wall is fully open: the player wakes facing the Spire.  The
+    south wall is collapsed to a low rubble lip so the default gameplay camera
+    behind the player sees the hero + vista in one frame.  The two side walls
+    rise taller and carry a partial lintel so the shelter reads as a deliberate
+    doorway/frame rather than a closed box.
+    """
     x0, x1, z0, z1 = cx - r, cx + r, cz - r, cz + r
     for x in range(x0, x1 + 1):
         for z in range(z0, z1 + 1):
@@ -278,9 +285,20 @@ def spawn_shelter(cx, cz, r=3):
                 continue
             if z == z0:
                 continue  # open to the north (-Z)
-            stub = rng.choices([1, 2, 3], weights=[30, 45, 25])[0]
+            if z == z1:
+                # south wall collapsed to a low lip — camera behind the player
+                # must not be blocked, but a little rubble sells the ruin.
+                add(x, 1, z, "stone")
+                continue
+            # side walls: taller, with small ruin gaps for hand-read silhouette
+            stub = rng.choices([2, 3, 4], weights=[25, 50, 25])[0]
             for y in range(1, stub + 1):
                 add(x, y, z, "stone")
+    # top lintel connecting the side walls — frames the upper edge of the shot
+    for x in range(x0 + 1, x1):
+        add(x, 4, z1, "stone")
+        if rng.random() < 0.7:
+            add(x, 4, z0 + 1, "stone")
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +581,39 @@ def scattered_belongings(cx, cz, count=4):
             add(x, 1, z, "stone")
 
 
+def detritus_cluster(cx, cz, count=3):
+    """A tight cluster of dirt/stone rubble for environmental storytelling."""
+    for _ in range(count):
+        dx = rng.randint(-1, 1)
+        dz = rng.randint(-1, 1)
+        x, z = cx + dx, cz + dz
+        if in_bounds(x, z):
+            add(x, 1, z, rng.choice(["stone", "dirt"]))
+
+
+def broken_path(x0, x1, z0, z1, density=0.25):
+    """Replace some path stones with dirt cracks at surface level."""
+    for z in range(z0, z1 + 1):
+        for x in range(x0, x1 + 1):
+            if blocks.get((x, 0, z)) == "stone" and rng.random() < density:
+                blocks[(x, 0, z)] = "dirt"
+
+
+def escape_trail(points):
+    """A trail of kicked-up dirt/stone suggesting someone ran in panic."""
+    for x, z in points:
+        if in_bounds(x, z):
+            add(x, 1, z, rng.choice(["dirt", "stone"]))
+
+
+def fallen_cart(cx, cz):
+    """A toppled cart or barrow: axle, spilled load, one wheel."""
+    add(cx, 1, cz, "stone")      # axle
+    add(cx + 1, 1, cz, "stone")  # spilled load
+    add(cx, 1, cz + 1, "dirt")   # scattered cargo
+    add(cx - 1, 2, cz, "stone")  # tipped wheel
+
+
 # ---------------------------------------------------------------------------
 # Combat arena
 # ---------------------------------------------------------------------------
@@ -589,6 +640,12 @@ floor_all("grass")
 # ---- 1. Spawn shelter and fire plaza (southern anchor) ---------------------
 spawn_shelter(SPAWN_X, SPAWN_Z, r=3)
 paved_disc(SPAWN_X, SPAWN_Z - 3, 3, "stone")  # campfire at (32,29)
+# Raise the shelter doorway jambs to head height so the spawn exit is a
+# readable compression before the village square opens up.
+for z in (29, 30, 31, 32):
+    for x in (SPAWN_X - 3, SPAWN_X + 3):  # x=29, 35
+        add(x, 3, z, "stone")
+        add(x, 4, z, "stone")
 
 # ---- 2. Main street: the readable spine -----------------------------------
 # Keep x=30..34, z=6..29 at y=0 so spawn(32,32), fire(32,29) and husk(32,25)
@@ -597,13 +654,24 @@ MAIN_X0, MAIN_X1 = SPAWN_X - 2, SPAWN_X + 2
 paved_rect(MAIN_X0, MAIN_X1, 6, 29, "stone", y=0)
 
 # ---- 3. Entry arch into the village proper ---------------------------------
+# The arch frames the first view; flanking pillars raise the "window" so the
+# background landmark is sandwiched between two readable foreground masses.
 stone_arch(SPAWN_X, 26, y_base=0, height=5, span=4, width=2, axis="x")
+# Foreground framing pillars: left and right of the main street, low enough
+# not to block the vista but tall enough to create a deliberate depth frame.
+for fx, fz in [(23, 26), (23, 27), (41, 26), (41, 27)]:
+    for y in range(1, 8):
+        add(fx, y, fz, "stone")
 
 # ---- 4. Village square around the well -------------------------------------
 village_well(SPAWN_X, 17, r=3)
 skeleton(SPAWN_X + 5, 18)  # remains of someone who didn't reach the well
 market_stall(SPAWN_X - 6, 17)
 market_stall(SPAWN_X + 8, 19)
+
+# Widen the village-square path so it reads as an open breather between
+# the spawn shelter exit and the upcoming broken-bridge chokepoint.
+paved_rect(SPAWN_X - 3, SPAWN_X + 3, 15, 28, "stone", y=0)
 
 # Two intact houses on raised terraces flanking the well, now furnished
 intact_house(12, 19, 7, 7, door_x=15, door_z=22, height=4, y_base=1, furnished=True)
@@ -616,6 +684,11 @@ for x in range(10, 55):
         if not (MAIN_X0 <= x <= MAIN_X1):  # keep the main street clear
             terrace_patch.append((x, z))
 raise_terrain(terrace_patch, 1, "grass")
+# Keep the widened village-square path clear of terrace grass so it reads
+# as one flat open plaza rather than a raised curb.
+for z in range(16, 26):
+    blocks.pop((SPAWN_X - 3, 1, z), None)
+    blocks.pop((SPAWN_X + 3, 1, z), None)
 
 # Secondary path from spawn to the well and east house
 paved_rect(35, 44, 17, 19, "stone", y=1)
@@ -634,6 +707,19 @@ scattered_belongings(28, 21, count=5)
 scattered_belongings(36, 21, count=4)
 scattered_belongings(30, 15, count=4)
 
+# Environmental storytelling: this was a village that fled in a hurry.
+# Discarded items, cracked paving, and an escape trail that leads away
+# from the sealed gate toward the south.
+detritus_cluster(29, 28, count=4)       # debris just outside spawn shelter
+detritus_cluster(35, 27, count=3)       # opposite side of the doorway
+detritus_cluster(30, 24, count=3)       # along the main street
+detritus_cluster(34, 20, count=3)       # near the well approach
+detritus_cluster(31, 16, count=3)       # south side of the well
+fallen_cart(28, 19)                     # cart abandoned by the western path
+escape_trail([(32, 22), (33, 23), (34, 24), (35, 25), (36, 26), (37, 27)])
+broken_path(30, 34, 18, 22, density=0.20)  # cracked paving near the well
+broken_path(30, 34, 10, 11, density=0.30)  # worn stones before the bridge
+
 # Ash piles (Unravelling aftermath)
 ash_pile(24, 24, r=2)
 ash_pile(40, 13, r=1)
@@ -647,6 +733,27 @@ unravelling_pit(42, 30, 3, 4)
 # ---- 6. Elevation change: bridge and stepped ascent to the gate ------------
 # Bridge at z=12..14 carries the main street over a drop to the gate plateau.
 stone_bridge(MAIN_X0, MAIN_X1, 12, 14, y_deck=1, pillar_depth=3)
+# Broken bridge deck: the outer planks have collapsed, narrowing the crossing
+# to a tight central strip (x=31-33).  This is the second compression beat.
+for z in (12, 13, 14):
+    for x in (MAIN_X0, MAIN_X1):       # x=30, 34
+        blocks.pop((x, 1, z), None)    # remove deck edge
+        blocks.pop((x, 2, z), None)    # remove railing
+    # Rubble in the middle of the remaining deck
+    add(32, 1, z, rng.choice(["dirt", "stone"]))
+# Cracked ground visible through the broken edges, then restore the ground
+# blocks so the main street remains majority stone-paved.  The deck itself
+# is still missing, so the bridge reads as damaged while staying walkable.
+broken_path(MAIN_X0, MAIN_X1, 12, 14, density=0.5)
+for z in (12, 13, 14):
+    for x in (MAIN_X0, MAIN_X1):
+        blocks[(x, 0, z)] = "stone"
+# Flank the broken bridge with low rubble at head height so the crossing
+# feels tight even though the side ground is still walkable.
+for z in (12, 13, 14):
+    for x in (MAIN_X0 - 1, MAIN_X1 + 1):  # x=29, 35
+        add(x, 3, z, "stone")
+        add(x, 4, z, "stone")
 # Steps from the bridge deck up to the gate plateau at y=2
 stairs(MAIN_X0, MAIN_X1, 11, 8, y_start=1, rise=1)
 # Gate plateau surface
@@ -666,7 +773,9 @@ for z in range(VISTA_Z0, VISTA_Z1 + 1):
     add(VISTA_X0, 3, z, "stone")
     add(VISTA_X1, 3, z, "stone")
 # Gaps in the railing for the approach path and the spire path.
-for z in range(6, 9):
+# Widen the approach gap to z=6..9 so the guard-post lane (x≈40-50, z≈7-9)
+# is clear of head-height blocks all the way from the main street.
+for z in range(6, 10):
     blocks.pop((VISTA_X0, 3, z), None)  # entrance from the gate plateau
 for x in range(46, 50):
     blocks.pop((x, 3, VISTA_Z0), None)  # exit toward the spire
@@ -692,9 +801,12 @@ fire_pit(42, 24, r=2, y_base=0, lit=False)
 fire_pit(32, 48, r=2, y_base=0, lit=True)  # travellers' rest in the south field
 
 # ---- 10. Sight-line lanterns along the main street ------------------------
+# Side lanterns mark the edges of the street; central markers pull the eye
+# straight down the spine toward the dungeon gate and the Sentinel Spire.
 for z in (25, 20, 15, 10):
     lantern_post(28, z, y_base=0, height=3)
     lantern_post(36, z, y_base=0, height=3)
+    add(32, 1, z, "stone")  # central eye-line stepping stone
 
 # ---- 11. Landmarks visible from spawn --------------------------------------
 # Watchtower on a low grassy knoll in the south-east, tall enough to read far away.
@@ -703,6 +815,15 @@ watchtower(52, 50, base_w=5, height=22)
 petrified_tree(10, 10, height=18)
 # Ruined keep wall along the western edge, framing the village from the side.
 ruined_keep_wall(4, 16, 8, 28, height=12)
+# Broken eastern buttress to balance the petrified tree on the left midground.
+# It sits far enough right (x=54-55, z=17-19) that the guard-post lane
+# (x≈40-50, z≈7-9) stays completely open.
+for y in range(1, 12):
+    add(54, y, 18, "stone")
+    add(55, y, 18, "stone")
+    if y <= 8:
+        add(54, y, 17, "stone")
+        add(55, y, 19, "stone")
 # Fallen monolith in the south, giving the empty half a focal point.
 fallen_monolith(32, 55, height=10)
 
@@ -714,10 +835,19 @@ for sx in range(46, 51):
     for sz in range(2, 7):
         add(sx, 3, sz, "stone")
         add(sx, 4, sz, "stone")
-sentinel_spire(48, 4, height=24, y_base=4)
+sentinel_spire(48, 4, height=26, y_base=4)
 # Torch-like markers leading from the terrace entrance to the spire base.
-lantern_post(43, 7, y_base=2, height=2)
+# NOTE: the (43,7) marker was removed because its 5-block pillar blocked the
+# guard-post lane (x≈40-50, z≈7-9); the (45,5) marker still guides the spire path.
 lantern_post(45, 5, y_base=2, height=2)
+
+# Storytelling on the final approach: rubble and a fallen marker suggest
+# someone tried to reach the spire but didn't make it.
+detritus_cluster(43, 8, count=4)
+detritus_cluster(49, 6, count=3)
+fallen_cart(47, 3)
+# A short escape trail leading away from the spire base back toward the village.
+escape_trail([(47, 5), (46, 6), (45, 7), (44, 8)])
 
 # Small framed arch near the bridge on the west side, a side-path teaser.
 stone_arch(18, 14, y_base=1, height=4, span=2, width=1, axis="z")

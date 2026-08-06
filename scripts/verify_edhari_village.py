@@ -318,6 +318,161 @@ if dominant:
     check("dominant landmark is reachable on foot from spawn", reached)
     print(f"    -> reachable cells explored: {len(seen)}")
 
+# ===========================================================================
+# Composition checks: the view from spawn must read as a deliberate vista.
+# ===========================================================================
+# The player wakes at (32,32) facing -Z.  We grade three things:
+# 1. Silhouette: the dominant landmark rises above everything else in the
+#    forward view and is not visually crowded.
+# 2. Depth layers: foreground, midground and background all carry visible
+#    mass, with the landmark sitting in the rearmost layer.
+# 3. Sight-line: a sequence of markers/path blocks leads the eye from spawn
+#    straight toward the landmark.
+
+# Shared view cone: wide enough to include the dominant landmark at x=48.
+VIEW_X0, VIEW_X1 = 16, 54
+FOREGROUND_Z = (24, 32)
+MIDGROUND_Z = (10, 23)
+BACKGROUND_Z = (0, 9)
+
+def layer_stats(z0, z1):
+    cells = [(b["x"], b["y"], b["z"]) for b in d["blocks"]
+             if z0 <= b["z"] <= z1 and VIEW_X0 <= b["x"] <= VIEW_X1
+             and b["block"].lower() != "air"]
+    count = len(cells)
+    max_y = max((y for _, y, _ in cells), default=0)
+    return count, max_y
+
+fg_count, fg_max = layer_stats(*FOREGROUND_Z)
+mg_count, mg_max = layer_stats(*MIDGROUND_Z)
+bg_count, bg_max = layer_stats(*BACKGROUND_Z)
+
+# Exclude the dominant landmark's own columns from the background max so we
+# are measuring its contrast against the rest of the scene, not itself.
+bg_without_dominant = [b for b in d["blocks"]
+                       if BACKGROUND_Z[0] <= b["z"] <= BACKGROUND_Z[1]
+                       and VIEW_X0 <= b["x"] <= VIEW_X1
+                       and (b["x"], b["z"]) not in dominant
+                       and b["block"].lower() != "air"]
+bg_max_other = max((b["y"] for b in bg_without_dominant), default=0)
+
+if dom_blocks:
+    tx, ty, tz = dom_blocks[0]
+
+    # 1. Silhouette readability: landmark towers above each layer.
+    silhouette_ok = (ty >= mg_max + 4 and ty >= fg_max + 8 and ty >= bg_max_other)
+    check("composition: dominant landmark silhouette is readable from spawn "
+          "(towers above foreground/midground/background)", silhouette_ok)
+    print(f"    -> landmark top y={ty}, fg_max={fg_max}, mg_max={mg_max}, "
+          f"bg_max_other={bg_max_other}")
+
+    # 2. Three depth layers with visible mass and increasing height.
+    layers_ok = (fg_count >= 80 and mg_count >= 200 and bg_count >= 100
+                 and fg_max < mg_max < ty)
+    check("composition: foreground / midground / background layers are present "
+          "and separated in height", layers_ok)
+    print(f"    -> fg blocks={fg_count} max_y={fg_max}, "
+          f"mg blocks={mg_count} max_y={mg_max}, "
+          f"bg blocks={bg_count} max_y={bg_max}")
+
+    # 3. Sight-line path: central markers lead from spawn toward the landmark.
+    markers = [(32, 1, z) for z in (25, 20, 15, 10)]
+    marker_hits = sum(1 for m in markers if m in blocks_set)
+    sightline_ok = marker_hits >= 3
+    check("composition: central sight-line markers lead from spawn to the landmark",
+          sightline_ok)
+    print(f"    -> central markers present: {marker_hits}/{len(markers)}")
+
+# ===========================================================================
+# Environmental storytelling: the path from spawn to the landmark must read
+# as a place where people lived and something went wrong, without text.
+# We quantify this by measuring ground-level narrative density in the
+# spawn->Spire corridor (x=24..54, z=3..32).  Dirt at y=1 in this corridor
+# is almost entirely ash, rubble, escape trails and abandoned cargo -- the
+# visual vocabulary of a hurried departure.  A low count means the corridor
+# is too clean to tell a story.
+# ===========================================================================
+STORY_X0, STORY_X1 = 24, 54
+STORY_Z0, STORY_Z1 = 3, 32
+STORY_DIRT_THRESHOLD = 40
+story_dirt_blocks = sum(
+    1 for x in range(STORY_X0, STORY_X1 + 1)
+    for z in range(STORY_Z0, STORY_Z1 + 1)
+    if (x, 1, z) in by_pos and by_pos[(x, 1, z)] == "dirt"
+)
+check("environmental storytelling: spawn->Spire corridor has readable "
+      f"ground-level narrative density (>= {STORY_DIRT_THRESHOLD} y=1 dirt blocks)",
+      story_dirt_blocks >= STORY_DIRT_THRESHOLD)
+print(f"    -> y=1 dirt blocks in corridor: {story_dirt_blocks}, "
+      f"threshold: {STORY_DIRT_THRESHOLD}, "
+      f"margin to fail: {story_dirt_blocks - STORY_DIRT_THRESHOLD}")
+
+# ===========================================================================
+# Walking rhythm: compression and release before the vista reveal.
+# The intended route is spawn -> village square -> broken bridge -> vista
+# terrace -> Sentinel Spire.  We measure the cleared headroom width of each
+# beat and require two narrow->open transitions.  This gate can fail if the
+# layout becomes a flat corridor or if one of the compression beats is lost.
+# ===========================================================================
+def zone_cleared_width(z0, z1, x0, x1):
+    """Average number of cells per z-slice with floor and headroom (y=3-4 clear)."""
+    widths = []
+    for z in range(z0, z1 + 1):
+        w = 0
+        for x in range(x0, x1 + 1):
+            h = surface_at(x, z)
+            if h is None:
+                continue
+            if (x, 3, z) in blocks_set or (x, 4, z) in blocks_set:
+                continue
+            w += 1
+        widths.append(w)
+    return widths
+
+# Zone definitions along the spawn->Spire route.
+# kind: expected feel, threshold: fail line for that feel.
+RHYTHM_ZONES = [
+    # name,            z0, z1, x0, x1, kind,   threshold
+    ("spawn_exit",    29, 32, 29, 35, "narrow", 6),
+    ("village_square", 15, 28, 28, 36, "open",   7),
+    ("broken_bridge", 10, 14, 29, 35, "narrow", 6),
+    ("vista_terrace",  7, 10, 41, 53, "open",   7),
+]
+
+zone_results = []
+for name, z0, z1, x0, x1, kind, threshold in RHYTHM_ZONES:
+    widths = zone_cleared_width(z0, z1, x0, x1)
+    avg_w = sum(widths) / len(widths)
+    min_w = min(widths)
+    max_w = max(widths)
+    zone_results.append((name, kind, threshold, avg_w, min_w, max_w))
+    if kind == "narrow":
+        ok = min_w <= threshold
+        margin = threshold - min_w
+        label = (f"rhythm: {name} is a compression beat "
+                 f"(min cleared width <= {threshold})")
+    else:
+        ok = avg_w >= threshold
+        margin = avg_w - threshold
+        label = (f"rhythm: {name} is an open beat "
+                 f"(avg cleared width >= {threshold})")
+    check(label, ok)
+    print(f"    -> {name}: avg={avg_w:.1f} min={min_w} max={max_w}, "
+          f"margin to fail: {margin:.1f}")
+
+# Count narrow -> open transitions across the sequence.
+rhythm_transitions = sum(
+    1 for i in range(len(zone_results) - 1)
+    if zone_results[i][1] == "narrow" and zone_results[i + 1][1] == "open"
+)
+RHYTHM_TRANSITION_THRESHOLD = 2
+check("rhythm: spawn->Spire path has at least two narrow->open compression "
+      "cycles before the landmark",
+      rhythm_transitions >= RHYTHM_TRANSITION_THRESHOLD)
+print(f"    -> narrow->open transitions: {rhythm_transitions}, "
+      f"threshold: {RHYTHM_TRANSITION_THRESHOLD}, "
+      f"margin to fail: {rhythm_transitions - RHYTHM_TRANSITION_THRESHOLD}")
+
 # ---- 7. Main street spine remains clear and paved --------------------------
 main_street_cells = [(x, z) for x in range(30, 35) for z in range(6, 30)]
 street_paved = sum(1 for (x, z) in main_street_cells
@@ -448,6 +603,52 @@ if dominant and dom_blocks:
             vista_count += 1
     check("exploration: multiple vista points can see the dominant landmark (>= 5)", vista_count >= 5)
     print(f"    -> vista points with sight to dominant landmark: {vista_count}")
+
+# ===========================================================================
+# Hero framing gateway: the spawn shelter must act as a deliberate doorway
+# that frames the player against the distant Sentinel Spire.  Foreground =
+# shelter side walls + lintel; midground = player in the doorway;
+# background = Spire visible through the opening.
+# ===========================================================================
+
+# 1. The south wall is collapsed to a low lip so the gameplay camera behind
+#    the player is not blocked.  The lintel at y=4 is allowed to stay as the
+#    top of the doorway frame.
+south_open = all(
+    (x, y, 35) not in blocks_set
+    for x in range(30, 35) for y in range(2, 4)
+)
+check("framing: spawn shelter south wall is open at y=2-3 (camera can see through)",
+      south_open)
+
+# 2. The side walls rise high enough to read as a deliberate frame.
+side_left = sum(1 for z in range(30, 35) for y in range(2, 5) if (29, y, z) in blocks_set)
+side_right = sum(1 for z in range(30, 35) for y in range(2, 5) if (35, y, z) in blocks_set)
+check("framing: spawn shelter has left side wall (>= 8 blocks at y>=2)", side_left >= 8)
+check("framing: spawn shelter has right side wall (>= 8 blocks at y>=2)", side_right >= 8)
+print(f"    -> side frame blocks: left={side_left}, right={side_right}")
+
+# 3. A lintel connects the tops of the side walls for a doorway silhouette.
+lintel = sum(1 for x in range(30, 35) if (x, 4, 35) in blocks_set)
+check("framing: spawn shelter has a top lintel (>= 3 of 5 cells at y=4, z=35)",
+      lintel >= 3)
+print(f"    -> lintel cells: {lintel}/5")
+
+# 4. Line of sight from a pulled-back camera south of spawn to the doorway.
+cam_x, cam_y, cam_z = 32, 3, 42
+aim_x, aim_y, aim_z = 32, 2, 20
+los_to_doorway = line_of_sight(cam_x, cam_y, cam_z, aim_x, aim_y, aim_z)
+check("framing: pulled camera south of spawn has clear line through the doorway",
+      los_to_doorway)
+print(f"    -> camera ({cam_x},{cam_y},{cam_z}) -> doorway ({aim_x},{aim_y},{aim_z}): {los_to_doorway}")
+
+# 5. The dominant landmark is visible from that same camera position.
+if dominant and dom_blocks:
+    tx, ty, tz = dom_blocks[0]
+    los_to_spire = line_of_sight(cam_x, cam_y, cam_z, tx, ty, tz)
+    check("framing: Sentinel Spire is visible from the pulled camera through the gateway",
+          los_to_spire)
+    print(f"    -> camera -> spire ({tx},{ty},{tz}): {los_to_spire}")
 
 print()
 if fail:
