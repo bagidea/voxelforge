@@ -164,6 +164,25 @@ pub struct Unravel {
 
 impl Message for Unravel {}
 
+/// "A foot just struck the ground here" — a footfall or a dodge kick-off.
+/// Deliberately cheap: this can fire twice a second per moving actor, so it's a
+/// handful of small ground-dust motes, not the full [`Impact`] treatment (no
+/// flash, no hit-stop, no light burst).
+///
+/// ```ignore
+/// dust.write(vfx::FootDust { pos: heel_pos, power: 1.0 }); // ~2.2 for a dodge kick-off
+/// ```
+#[derive(Clone, Debug)]
+pub struct FootDust {
+    /// World-space point the foot struck.
+    pub pos: Vec3,
+    /// Scale on count/speed. 1.0 = an ordinary footstep, ~2.2 = a dodge roll's
+    /// kick-off (more mass, more speed, more dust).
+    pub power: f32,
+}
+
+impl Message for FootDust {}
+
 // ===========================================================================
 // Public contract — components
 // ===========================================================================
@@ -365,7 +384,9 @@ struct Coal {
 #[derive(Resource)]
 struct VfxAssets {
     cube: Handle<Mesh>,
-    spark: Handle<StandardMaterial>,
+    /// Three shared tones, not one — see `load_vfx_assets` for why sparks are the
+    /// one particle in this file that used to be flat.
+    spark: [Handle<StandardMaterial>; 3],
     ember: Handle<StandardMaterial>,
     ash: Handle<StandardMaterial>,
     stone_dust: Handle<StandardMaterial>,
@@ -389,6 +410,7 @@ impl Plugin for VfxPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<Impact>()
             .add_message::<Unravel>()
+            .add_message::<FootDust>()
             .init_resource::<Hitstop>()
             .init_resource::<VfxRng>()
             .init_resource::<CamKick>()
@@ -399,7 +421,7 @@ impl Plugin for VfxPlugin {
                     // tick_hitstop runs FIRST so an impact fired this frame freezes
                     // starting this frame, not one frame late.
                     tick_hitstop,
-                    (on_impact, on_unravel, emit_trail, campfire_build, campfire_pulse),
+                    (on_impact, on_unravel, on_footdust, emit_trail, campfire_build, campfire_pulse),
                     (tick_particles, tick_ephemeral, tick_coals),
                     // The kick is a delta on the final camera transform, so it must
                     // land after any system that *sets* that transform.
@@ -422,12 +444,34 @@ fn load_vfx_assets(
     // Emissive values are deliberately > 1.0: they are the bloom seeds. The camera's
     // Bloom threshold (hero.rs uses Bloom::NATURAL) only catches HDR pixels, so a
     // spark at 1.0 would look like grey plastic.
-    let spark = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.86, 0.55),
-        emissive: LinearRgba::rgb(14.0, 7.4, 2.2),
-        unlit: true,
-        ..default()
-    });
+    // Golden-hour spark palette: real hot metal doesn't throw one flat hue — the
+    // freshest chips read near-white, most sit at the honeyed gold the story-bible
+    // key light already uses, and a few have cooled to ember-orange. `on_impact`
+    // picks between these three per spark (deterministically, via `VfxRng`) so a
+    // single burst shows the same colour spread real sparks do, instead of one
+    // shared material looking pasted-on flat. Kept to three shared materials
+    // (not one per particle) so the "cheap enough to fire every swing" budget
+    // this module's header promises still holds.
+    let spark = [
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.97, 0.90),
+            emissive: LinearRgba::rgb(17.0, 15.5, 12.5),
+            unlit: true,
+            ..default()
+        }),
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.86, 0.55),
+            emissive: LinearRgba::rgb(14.0, 7.4, 2.2),
+            unlit: true,
+            ..default()
+        }),
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.62, 0.24),
+            emissive: LinearRgba::rgb(11.0, 4.0, 0.9),
+            unlit: true,
+            ..default()
+        }),
+    ];
     let ember = materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.52, 0.16),
         emissive: LinearRgba::rgb(7.5, 2.6, 0.5),
@@ -531,9 +575,10 @@ fn on_impact(
         for _ in 0..sparks {
             let v = rng.cone(out, 0.85) * rng.range(3.4, 8.2) * power;
             let born = Vec3::splat(rng.range(0.035, 0.075));
+            let tone = assets.spark[(rng.unit() * 3.0) as usize % 3].clone();
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
-                MeshMaterial3d(assets.spark.clone()),
+                MeshMaterial3d(tone),
                 Transform::from_translation(hit.pos + rng.cone(Vec3::Y, 1.0) * 0.09)
                     .with_scale(born),
                 Particle {
@@ -557,7 +602,7 @@ fn on_impact(
             let mat = match hit.flavor {
                 HitFlavor::Husk => assets.stone_dust.clone(),
                 HitFlavor::Player => assets.stone_dust.clone(),
-                HitFlavor::Parry => assets.spark.clone(),
+                HitFlavor::Parry => assets.spark[(rng.unit() * 3.0) as usize % 3].clone(),
             };
             let born = Vec3::splat(rng.range(0.07, 0.17));
             commands.spawn((
@@ -662,6 +707,42 @@ fn on_impact(
             ));
         }
 
+        // ---- ⑥ parry ring: an instant, compact burst at the point of contact --
+        // A parry never carries `body_half` (nothing broke, so no wrap shell — see
+        // the flash block above), but the deflection still needs its own
+        // unmistakable "clang": the receive window it has to be read against is a
+        // dozen frames wide, so this has to peak on the very frame it spawns, not
+        // ease in. `Ephemeral`'s colour/light fade is already front-loaded
+        // ((1-t)², see `tick_ephemeral`) — starting the SCALE big too is what
+        // makes it read as a burst rather than a blob growing into one.
+        if hit.flavor == HitFlavor::Parry {
+            let ring_mat = materials.add(StandardMaterial {
+                base_color: Color::srgba(1.0, 0.99, 0.94, 0.85),
+                emissive: LinearRgba::rgb(22.0, 20.0, 17.0),
+                alpha_mode: AlphaMode::Blend,
+                // NOT unlit — same reason as the hit-flash shell above: unlit can
+                // drop the emissive tint that actually blooms.
+                double_sided: true,
+                cull_mode: None,
+                ..default()
+            });
+            let born = Vec3::splat(0.16 + 0.05 * power);
+            commands.spawn((
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(ring_mat),
+                Transform::from_translation(hit.pos).with_scale(born),
+                Ephemeral {
+                    age: 0.0,
+                    ttl: 0.10,
+                    grow_to: 3.4,
+                    born_scale: born,
+                    light0: 0.0,
+                    base0: [1.0, 0.99, 0.94, 0.85],
+                    emissive0: [22.0, 20.0, 17.0],
+                },
+            ));
+        }
+
         // ---- light burst: the impact lights its own surroundings --------
         // Without this the sparks glow but nothing around them reacts, which is the
         // single biggest "particles pasted on top" tell.
@@ -687,6 +768,52 @@ fn on_impact(
                 emissive0: [0.0; 3],
             },
         ));
+    }
+}
+
+// ===========================================================================
+// ⑦ Foot dust — a puff of ground dust on every footfall / dodge kick-off
+// ===========================================================================
+//
+// Both `anim.rs`'s `AnimFootstep` and `AnimDodge` message streams already
+// existed with zero subscribers anywhere in the crate — the rig was reporting
+// exactly which frame each foot struck and nothing ever used it. This is the
+// generic sink: cheap, reusable for both (a dodge kick-off is just a bigger
+// `power`), see `vfx_bridge.rs`'s `footstep_dust` / `dodge_dust`.
+
+fn on_footdust(
+    mut commands: Commands,
+    mut steps: MessageReader<FootDust>,
+    mut rng: ResMut<VfxRng>,
+    assets: Option<Res<VfxAssets>>,
+) {
+    let Some(assets) = assets else { return };
+
+    for step in steps.read() {
+        let power = step.power.max(0.2);
+        let motes = (3.0 * power) as usize + 2;
+        for _ in 0..motes {
+            let v = rng.cone(Vec3::Y, 0.9) * rng.range(0.5, 1.5) * power
+                + Vec3::new(rng.signed(), 0.0, rng.signed()) * 0.4 * power;
+            let born = Vec3::splat(rng.range(0.03, 0.07) * power.min(1.6));
+            commands.spawn((
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(assets.stone_dust.clone()),
+                Transform::from_translation(step.pos + rng.cone(Vec3::Y, 1.0) * 0.06)
+                    .with_scale(born),
+                Particle {
+                    vel: v,
+                    gravity: 1.4, // a mote of dust, not a chip — it drifts, it doesn't fall
+                    drag: 3.2,
+                    spin: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 3.0,
+                    age: 0.0,
+                    ttl: rng.range(0.25, 0.45),
+                    born,
+                    hold: 0.05,
+                    delay: 0.0,
+                },
+            ));
+        }
     }
 }
 
@@ -1127,6 +1254,7 @@ fn tick_ephemeral(
 
 fn apply_cam_kick(
     time: Res<Time>,
+    hitstop: Res<Hitstop>,
     mut kick: ResMut<CamKick>,
     mut cams: Query<&mut Transform, With<VfxCamera>>,
 ) {
@@ -1145,7 +1273,15 @@ fn apply_cam_kick(
     if kick.amp <= 0.0 || kick.dur <= 0.0 {
         return;
     }
-    kick.age += time.delta_secs();
+    // Hold the kick's own clock through hit-stop, for the same reason
+    // `tick_particles` holds particle `age` there: advancing it while frozen
+    // burns most of the punch before the freeze ever releases, so by the time
+    // gameplay unpauses the snap the player is supposed to feel has already
+    // half-decayed. The offset itself keeps being applied every frame either
+    // way — only the decay clock pauses.
+    if !hitstop.frozen() {
+        kick.age += time.delta_secs();
+    }
     if kick.age >= kick.dur {
         kick.amp = 0.0;
         return;

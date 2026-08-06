@@ -27,11 +27,12 @@
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
 
-use crate::anim::{Actor, AnimSwing, RigWeapon, SwingPhase};
+use crate::anim::{Actor, AnimDodge, AnimFootstep, AnimSwing, DodgePhase, RigWeapon, SwingPhase};
 use crate::audio::SfxEvent;
-use crate::combat::PlayerCombat;
+use crate::combat::{Enemy, ImpactEvent, ImpactWeight, PlayerCombat};
 use crate::scene::Campsite;
-use crate::vfx::{CampfireVfx, HitFlavor, Impact, SwingTrail, Unravel};
+use crate::vfx::{CampfireVfx, FootDust, HitFlavor, Impact, SwingTrail, Unravel};
+use crate::EYE_HEIGHT;
 
 /// Half-extents of a Guard Husk's torso+head silhouette. Mirrors the cuboids in
 /// `combat::spawn_guard_husk` (0.9 × 1.4 × 0.6 torso, head at y≈2.0) so the
@@ -71,9 +72,12 @@ impl Plugin for VfxBridgePlugin {
             Update,
             (
                 sfx_to_vfx,
+                critical_impact_flash,
                 light_the_campfire,
                 attach_rig_weapon_trail,
                 drive_rig_weapon_trail,
+                footstep_dust,
+                dodge_dust,
             ),
         );
     }
@@ -188,6 +192,47 @@ fn away_from(from: Option<Vec3>, to: Vec3) -> Vec3 {
 }
 
 // ---------------------------------------------------------------------------
+// riposte / poise-break / charged — the "loudest hit there is"
+// ---------------------------------------------------------------------------
+
+/// A riposte, a poise break or a charged swing is `combat.rs`'s own
+/// `ImpactWeight::Critical` — its own doc calls it "the loudest thing that can
+/// happen in a soulslike trade". `ImpactEvent` already carries that
+/// classification and is explicitly documented as a `vfx.rs` hook, but nothing
+/// in the crate was reading it, so a riposte looked exactly like a plain heavy
+/// hit. This layers the parry's own instant ring (see `vfx.rs::on_impact`) on
+/// top of whatever the normal `sfx_to_vfx` burst already drew, so a critical
+/// reads as unmistakably bigger than a plain swing in the same frame it lands.
+fn critical_impact_flash(
+    mut hits: MessageReader<ImpactEvent>,
+    mut impacts: MessageWriter<Impact>,
+    player: Query<Entity, With<PlayerCombat>>,
+) {
+    let player_e = player.iter().next();
+    for hit in hits.read() {
+        if hit.weight != ImpactWeight::Critical {
+            continue;
+        }
+        // `ImpactEvent::pos` is the TARGET's own root, and the two actors use
+        // different root conventions (husk root = feet, player root = eye —
+        // see `husk_hit`/`SfxEvent::PlayerHurt` above), so which offset applies
+        // depends on who got hit, not who swung.
+        let pos = if Some(hit.target) == player_e {
+            hit.pos + Vec3::Y * PLAYER_CHEST
+        } else {
+            hit.pos + Vec3::Y * HUSK_CONTACT_Y
+        };
+        impacts.write(Impact {
+            pos,
+            dir: hit.dir,
+            power: 2.6,
+            flavor: HitFlavor::Parry,
+            body_half: None,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ⑤ — the campfire
 // ---------------------------------------------------------------------------
 
@@ -269,6 +314,79 @@ fn drive_rig_weapon_trail(
                 // already edge-detected (fires once per phase entry in anim.rs), so
                 // this is once per swing phase, not per-frame.
                 println!("VFX_SWING_TRAIL hot={hot} actor={:?} phase={:?}", s.actor, s.phase);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ⑦ — footstep + dodge ground dust
+// ---------------------------------------------------------------------------
+//
+// `anim.rs` has fired `AnimFootstep` (twice a stride) and `AnimDodge` (i-frame
+// edges) since the animation-event stream was built, but nothing in the crate
+// ever read either — a walk cycle and a dodge roll kicked up nothing. Neither
+// message carries a position (only which `Actor`, per docs/anim-events.md),
+// so — same limitation `drive_rig_weapon_trail` already lives with — this
+// reads whichever live actor(s) of that kind exist right now.
+
+/// Player root is eye-height; the Husk's is already its feet (see `anim.rs`'s
+/// `build_rig` — same two offsets it uses for the rig root).
+fn feet_of(tf: &Transform, actor: Actor) -> Vec3 {
+    match actor {
+        Actor::Player => tf.translation - Vec3::Y * EYE_HEIGHT,
+        Actor::Husk => tf.translation,
+    }
+}
+
+fn footstep_dust(
+    mut steps: MessageReader<AnimFootstep>,
+    mut dust: MessageWriter<FootDust>,
+    player: Query<&Transform, With<PlayerCombat>>,
+    enemies: Query<&Transform, With<Enemy>>,
+) {
+    for s in steps.read() {
+        match s.actor {
+            Actor::Player => {
+                for tf in &player {
+                    dust.write(FootDust { pos: feet_of(tf, Actor::Player), power: 1.0 });
+                }
+            }
+            Actor::Husk => {
+                for tf in &enemies {
+                    // Bigger and heavier — a Husk's footfall should read as more
+                    // ground contact than the player's.
+                    dust.write(FootDust { pos: feet_of(tf, Actor::Husk), power: 1.5 });
+                }
+            }
+        }
+    }
+}
+
+/// A roll kicks up more dust than a footstep — reuses [`FootDust`] at a higher
+/// `power` rather than a second effect. Fires on `IframeStart` only (the roll's
+/// launch), not `IframeEnd`, so it reads as "pushed off from here", not two
+/// puffs bookending the same roll.
+fn dodge_dust(
+    mut dodges: MessageReader<AnimDodge>,
+    mut dust: MessageWriter<FootDust>,
+    player: Query<&Transform, With<PlayerCombat>>,
+    enemies: Query<&Transform, With<Enemy>>,
+) {
+    for d in dodges.read() {
+        if d.phase != DodgePhase::IframeStart {
+            continue;
+        }
+        match d.actor {
+            Actor::Player => {
+                for tf in &player {
+                    dust.write(FootDust { pos: feet_of(tf, Actor::Player), power: 2.2 });
+                }
+            }
+            Actor::Husk => {
+                for tf in &enemies {
+                    dust.write(FootDust { pos: feet_of(tf, Actor::Husk), power: 2.2 });
+                }
             }
         }
     }
