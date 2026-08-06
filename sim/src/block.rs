@@ -83,21 +83,21 @@ impl BlockId {
     pub fn base_color(self) -> [u8; 3] {
         match self {
             Self::AIR         => [0, 0, 0],
-            Self::GRASS       => [70, 160, 66],
-            Self::DIRT        => [124, 88, 56],
-            Self::STONE       => [128, 128, 138],
+            Self::GRASS       => [91, 140, 70],     // #5b8c46
+            Self::DIRT        => [107, 85, 64],     // #6b5540
+            Self::STONE       => [143, 135, 118],   // #8f8776
             Self::SAND        => [214, 202, 148],
-            Self::WOOD        => [120, 86, 52],
-            Self::LEAVES      => [48, 130, 48],
-            Self::SNOW        => [240, 245, 250],
+            Self::WOOD        => [156, 107, 58],    // #9c6b3a
+            Self::LEAVES      => [58, 116, 54],     // #3a7436
+            Self::SNOW        => [240, 236, 224],   // #f0ece0
             Self::RED_SAND    => [200, 130, 70],
-            Self::CLAY        => [140, 150, 168],
+            Self::CLAY        => [126, 150, 160],   // #7e96a0
             Self::GRAVEL      => [110, 100, 94],
-            Self::COBBLESTONE => [92, 92, 98],
-            Self::OBSIDIAN    => [20, 18, 28],
+            Self::COBBLESTONE => [140, 138, 120],   // #8c8a78
+            Self::OBSIDIAN    => [26, 22, 32],      // #1a1620
             Self::BRICK       => [150, 90, 60],
-            Self::MOSS        => [55, 100, 40],
-            Self::LIMESTONE   => [200, 190, 160],
+            Self::MOSS        => [75, 110, 55],     // #4b6e37
+            Self::LIMESTONE   => [222, 204, 168],   // #decca8
             _                 => [255, 0, 255], // error magenta
         }
     }
