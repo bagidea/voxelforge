@@ -886,7 +886,8 @@ fn complete_quest(journal: &mut QuestJournal, quest_id: &str, data: &StoryData) 
         .or(qdef.rewards.advance_to.as_deref());
     if let Some(next_id) = next_id {
         if let Some(next_prog) = journal.quests.get_mut(next_id) {
-            if next_prog.status == QuestStatus::Locked {
+            if next_prog.status == QuestStatus::Locked || next_prog.status == QuestStatus::Available {
+                let from = format!("{:?}", next_prog.status);
                 next_prog.status = QuestStatus::Active;
                 if !journal.active_order.contains(&next_id.to_string()) {
                     journal.active_order.push(next_id.to_string());
@@ -896,7 +897,7 @@ fn complete_quest(journal: &mut QuestJournal, quest_id: &str, data: &StoryData) 
                 // Both end in the same Locked→Active transition, so both log the
                 // accept — otherwise whether QUEST_ACCEPT appears depends on which
                 // of the two happened to land first.
-                println!("QUEST_ACCEPT id={next_id} => PASS");
+                println!("QUEST_ACCEPT id={next_id} => PASS (from {from})");
                 println!("QUEST_NEXT_OPEN next={next_id} => PASS");
             }
         }
