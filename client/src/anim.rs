@@ -171,8 +171,33 @@ const LAND_FULL: f32 = 13.0;
 const CORPSE_TIME: f32 = 6.0;
 /// Guard/parry poses are re-entered every frame while the button is held (combat
 /// bounces Block→Idle→Block), so the pose is latched for this long past the last
-/// sighting instead of strobing.
+/// sighting instead of strobing. Also doubles as the release-blend window: the
+/// pose weight eases out across this same span instead of holding at full
+/// strength and vanishing the frame after — see the `Action::Guard` /
+/// `Action::Parry` arms in `animate_rigs`.
 const GUARD_LATCH: f32 = 0.14;
+/// Same idea for stagger: how long the poise-break silhouette takes to blend
+/// back into whatever the body does next, instead of snapping straight to
+/// locomotion the instant `CombatState::Stagger` ends.
+const STAGGER_FADE: f32 = 0.20;
+/// Cloak spring (see [`CLOAK_MOTION`]): stiffness and damping of the damped
+/// spring the cloak hinge chases its target angle with. Soft/underdamped on
+/// purpose — cloth should overshoot and settle, a stiff spring just looks like
+/// a rigid plate on a hinge.
+const CLOAK_SPRING: f32 = 26.0;
+const CLOAK_DAMP: f32 = 6.0;
+/// The cloak's own motion, expressed through [`SecondaryMotionSpec`] — see that
+/// type's doc comment. Kept as the exact numbers the cloak shipped with; this
+/// is just the first `SecondaryPart` built through the now-generic path.
+const CLOAK_MOTION: SecondaryMotionSpec = SecondaryMotionSpec {
+    base_pitch: 0.30,
+    loco_gain: 0.30,
+    fwd_gain: 1.4,
+    sway_gain: -0.55,
+    turn_gain: -0.30,
+    spring: CLOAK_SPRING,
+    damp: CLOAK_DAMP,
+};
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -250,6 +275,79 @@ pub struct RigWeapon {
     pub actor: Actor,
 }
 
+/// Which rig joint an extra part hangs off — mirrors the joints [`build_rig`]
+/// creates. See [`extra_parts`]'s doc comment for the attachment-spec format
+/// new art (armor, props, cloth, hair) plugs in through, without touching the
+/// hand-tuned core skeleton `build_rig` already builds.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BoneName {
+    Hips,
+    Torso,
+    Head,
+    ShoulderL,
+    ElbowL,
+    ShoulderR,
+    ElbowR,
+    HandR,
+    HipL,
+    KneeL,
+    HipR,
+    KneeR,
+}
+
+/// One extra decorative piece described as DATA — size, offset, colour, which
+/// bone it hangs off — instead of a hand-edited field in `Parts`/`build_rig`.
+/// A bone can carry any number of these, and any of them can opt into
+/// [`SecondaryMotionSpec`] to lag the body like the cloak instead of riding
+/// rigidly. See [`extra_parts`] for where a list of these gets consumed.
+#[derive(Clone)]
+struct PartSpec {
+    bone: BoneName,
+    /// Width/height/depth of the box, in blocks.
+    size: Vec3,
+    /// Bone-local position. For a rigid part this is the mesh centre. For a
+    /// secondary-motion part this is where the hinge sits — `mesh_offset`
+    /// below then positions the mesh under/past that hinge (the same
+    /// hang-past-the-joint convention limbs use, see `build_rig`'s doc).
+    offset: Vec3,
+    /// Only read when `secondary` is `Some`.
+    mesh_offset: Vec3,
+    color: Color,
+    roughness: f32,
+    metallic: f32,
+    secondary: Option<SecondaryMotionSpec>,
+}
+
+/// Parameters for the damped-spring "lags the body a beat" motion the cloak
+/// pioneered (see `CLOAK_SPRING`/`CLOAK_DAMP`/`CLOAK_MOTION`). `base_pitch` is
+/// a static rest droop applied on top of the spring; `loco_gain`/`fwd_gain`
+/// drive the pitch target off locomotion weight and forward lunge, and
+/// `sway_gain`/`turn_gain` drive the roll target off stride phase and turn
+/// rate — the same body signals the cloak already reads, just re-weighted per
+/// part so a second cloth panel or a hair mass can have its own amplitude.
+#[derive(Clone, Copy)]
+struct SecondaryMotionSpec {
+    base_pitch: f32,
+    loco_gain: f32,
+    fwd_gain: f32,
+    sway_gain: f32,
+    turn_gain: f32,
+    spring: f32,
+    damp: f32,
+}
+
+/// Live spring state for one secondary-motion part — the cloak's hinge, plus
+/// whatever `extra_parts` adds. Driven generically in `animate_rigs`.
+struct SecondaryPart {
+    anchor: Entity,
+    base_pos: Vec3,
+    spec: SecondaryMotionSpec,
+    pitch: f32,
+    pitch_vel: f32,
+    roll: f32,
+    roll_vel: f32,
+}
+
 /// The rig root — one child entity per actor, holding the joint handles and all
 /// the animation state. Everything below it is pure decoration.
 #[derive(Component)]
@@ -268,6 +366,10 @@ pub struct Rig {
     knee_l: Entity,
     hip_r: Entity,
     knee_r: Entity,
+    /// Every secondary-motion part hanging off this rig — the player's cloak
+    /// (Husk carries none; `docs/character-bible.md` §1/§2), plus whatever
+    /// `extra_parts` adds. Built once in `build_rig`, driven in `animate_rigs`.
+    secondary: Vec<SecondaryPart>,
 
     /// Stride phase in radians, advanced by distance travelled (never by time) so
     /// the feet stay planted at any speed.
@@ -297,6 +399,8 @@ pub struct Rig {
     /// Progress through the parry action, 0 → 1, held across the latch tail so
     /// the recovery pose does not snap back to "window open" as the beat fades.
     parry_t: f32,
+    /// Stagger release-blend window (see [`STAGGER_FADE`]).
+    stagger_fade: f32,
     /// Death progress, 0 → 1. Reset when the actor comes back alive.
     death: f32,
     // --- animation-event edge state (see the events section above) -----------
@@ -363,10 +467,158 @@ struct Parts {
     shin: Handle<Mesh>,
     foot: Handle<Mesh>,
     weapon: Handle<Mesh>,
+    /// The player's half-cloak slab (see [`Rig::secondary`]). Allocated for
+    /// both actors for `Parts`' sake, but only ever spawned on the player.
+    cloak: Handle<Mesh>,
     cloth: Handle<StandardMaterial>,
     trim: Handle<StandardMaterial>,
     skin: Handle<StandardMaterial>,
     steel: Handle<StandardMaterial>,
+    /// Extra decorative pieces baked from [`extra_parts`] — armor, props,
+    /// hair. Empty until that function returns something; `build_rig` spawns
+    /// whatever is here without needing to know it's there.
+    extra: Vec<ExtraPart>,
+}
+
+/// A [`PartSpec`] with its mesh/material already allocated — built once in
+/// [`init_rig_assets`] via [`build_extra_parts`], the same way the hand-tuned
+/// core pieces are, so `build_rig` only ever spawns handles, never allocates.
+struct ExtraPart {
+    bone: BoneName,
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+    offset: Vec3,
+    mesh_offset: Vec3,
+    secondary: Option<SecondaryMotionSpec>,
+}
+
+/// Bake a list of [`PartSpec`]s into [`ExtraPart`]s (allocates their mesh +
+/// a dedicated material each — the list is short, so no sharing/caching).
+fn build_extra_parts(
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    specs: Vec<PartSpec>,
+) -> Vec<ExtraPart> {
+    specs
+        .into_iter()
+        .map(|s| ExtraPart {
+            bone: s.bone,
+            mesh: meshes.add(Cuboid::new(s.size.x, s.size.y, s.size.z)),
+            material: materials.add(StandardMaterial {
+                base_color: s.color,
+                perceptual_roughness: s.roughness,
+                metallic: s.metallic,
+                ..default()
+            }),
+            offset: s.offset,
+            mesh_offset: s.mesh_offset,
+            secondary: s.secondary,
+        })
+        .collect()
+}
+
+/// Extra decorative pieces for one actor — armor plates, pouches, a second
+/// cloak panel, hair — layered on top of the hand-tuned 11-piece core
+/// skeleton `build_rig` builds. Empty today: this is the hook the art pass's
+/// pieces land in, not a placeholder that still needs wiring — `build_rig`
+/// already consumes whatever this returns, rigid or secondary-motion, one or
+/// a hundred entries, on any bone. To add a piece once sizes/offsets/colours
+/// are in hand:
+///
+/// ```ignore
+/// vec![PartSpec {
+///     bone: BoneName::Torso,
+///     size: Vec3::new(0.50, 0.20, 0.30),   // width, height, depth (blocks)
+///     offset: Vec3::new(0.0, 0.10, 0.16),  // bone-local position
+///     mesh_offset: Vec3::ZERO,             // only used if `secondary` is Some
+///     color: Color::srgb(0.55, 0.50, 0.45),
+///     roughness: 0.6,
+///     metallic: 0.2,
+///     secondary: None,                     // Some(spec) = cloth/hair that lags
+/// }]
+/// ```
+fn extra_parts(actor: Actor) -> Vec<PartSpec> {
+    match actor {
+        Actor::Player => vec![
+            // --- Hair: tousled voxel-cluster mass, NOT a flat slab (character-bible
+            // §1 fix #2 — see docs/assets/characters/auren-hero-concept.png and the
+            // before/after at auren-hero-concept-before-after-2026-08-06-hairfix.png).
+            // 4 overlapping boxes on BoneName::Head so it reads as clustered volume
+            // instead of one brick; deliberately asymmetric L/R (bigger lump stage
+            // right) per the CEO's "asymmetry that makes the silhouette read" note.
+            // Offsets are in the same head-local frame as the existing head cube
+            // (head_off=0.18) and face plate (face_y=0.20, face_z=-0.16) two lines
+            // up in `Dims::of` — local -Z is forward/face side, +Z is the back of
+            // the skull.
+            PartSpec {
+                bone: BoneName::Head,
+                size: Vec3::new(0.32, 0.16, 0.30),   // crown mass
+                offset: Vec3::new(0.0, 0.36, 0.03),
+                mesh_offset: Vec3::ZERO,
+                color: Color::srgb(0.165, 0.106, 0.071),  // #2A1B12, character-bible §1
+                roughness: 0.85,
+                metallic: 0.0,
+                secondary: None,
+            },
+            PartSpec {
+                bone: BoneName::Head,
+                size: Vec3::new(0.28, 0.14, 0.22),   // nape/back mass, lower + further back
+                offset: Vec3::new(0.0, 0.24, 0.15),
+                mesh_offset: Vec3::ZERO,
+                color: Color::srgb(0.165, 0.106, 0.071),
+                roughness: 0.85,
+                metallic: 0.0,
+                secondary: None,
+            },
+            PartSpec {
+                bone: BoneName::Head,
+                size: Vec3::new(0.09, 0.10, 0.12),   // stage-left clump, smaller
+                offset: Vec3::new(-0.16, 0.28, 0.02),
+                mesh_offset: Vec3::ZERO,
+                color: Color::srgb(0.165, 0.106, 0.071),
+                roughness: 0.85,
+                metallic: 0.0,
+                secondary: None,
+            },
+            PartSpec {
+                bone: BoneName::Head,
+                size: Vec3::new(0.13, 0.14, 0.16),   // stage-right clump, bigger (asymmetry)
+                offset: Vec3::new(0.15, 0.30, 0.00),
+                mesh_offset: Vec3::ZERO,
+                color: Color::srgb(0.17, 0.11, 0.08),
+                roughness: 0.85,
+                metallic: 0.0,
+                secondary: None,
+            },
+            // --- Belt ember-pouch (character-bible §1 palette: housing #C88A4A,
+            // glow #F4B860 -> #FFD98A). Hangs on ONE hip only (not centred on the
+            // buckle) — that off-centre placement is part of the asymmetry read too.
+            // NOT wired to true emissive/bloom yet — see docs/auren-extra-parts-spec.md
+            // open note #1 (needs an `Option<LinearRgba>` emissive field or a
+            // vfx.rs glowing-coal effect anchored to the pouch bone).
+            PartSpec {
+                bone: BoneName::Hips,
+                size: Vec3::new(0.10, 0.12, 0.08),   // housing
+                offset: Vec3::new(0.14, -0.10, -0.10),
+                mesh_offset: Vec3::ZERO,
+                color: Color::srgb(0.78, 0.54, 0.29),  // #C88A4A
+                roughness: 0.55,
+                metallic: 0.1,
+                secondary: None,
+            },
+            PartSpec {
+                bone: BoneName::Hips,
+                size: Vec3::new(0.05, 0.06, 0.03),   // inset "coal" face
+                offset: Vec3::new(0.14, -0.10, -0.135),
+                mesh_offset: Vec3::ZERO,
+                color: Color::srgb(1.0, 0.85, 0.54),  // #FFD98A
+                roughness: 0.3,
+                metallic: 0.0,
+                secondary: None,
+            },
+        ],
+        Actor::Husk => Vec::new(),
+    }
 }
 
 /// Skeleton proportions, in blocks, measured from the FEET.
@@ -469,6 +721,10 @@ fn init_rig_assets(
         shin: meshes.add(Cuboid::new(0.17, pd.shin, 0.18)),
         foot: meshes.add(Cuboid::new(0.19, 0.09, 0.30)),
         weapon: meshes.add(Cuboid::new(0.07, 0.86, 0.14)),
+        // A flat slab, wide as the shoulders and long enough to trail past the
+        // hip line (character-bible §1's read-point) once it hangs from the
+        // cloak hinge.
+        cloak: meshes.add(Cuboid::new(0.30, 0.62, 0.05)),
         cloth: materials.add(StandardMaterial {
             base_color: Color::srgb(0.92, 0.38, 0.16),
             perceptual_roughness: 0.72,
@@ -490,6 +746,7 @@ fn init_rig_assets(
             metallic: 0.75,
             ..default()
         }),
+        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(Actor::Player)),
     };
 
     let husk = Parts {
@@ -503,6 +760,9 @@ fn init_rig_assets(
         shin: meshes.add(Cuboid::new(0.27, hd.shin, 0.27)),
         foot: meshes.add(Cuboid::new(0.30, 0.13, 0.44)),
         weapon: meshes.add(Cuboid::new(0.10, 1.05, 0.26)),
+        // Unused — the Husk wears no cloak (armor and stone, not cloth; see
+        // character-bible §2). Allocated only so `Parts` stays one struct.
+        cloak: meshes.add(Cuboid::new(0.30, 0.62, 0.05)),
         cloth: materials.add(StandardMaterial {
             base_color: Color::srgb(0.32, 0.34, 0.40),
             perceptual_roughness: 0.55,
@@ -525,6 +785,7 @@ fn init_rig_assets(
             metallic: 0.60,
             ..default()
         }),
+        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(Actor::Husk)),
     };
 
     commands.insert_resource(RigAssets { player, husk });
@@ -589,6 +850,44 @@ fn build_rig(
     let knee_l = joint(0.0, -d.thigh, 0.0, hip_l);
     let hip_r = joint(d.hip_x, 0.0, 0.0, hips);
     let knee_r = joint(0.0, -d.thigh, 0.0, hip_r);
+
+    // Anchor joints for the cloak + any `extra_parts` secondary pieces are
+    // built here, while `joint` is still the only closure alive that captures
+    // `commands`. `skin` (below) captures it too — the two can't coexist — so
+    // every entity that needs `joint` has to exist before `skin` is born. The
+    // MESH side of these parts is attached further down, once `skin` exists.
+    let bone_of = |name: BoneName| -> Entity {
+        match name {
+            BoneName::Hips => hips,
+            BoneName::Torso => torso,
+            BoneName::Head => head,
+            BoneName::ShoulderL => sh_l,
+            BoneName::ElbowL => el_l,
+            BoneName::ShoulderR => sh_r,
+            BoneName::ElbowR => el_r,
+            BoneName::HandR => hand_r,
+            BoneName::HipL => hip_l,
+            BoneName::KneeL => knee_l,
+            BoneName::HipR => hip_r,
+            BoneName::KneeR => knee_r,
+        }
+    };
+    let cloak_anchor = if actor == Actor::Player {
+        let base_pos = Vec3::new(d.sh_x * 0.7, d.sh_y * 0.95, 0.08);
+        Some((joint(base_pos.x, base_pos.y, base_pos.z, torso), base_pos))
+    } else {
+        None
+    };
+    // Only the secondary-motion extra parts need a joint; rigid ones ride
+    // directly on their bone and are meshed straight from `p.extra` below.
+    let extra_anchors: Vec<Option<Entity>> = p
+        .extra
+        .iter()
+        .map(|part| {
+            part.secondary
+                .map(|_| joint(part.offset.x, part.offset.y, part.offset.z, bone_of(part.bone)))
+        })
+        .collect();
 
     let mut skin = |mesh: &Handle<Mesh>, mat: &Handle<StandardMaterial>, t: Transform, of: Entity| {
         commands.spawn((
@@ -664,6 +963,54 @@ fn build_rig(
             knee,
         );
     }
+    // The half-cloak (character-bible §1): the one shape on Auren's silhouette
+    // that's SUPPOSED to move on its own — "the only shape on the body that
+    // moves... what the eye locks onto in motion". Hung off the torso, over
+    // one shoulder (asymmetric per the bible), trailing down past the hip.
+    // `animate_rigs` drives it with a damped spring so it arrives a beat late
+    // instead of moving rigidly with the body — that lag IS the secondary
+    // motion. The Husk gets none (armor and stone, not cloth — §2). The
+    // anchor joint itself was already built above (before `skin` existed);
+    // this is just the mesh + spring-state bookkeeping.
+    let mut secondary: Vec<SecondaryPart> = Vec::new();
+    if let Some((anchor, base_pos)) = cloak_anchor {
+        skin(&p.cloak, &p.trim, Transform::from_xyz(0.0, -0.31, 0.0), anchor);
+        secondary.push(SecondaryPart {
+            anchor,
+            base_pos,
+            spec: CLOAK_MOTION,
+            pitch: 0.0,
+            pitch_vel: 0.0,
+            roll: 0.0,
+            roll_vel: 0.0,
+        });
+    }
+
+    // Extra parts from the art pass (see `extra_parts`'s doc comment for the
+    // spec format) — empty until pieces land, so this is a no-op today and
+    // changes nothing about the silhouette above. `extra_anchors` (built
+    // above, alongside the cloak's) already has the joint for every
+    // secondary-motion entry, in the same order as `p.extra`.
+    for (part, anchor) in p.extra.iter().zip(extra_anchors.iter().copied()) {
+        match (part.secondary, anchor) {
+            (Some(spec), Some(anchor)) => {
+                skin(&part.mesh, &part.material, Transform::from_translation(part.mesh_offset), anchor);
+                secondary.push(SecondaryPart {
+                    anchor,
+                    base_pos: part.offset,
+                    spec,
+                    pitch: 0.0,
+                    pitch_vel: 0.0,
+                    roll: 0.0,
+                    roll_vel: 0.0,
+                });
+            }
+            _ => {
+                skin(&part.mesh, &part.material, Transform::from_translation(part.offset), bone_of(part.bone));
+            }
+        }
+    }
+
     // Weapon in the right hand: blade forward-and-down at rest, so the whole arc is
     // a rotation of the grip rather than a teleport.
     let blade_len = match actor {
@@ -698,6 +1045,7 @@ fn build_rig(
         knee_l,
         hip_r,
         knee_r,
+        secondary,
         phase: 0.0,
         speed: 0.0,
         prev_pos: Vec3::ZERO,
@@ -714,6 +1062,7 @@ fn build_rig(
         guard: 0.0,
         parry: 0.0,
         parry_t: 0.0,
+        stagger_fade: 0.0,
         death: 0.0,
         prev_swing: None,
         in_iframe: false,
@@ -985,6 +1334,14 @@ fn animate_rigs(
         } else {
             (rig.parry - dt).max(0.0)
         };
+        // Stagger's own release-blend window — same idea as guard/parry above,
+        // just a separate timer/duration since a poise-break recovery reads
+        // better with a slightly longer settle than the guard debounce needs.
+        rig.stagger_fade = if beat.action == Action::Stagger {
+            STAGGER_FADE
+        } else {
+            (rig.stagger_fade - dt).max(0.0)
+        };
 
         // ---- death -----------------------------------------------------------
         if beat.action == Action::Dead || rig.death > 0.0 {
@@ -1054,7 +1411,10 @@ fn animate_rigs(
             Action::Dead
         } else if beat.action == Action::Swing || beat.action == Action::Dodge {
             beat.action
-        } else if beat.action == Action::Stagger {
+        } else if rig.stagger_fade > 0.0 {
+            // Gated on the fade timer, not `beat.action` directly, so the
+            // silhouette keeps rendering (at fading weight) through its own
+            // release blend after combat has already left Stagger.
             Action::Stagger
         } else if rig.parry > 0.0 {
             Action::Parry
@@ -1079,9 +1439,27 @@ fn animate_rigs(
                 root_fwd += offset.z;
                 root_extra = Quat::from_axis_angle(Vec3::X, lean);
             }
-            Action::Guard => apply_key(&mut pose, GUARD_KEY),
-            Action::Parry => apply_key(&mut pose, parry_key(rig.parry_t)),
-            Action::Stagger => stagger(&mut pose, elapsed),
+            Action::Guard => {
+                // Full weight while actually held — `rig.guard` is re-latched to
+                // GUARD_LATCH every frame Block is down, so this stays at 1.0 —
+                // easing to 0 only once the button has really been let go, over
+                // the same window that used to just debounce the per-frame
+                // Block->Idle->Block bounce. Before this the key held at full
+                // strength right up to the frame `rig.guard` hit exactly 0, then
+                // vanished — the arms snapped straight back to the walk cycle.
+                let release = ease_out(rig.guard / GUARD_LATCH);
+                apply_key(&mut pose, Key { weight: GUARD_KEY.weight * release, ..GUARD_KEY });
+            }
+            Action::Parry => {
+                let release = ease_out(rig.parry / GUARD_LATCH);
+                let mut k = parry_key(rig.parry_t);
+                k.weight *= release;
+                apply_key(&mut pose, k);
+            }
+            Action::Stagger => {
+                let release = ease_out(rig.stagger_fade / STAGGER_FADE);
+                stagger(&mut pose, elapsed, release);
+            }
             Action::Dodge => {
                 // A forward roll: the whole rig tumbles about its own X axis while
                 // the limbs tuck. The root translation is combat's (§2.2 glide) —
@@ -1104,6 +1482,29 @@ fn animate_rigs(
         // Additive on top of everything: recoil, then the landing spring.
         hit_react(&mut pose, &rig);
         let squash = landing(&mut pose, &rig, &d);
+
+        // ---- secondary motion: cloth/hair that lags the body ------------------
+        // One damped spring per part in `rig.secondary` (the cloak, plus whatever
+        // `extra_parts` adds), each chasing a target driven by whatever the body
+        // is doing — running streams it back, turning swings it, a swing's own
+        // lunge drags it along — so it arrives a beat LATE. That lag is the
+        // entire difference between "a prop glued to the back" and cloth. See
+        // [`SecondaryMotionSpec`] for what each gain multiplies.
+        let phase_sin = rig.phase.sin();
+        let turn_norm = (rig.yaw_rate / TURN_FULL).clamp(-1.0, 1.0);
+        for part in &mut rig.secondary {
+            let spec = part.spec;
+            let target_pitch = spec.loco_gain * loco * (0.5 + 0.5 * run) + spec.fwd_gain * root_fwd.abs();
+            let target_roll = spec.sway_gain * phase_sin * loco + spec.turn_gain * turn_norm;
+            spring(&mut part.pitch, &mut part.pitch_vel, target_pitch, spec.spring, spec.damp, dt);
+            spring(&mut part.roll, &mut part.roll_vel, target_roll, spec.spring, spec.damp, dt);
+            set(
+                &mut joint_q,
+                part.anchor,
+                part.base_pos,
+                pitch(spec.base_pitch + part.pitch) * roll(part.roll),
+            );
+        }
 
         // ---- write the rig ---------------------------------------------------
         let root_dy = match rig.actor {
@@ -1315,16 +1716,24 @@ fn landing(pose: &mut Pose, rig: &Rig, d: &Dims) -> Vec3 {
     Vec3::new(1.0 + 0.16 * q, 1.0 - 0.24 * q, 1.0 + 0.16 * q)
 }
 
-/// Stagger — poise broken. A loose, off-balance wobble that decays on its own clock.
-fn stagger(pose: &mut Pose, elapsed: f32) {
+/// Stagger — poise broken. A loose, off-balance wobble that decays on its own
+/// clock. `blend` is the release-fade weight (see [`STAGGER_FADE`]): 1.0 while
+/// actually staggered, easing to 0.0 across the tail instead of cutting
+/// straight back to whatever `locomotion`/`turn_in_place` already wrote this
+/// frame the instant `CombatState::Stagger` ends.
+fn stagger(pose: &mut Pose, elapsed: f32, blend: f32) {
+    let blend = blend.clamp(0.0, 1.0);
+    if blend <= 0.001 {
+        return;
+    }
     let w = (elapsed * 11.0).sin();
-    pose.torso = pitch(0.30 + 0.10 * w) * yaw(0.22 * w) * pose.torso;
-    pose.head = pitch(0.28) * yaw(-0.26 * w) * pose.head;
-    pose.sh_l = pitch(-0.70) * roll(-0.75) * pose.sh_l;
-    pose.sh_r = pitch(-0.55) * roll(0.85) * pose.sh_r;
-    pose.hip_r = pitch(-0.40) * pose.hip_r;
-    pose.knee_l = pitch(-0.55) * pose.knee_l;
-    pose.hips_pos.y -= 0.10;
+    pose.torso = pose.torso.slerp(pitch(0.30 + 0.10 * w) * yaw(0.22 * w) * pose.torso, blend);
+    pose.head = pose.head.slerp(pitch(0.28) * yaw(-0.26 * w) * pose.head, blend);
+    pose.sh_l = pose.sh_l.slerp(pitch(-0.70) * roll(-0.75) * pose.sh_l, blend);
+    pose.sh_r = pose.sh_r.slerp(pitch(-0.55) * roll(0.85) * pose.sh_r, blend);
+    pose.hip_r = pose.hip_r.slerp(pitch(-0.40) * pose.hip_r, blend);
+    pose.knee_l = pose.knee_l.slerp(pitch(-0.55) * pose.knee_l, blend);
+    pose.hips_pos.y -= 0.10 * blend;
 }
 
 // ---------------------------------------------------------------------------
@@ -1447,7 +1856,21 @@ fn swing_pose(actor: Actor, beat: &Beat) -> Key {
     } else if k < 2.0 {
         mix(&cock, &follow, k - 1.0)
     } else {
-        mix(&follow, &neutral, k - 2.0)
+        // Follow-through: the blade doesn't just decelerate into neutral, it
+        // carries a LITTLE past rest first — the overshoot a real swing's
+        // momentum has once the strike is spent — then springs back. The angle
+        // and the blend-weight are deliberately on two different curves: the
+        // weight (`ease_in`, slow-then-fast) stays high through most of the
+        // leg so the overshoot is still visible, and only collapses to 0 right
+        // at the very end; the angle (`ease_out_back`) is what actually swings
+        // past zero and settles. Using one curve for both (the old code) meant
+        // the weight had already faded past the point the overshoot happens,
+        // so a wider overshoot silently disappeared — see `swing_starts_and_
+        // ends_neutral` for the boundary this still has to hit exactly.
+        let u = (k - 2.0).clamp(0.0, 1.0);
+        let mut key = mix(&follow, &neutral, ease_out_back(u));
+        key.weight = follow.weight + (neutral.weight - follow.weight) * ease_in(u);
+        key
     }
 }
 
@@ -1499,8 +1922,12 @@ fn swing_root_motion(actor: Actor, k: f32) -> (Vec3, f32) {
             gather.2 + (strike.2 - gather.2) * u,
         )
     } else {
-        let u = ease_out(k - 2.0);
-        (strike.0 * (1.0 - u), strike.1 * (1.0 - u), strike.2 * (1.0 - u))
+        // Same overshoot-and-settle as `swing_pose`'s recovery leg, applied to
+        // the root's own weight shift — the body rocks very slightly past
+        // upright after a big swing before it settles, instead of gliding
+        // straight back to neutral.
+        let ov = ease_out_back((k - 2.0).clamp(0.0, 1.0));
+        (strike.0 * (1.0 - ov), strike.1 * (1.0 - ov), strike.2 * (1.0 - ov))
     };
 
     (Vec3::new(0.0, lift, back), lean)
@@ -2123,6 +2550,37 @@ fn ease_io(t: f32) -> f32 {
     } else {
         1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
     }
+}
+
+/// Slow start, fast finish — the mirror of [`ease_out`].
+#[inline]
+fn ease_in(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * t
+}
+
+/// Like [`ease_out`], but overshoots slightly above 1.0 before settling back —
+/// "the motion doesn't just decelerate into rest, it carries past it and
+/// springs back", the follow-through/overlap read a plain `ease_out` can't
+/// produce. `c1` is well below the textbook ~1.7 so this stays a subtle settle,
+/// not a cartoon bounce.
+#[inline]
+fn ease_out_back(t: f32) -> f32 {
+    const C1: f32 = 1.4;
+    const C3: f32 = C1 + 1.0;
+    let x = t.clamp(0.0, 1.0) - 1.0;
+    1.0 + C3 * x * x * x + C1 * x * x
+}
+
+/// Semi-implicit-Euler damped spring: `value` chases `target`, `vel` carries the
+/// momentum between calls. Used for the cloak hinge — anything driven this way
+/// arrives at its target a beat AFTER the thing driving it changes, which is
+/// what makes it read as cloth lagging the body instead of a rigid attachment.
+#[inline]
+fn spring(value: &mut f32, vel: &mut f32, target: f32, k: f32, damping: f32, dt: f32) {
+    *vel += (target - *value) * k * dt;
+    *vel *= (1.0 - damping * dt).clamp(0.0, 1.0);
+    *value += *vel * dt;
 }
 
 // ---------------------------------------------------------------------------
