@@ -585,7 +585,7 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
                 size: Vec3::new(0.13, 0.14, 0.16),   // stage-right clump, bigger (asymmetry)
                 offset: Vec3::new(0.15, 0.30, 0.00),
                 mesh_offset: Vec3::ZERO,
-                color: Color::srgb(0.17, 0.11, 0.08),
+                color: Color::srgb(0.165, 0.106, 0.071),
                 roughness: 0.85,
                 metallic: 0.0,
                 secondary: None,
