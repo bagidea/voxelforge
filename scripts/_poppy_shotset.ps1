@@ -39,6 +39,7 @@ param(
     [string]$OutDir    = "_poppy_shotset",
     [string[]]$Only    = @(),
     [string]$ClashEnv  = "",        # "K=V;K=V" merged into s3-clash's env (override only)
+    [string]$ExtraEnv  = "",        # "K=V;K=V" merged into EVERY selected plate's env
     [switch]$BeforeSide,            # shoot the BASELINE set (frozen 19:53 exe + BeforeEnv)
     [switch]$AllowMissingBefore,    # shoot AFTER frames that cannot be paired, on purpose
     [switch]$DryRun,
@@ -289,6 +290,13 @@ function Invoke-Dehud2 {
 # 0. resolve the shot list
 # ---------------------------------------------------------------------------
 $clashKv = if ($ClashEnv -ne "") { Parse-KvString $ClashEnv } else { @{} }
+# -ExtraEnv is the "same binary, one knob moved" hook: an env sweep (e.g. an
+# VOXELFORGE_LOOK_EXPOSURE ladder) has to be provable as a pure env delta, and the
+# only alternative was editing the shot table — which makes the harness itself a
+# variable in the very comparison it is measuring. Applied to EVERY selected plate,
+# AFTER -ClashEnv, so a ladder value wins over a plate default and shows up verbatim
+# in each runlog's shot_env line.
+$extraKv = if ($ExtraEnv -ne "") { Parse-KvString $ExtraEnv } else { @{} }
 
 # `powershell -File ... -Only a,b` hands the whole thing over as ONE string (only -Command
 # splits it into an array), so every key silently misses and the run dies with
@@ -306,6 +314,7 @@ foreach ($s in $SHOTS) {
     if ($BeforeSide -and $s.BeforeEnv) {
         foreach ($k in $s.BeforeEnv.Keys) { $s.Env[$k] = $s.BeforeEnv[$k] }
     }
+    foreach ($k in $extraKv.Keys) { $s.Env[$k] = $extraKv[$k] }
     $plan += $s
 }
 if ($plan.Count -eq 0) { throw "no shots selected (-Only $($Only -join ',')) " }
@@ -441,6 +450,7 @@ exe_mtime:      $($exeItem.LastWriteTime.ToString('o'))
 exe_sha256:     $sha
 commit:         $head
 overrides:      AllowOldExe=$AllowOldExe AllowStale=$AllowStale
+extra_env:      $(if ($ExtraEnv -ne '') { $ExtraEnv } else { '(none)' })
 "@
 
 "`n=== $(if ($BeforeSide) { 'BASELINE plates (frozen 19:53 exe)' } else { 'AFTER side' })"
@@ -655,6 +665,7 @@ $manifest = [ordered]@{
     exe_sha256 = $sha
     commit     = $head
     dry_run    = [bool]$DryRun
+    extra_env  = $ExtraEnv
     out_dir    = $OutDir.Replace('\','/')
     shots      = $rows
 }

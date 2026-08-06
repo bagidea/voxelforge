@@ -200,6 +200,15 @@ _*.patch
 # `_poppy_shotset/` output dir it writes.
 !scripts/_poppy_shotset.ps1
 !scripts/_poppy_shotset_sheet.py
+#
+# The EV-ladder harness (2026-08-07). Same reasoning one step further: the ev100
+# value in client/src/look.rs is justified IN ITS OWN COMMENT by numbers these two
+# produced, so a reader who wants to re-derive that constant needs the tools, not
+# just the result. `_grade_*.py` is a pattern rather than one path because the
+# grader-side scripts are added one per axis-investigation and each new one was
+# silently dropped by `_[!_]*.py` the same way.
+!scripts/_grade_*.py
+!scripts/_flamingo_ev_ladder.ps1
 
 # ── The regrade shotset's numeric evidence (2026-08-07) ───────────────────
 # `_*/` above ignores the whole `_poppy_shotset/` output dir, and it should: that dir is
@@ -216,6 +225,16 @@ _*.patch
 !/_poppy_shotset/regrade.json
 !/_poppy_shotset/regrade_table.txt
 !/_poppy_shotset/regrade_gates_crosscheck.txt
+
+# ── The EV-ladder's numeric evidence (2026-08-07) ─────────────────────────
+# Same allowlist shape, same reason: client/src/look.rs quotes this table inline to
+# justify ev100 = 10.3, so the table has to be carryable or the constant cites a file
+# a fresh clone does not have. Text only — `_flamingo_ev/` also holds ~40 MB of plate
+# PNGs and a copied 80 MB probe exe, which stay out. The contact sheet that IS worth
+# keeping was copied into docs/assets/ instead, where PNGs are tracked on purpose.
+!/_flamingo_ev/
+/_flamingo_ev/*
+!/_flamingo_ev/LADDER.txt
 
 # ── One-shot artifacts (2026-08-06 Kevin cleanup) ──
 # One-shot rebuild script with a hardcoded local path.

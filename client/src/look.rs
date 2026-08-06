@@ -593,16 +593,22 @@ impl Hour {
         // vista frame's darkest shade measured R−B −4, i.e. COLD, the only
         // frame to fail G3's hue clause as well as its level clause.
         //
-        // 0.45 (2026-08-07, drained from 0.48 for the AAA regrade). The warmth
-        // gap is the harder of the scorecard's top two: at the pre-regrade
-        // values the gate3 midtone band read R−B +80..+99 against +110, and
-        // every 0.01 shaved off B buys that gap directly (R−B rises 1:1 with B
-        // falling on an ambient-lit pixel). Still inside the §5.4 magenta
-        // envelope with MORE room than 0.48 left: ambient G−B 0.45 (floor 0.30),
-        // G/R 0.94 (floor 0.85). Sweep with `VOXELFORGE_LOOK_LIGHT` /
-        // `VOXELFORGE_LOOK_AMBIENT` before moving again — the hero shot's own
-        // fill sits at 2800 lux, so 2200 is deliberately short of that.
-        ambient: [0.96, 0.90, 0.45],
+        // 0.48 keeps the §5.4 magenta envelope with room to spare: ambient
+        // G−B 0.42 (floor 0.30), G/R 0.94 (floor 0.85).
+        //
+        // Reverted here from the 0.45 that 968f7f7 drained it to (2026-08-07).
+        // That change was reasoned, not measured: "every 0.01 shaved off B buys
+        // the warmth gap 1:1" is true only for a pixel lit by ambient ALONE, and
+        // on these plates the warmth deficit lives in the SUNLIT midtone band,
+        // where the key dominates and a 0.03 shift in the fill's blue is lost in
+        // the rounding. The warmth gap closes on exposure instead — see the
+        // ev100 note below, where hero's midtone R−B goes 109.2 -> 131.3 on the
+        // exposure knob alone. Restored to the value with the longer history so
+        // this release moves exactly ONE knob; claim no warmth credit for it.
+        // Sweep with `VOXELFORGE_LOOK_LIGHT` / `VOXELFORGE_LOOK_AMBIENT` before
+        // moving again — the hero shot's own fill sits at 2800 lux, so 2200 is
+        // deliberately short of that.
+        ambient: [0.96, 0.90, 0.48],
         ambient_lux: 2200.0,
         // 11.0 was this lane's own value and it cost 1.3 stops against Bevy's
         // implicit `Exposure::BLENDER` (9.7): measured on the vista frame it
@@ -619,12 +625,37 @@ impl Hour {
         // 53.6: the gate is passed without spending the golden-hour warmth that
         // G6's own hue clause exists to protect.
         //
-        // 10.9 (2026-08-07): a 0.1-EV nudge for the AAA p95 axis. gate3-walk's
-        // highlight p95 read 149.79 against the 150 floor — 0.21 short and well
-        // inside gameplay frame-to-frame variance. The lift keeps the sunlit
-        // patch far below clip and still above G6's L>=55 floor, so it spends
-        // none of the warmth/hue those clauses protect.
-        ev100: 10.9,
+        // 10.3 (2026-08-07, measured): ev100 is an EXPOSURE VALUE, so it runs
+        // BACKWARDS — a HIGHER number is LESS light. The 10.8 -> 10.9 change that
+        // sat here called itself "a lift ... for the AAA p95 axis", but raising
+        // ev100 DARKENS the frame and pushes p95 DOWN, away from the 150 floor it
+        // was trying to reach. It moved the axis the wrong way. (The rest of this
+        // comment block always had the sign right: 9.7 is described as brighter
+        // than 10.8, which is why L=69.9 there and 57.1 here.)
+        //
+        // Measured on the frozen 05:38 build with only VOXELFORGE_LOOK_EXPOSURE
+        // moving, three plates x three rungs (10.9 / 10.6 / 10.3):
+        //
+        //             p95 @10.9 -> @10.3      warmth R-B @10.9 -> @10.3
+        //   gate3-walk   115.2 -> 137.8          112.6 -> 130.0
+        //   hero          90.3 -> 100.7          109.2 -> 131.3  (crosses >=110)
+        //   s1-vista     160.9 -> 160.9          157.7 -> 169.7
+        //
+        // Every axis that responds improves monotonically toward 10.3 and nothing
+        // regresses, so 10.3 is the floor of the swept range, not a compromise
+        // inside it. s1-vista's p95 does not move because it is not measuring the
+        // scene: 99% of that frame's 95th-percentile population is sky, and the
+        // sky plateau (132,160,255, L=160.9062) is byte-identical at all three
+        // rungs. p95 is only an exposure axis on plates whose highlights are lit
+        // geometry — which is why the number is quoted per-plate here.
+        //
+        // Blow-out was measured directly rather than left to G5, which is broken
+        // on all three plates (it grades the campfire on hero, sky haze on
+        // s1-vista, and the y=0 crop seam on gate3-walk — see grade_hero.py's
+        // deprecation note). At 10.3: ZERO pixels with all of R,G,B >= 250, and
+        // single-channel R clip <= 1.22%, which G5's own rubric row explicitly
+        // allows in golden hour. Nothing is spent to buy the exposure.
+        ev100: 10.3,
         fog: FOG_COLOR_DAY,
     };
 
