@@ -1,5 +1,12 @@
 # Rose — AAA Look Re-grade (2026-08-07)
 
+> 🛑 **SUPERSEDED — awaiting fresh regrade** (Director directive, 2026-08-07).
+> ตารางเกรดด้านล่างมาจาก baked-proxy เฟรมที่ B=0.48 ซึ่งผูกกับ exe ที่ไม่มีอยู่จริง — **ยังไม่ใช่ตัวเลขที่นับ**.
+> ตัวเลขที่นับคือชุดใหม่จาก `regrade.json` ที่ harness ของ Poppy จะ generate หลังบิลด์ 05:25 (ที่จะดึง `anim.rs` เข้า exe จริง) เขียว.
+> **ค่าเดียวที่ยืนยัน:** vista shade R−B **+58.2** (จาก baseline −4.0).
+> **+144.0 / +154.6** ที่เคยอ้าง = ไม่มีเฟรมในดิสก์รองรับ (ใกล้สุดคือ combat frame-mean R−B +150.6) → **superseded, ห้ามอ้าง** จนกว่าจะมี `regrade.json` ใหม่.
+> รายละเอียดด้านล่างคงไว้เป็น audit trail เท่านั้น — อ้างอิงไม่ได้จนกว่า fresh regrade จะยืนยัน.
+
 > **เลน:** Look post stack (`client/src/look.rs`) — Rose (build-lane owner).
 > **เป้า:** ปิด Action Queue ทั้ง 5 ใน `docs/aaa-gap-scorecard-2026-08-06.md`.
 > **สรุป:** 🥇G3 + 🥈Warmth + 🥉Saturation **ปิดหมด (เลขจริงหลังบิลด์)** · 4️⃣Penumbra source-applied · 5️⃣p95 เจอ drift แต่ **พิสูจน์แล้วไม่ใช่ฝีมือ look** (ดู §4)
