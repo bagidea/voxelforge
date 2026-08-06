@@ -1,0 +1,34 @@
+VOXELFORGE regrade  profile=gameplay  pairs=8
+before = _poppy_shotset/before/ (19:53 exe, 02:33)   after = target-flamingo 05:38 exe
+cell = AFTER-BEFORE   (beforePass->afterPass)
+
+plate                warmth R-B            blue B               sat               DOF           micro-C            hi p95   penumbra   vegHue    G3     G5     G6
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+gate3-boot      -15.97 (P->P)    +0.01 (P->P)    -0.02 (P->P)    +0.12 (F->F)    -0.23 (P->P)    -8.67 (F->F)      -4.14    +25.3    P->P  P->P  P->P
+gate3-combat     -7.66 (P->P)    +0.06 (P->P)    -0.06 (P->P)    +0.44 (F->F)    -0.66 (P->F)   -11.11 (F->F)      -6.08    +17.1    P->P  F->P  P->P
+gate3-walk      -13.70 (P->P)    +0.04 (P->P)    -0.03 (P->P)    +0.05 (F->F)    -0.20 (F->F)   -10.69 (F->F)      -1.43    +20.0    P->P  F->F  F->F
+grade-vista     -13.40 (P->P)    +0.00 (P->P)    +0.00 (P->P)    -0.03 (F->F)    -0.23 (P->P)    -8.24 (F->F)      +1.64    +21.5    P->P  P->P  P->P
+hero            -21.66 (P->F)    +0.04 (P->P)    -0.03 (P->P)    -0.12 (F->F)    -0.40 (F->F)    -0.98 (F->F)      +3.29    +23.2    P->P  P->F  P->P
+s1-vista        -14.33 (P->P)    +4.68 (F->F)    -2.57 (P->F)    -0.32 (F->F)    -0.41 (P->F)    +0.00 (P->P)      +2.28     +4.8    P->P  F->F  F->P
+s3-clash         -4.32 (P->P)    +0.11 (P->P)    -0.10 (P->P)    -0.12 (F->F)    -0.17 (F->F)   -12.76 (F->F)      +0.14    +10.1    P->P  P->P  P->P
+s4-raking       -16.04 (P->P)    +5.60 (F->F)    -3.46 (P->P)    -0.18 (F->F)    -0.32 (F->F)    +0.00 (P->P)      -1.50    +12.7    P->P  P->P  F->F
+
+P0 axes PASS, all 8 plates: 28/48 -> 24/48
+Gates  PASS, all 8 plates: 18/24 -> 19/24
+
+hero cross-check (grade_hero.py G3/G5/G6):
+  gate3-boot    G3 P->P  G5 P->P  G6 F->F
+  gate3-combat  G3 P->P  G5 P->P  G6 P->P
+  gate3-walk    G3 P->P  G5 P->P  G6 F->F
+  grade-vista   G3 P->P  G5 P->P  G6 P->P
+  hero          G3 P->P  G5 P->F  G6 P->P
+  s1-vista      G3 P->P  G5 F->F  G6 F->P
+  s3-clash      G3 P->P  G5 P->P  G6 P->F
+  s4-raking     G3 P->P  G5 F->F  G6 P->P
+
+errored measurers: none
+
+NOTE: the G3/G5/G6 columns above are grade_gate.py. grade_hero.py disagrees on 5 of 8
+plates and points the total the OTHER way (gate 18->19 up, hero 19->18 down). Full
+side-by-side, machine-generated: _poppy_shotset/regrade_gates_crosscheck.txt
+  python scripts/regrade_crosscheck.py _poppy_shotset/regrade.json

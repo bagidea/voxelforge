@@ -1,0 +1,25 @@
+VOXELFORGE regrade -- GATE CROSS-CHECK  (every measurer, none dropped)
+cell = beforePass->afterPass   P=PASS F=FAIL  -=not measured by that tool
+
+  grade_gate.py : auto-LOCATES the window / warm patch anywhere in frame. Generic, runs on any plate.
+  grade_hero.py : FIXED eyedrop regions tuned for the golden kitchen hero shot (window assumed screen-left, sunlit wood assumed in the lower 55%). On a non-hero plate those regions point at whatever is there.
+  grade_look.py : G3/G5 only, third opinion.
+
+  -> Where they disagree, which one is authoritative is the grader's call, not
+     this script's. Both readings are printed; neither is dropped.
+
+plate          | grade_gate G3/G5/G6      | grade_hero G3/G5/G6      | grade_look G3/G5 | disagree
+--------------------------------------------------------------------------------------------------
+gate3-boot     | P->P  P->P  P->P         | P->P  P->P  F->F         | P->P  P->P       | G6
+gate3-combat   | P->P  F->P  P->P         | P->P  P->P  P->P         | P->P  F->P       | G5
+gate3-walk     | P->P  F->F  F->F         | P->P  P->P  F->F         | P->P  F->F       | G5
+grade-vista    | P->P  P->P  P->P         | P->P  P->P  P->P         | P->P  P->P       | -
+hero           | P->P  P->F  P->P         | P->P  P->F  P->P         | P->P  P->F       | -
+s1-vista       | P->P  F->F  F->P         | P->P  F->F  F->P         | P->P  F->F       | -
+s3-clash       | P->P  P->P  P->P         | P->P  P->P  P->F         | P->P  P->P       | G6
+s4-raking      | P->P  P->P  F->F         | P->P  F->F  P->P         | P->P  P->P       | G5,G6
+
+plates where a measurer disagrees with grade_gate.py: 5/8
+  grade_gate.py  gates PASS all plates: 18/24 -> 19/24  (up)
+  grade_hero.py  gates PASS all plates: 19/24 -> 18/24  (down)
+  grade_look.py  gates PASS all plates: 13/16 -> 13/16  (flat)

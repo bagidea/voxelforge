@@ -1,0 +1,2093 @@
+{
+  "profile": "gameplay",
+  "pairs": [
+    {
+      "label": "gate3-boot",
+      "before_file": "_poppy_shotset\\before\\gate3-boot-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\gate3-boot-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 133.07,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.02,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.99,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.86,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 5.64,
+            "pass": true,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 112.82,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 14.0,
+            "p50": 25.5,
+            "dark_r": 72.0,
+            "dark_g": 7.0,
+            "dark_b": 0.0,
+            "dark_rb": 72.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 11.8,
+          "p05": 14.0,
+          "p10": 15.9,
+          "p50": 25.5,
+          "p90": 38.6,
+          "p99": 50.5,
+          "dark_r": 71.8,
+          "dark_g": 7.0,
+          "dark_b": 0.0,
+          "dark_L": 7.95,
+          "dark_RB": 71.8,
+          "mean_R": 139.1,
+          "mean_G": 55.3,
+          "mean_B": 0.7,
+          "mean_RB": 138.4,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 69.2,
+            "lum_p05": 37.9,
+            "lum_p05_pct": 14.9,
+            "lum_p95": 112.8,
+            "warmth_RB": 138.3,
+            "sat_mean": 99.8,
+            "shadow_RB": 110.7,
+            "shadow_L": 39.0,
+            "shadow_L_pct": 15.3,
+            "highlight_p99": 131.1,
+            "micro_contrast": 5.64,
+            "edge_energy": 1.63
+          }
+        },
+        "grade_midtone.py": {
+          "R": 133.1,
+          "G": 58.2,
+          "B": 0.0,
+          "RB": 133.1,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": false
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 9.71,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 100.0,
+          "veg_hue": 59.5,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 117.1,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.03,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.97,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.98,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 5.41,
+            "pass": true,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 104.15,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 14.4,
+            "p50": 24.4,
+            "dark_r": 66.0,
+            "dark_g": 5.0,
+            "dark_b": 0.0,
+            "dark_rb": 66.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 11.5,
+          "p05": 14.4,
+          "p10": 15.9,
+          "p50": 24.4,
+          "p90": 35.1,
+          "p99": 54.4,
+          "dark_r": 66.2,
+          "dark_g": 5.1,
+          "dark_b": 0.0,
+          "dark_L": 6.96,
+          "dark_RB": 66.2,
+          "mean_R": 119.0,
+          "mean_G": 59.4,
+          "mean_B": 0.8,
+          "mean_RB": 118.2,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 67.8,
+            "lum_p05": 38.5,
+            "lum_p05_pct": 15.1,
+            "lum_p95": 104.1,
+            "warmth_RB": 118.1,
+            "sat_mean": 99.8,
+            "shadow_RB": 98.7,
+            "shadow_L": 39.8,
+            "shadow_L_pct": 15.6,
+            "highlight_p99": 140.0,
+            "micro_contrast": 5.41,
+            "edge_energy": 1.49
+          }
+        },
+        "grade_midtone.py": {
+          "R": 117.1,
+          "G": 61.4,
+          "B": 0.0,
+          "RB": 117.1,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": false
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 5.57,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 100.0,
+          "veg_hue": 84.8,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "gate3-combat",
+      "before_file": "_poppy_shotset\\before\\gate3-combat-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\gate3-combat-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 134.83,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.03,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.98,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 1.39,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 5.23,
+            "pass": true,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 130.97,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 16.0,
+            "p50": 27.6,
+            "dark_r": 68.0,
+            "dark_g": 16.0,
+            "dark_b": 0.0,
+            "dark_rb": 68.0
+          },
+          "G5": {
+            "pass": false
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.1,
+          "p05": 16.0,
+          "p10": 18.2,
+          "p50": 27.6,
+          "p90": 47.0,
+          "p99": 53.1,
+          "dark_r": 68.3,
+          "dark_g": 15.8,
+          "dark_b": 0.0,
+          "dark_L": 10.12,
+          "dark_RB": 68.3,
+          "mean_R": 152.4,
+          "mean_G": 64.5,
+          "mean_B": 0.6,
+          "mean_RB": 151.8,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 78.4,
+            "lum_p05": 41.9,
+            "lum_p05_pct": 16.4,
+            "lum_p95": 131.0,
+            "warmth_RB": 151.7,
+            "sat_mean": 99.8,
+            "shadow_RB": 129.5,
+            "shadow_L": 43.6,
+            "shadow_L_pct": 17.1,
+            "highlight_p99": 140.9,
+            "micro_contrast": 5.23,
+            "edge_energy": 1.5
+          }
+        },
+        "grade_midtone.py": {
+          "R": 134.9,
+          "G": 64.3,
+          "B": 0.0,
+          "RB": 134.8,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 13.79,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 92.5,
+          "veg_hue": 54.9,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 127.17,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.09,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.92,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 1.83,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.57,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 119.86,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 16.1,
+            "p50": 27.7,
+            "dark_r": 82.0,
+            "dark_g": 10.0,
+            "dark_b": 0.0,
+            "dark_rb": 82.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.4,
+          "p05": 16.1,
+          "p10": 18.9,
+          "p50": 27.7,
+          "p90": 42.3,
+          "p99": 49.2,
+          "dark_r": 82.2,
+          "dark_g": 10.5,
+          "dark_b": 0.0,
+          "dark_L": 9.79,
+          "dark_RB": 82.2,
+          "mean_R": 135.1,
+          "mean_G": 66.8,
+          "mean_B": 0.7,
+          "mean_RB": 134.4,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 76.4,
+            "lum_p05": 42.7,
+            "lum_p05_pct": 16.7,
+            "lum_p95": 119.9,
+            "warmth_RB": 134.3,
+            "sat_mean": 99.7,
+            "shadow_RB": 115.0,
+            "shadow_L": 45.4,
+            "shadow_L_pct": 17.8,
+            "highlight_p99": 132.1,
+            "micro_contrast": 4.57,
+            "edge_energy": 1.26
+          }
+        },
+        "grade_midtone.py": {
+          "R": 127.3,
+          "G": 65.0,
+          "B": 0.1,
+          "RB": 127.2,
+          "sat": 99.9
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 7.71,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 92.4,
+          "veg_hue": 72.0,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "gate3-walk",
+      "before_file": "_poppy_shotset\\before\\gate3-walk-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\gate3-walk-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 126.34,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.04,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.97,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.58,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.56,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 125.91,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 19.7,
+            "p50": 28.1,
+            "dark_r": 62.0,
+            "dark_g": 24.0,
+            "dark_b": 0.0,
+            "dark_rb": 62.0
+          },
+          "G5": {
+            "pass": false
+          },
+          "G6": {
+            "pass": false
+          }
+        },
+        "grade_g3.py": {
+          "p01": 15.6,
+          "p05": 19.7,
+          "p10": 21.5,
+          "p50": 28.1,
+          "p90": 39.9,
+          "p99": 54.2,
+          "dark_r": 62.4,
+          "dark_g": 24.1,
+          "dark_b": 0.0,
+          "dark_L": 11.95,
+          "dark_RB": 62.4,
+          "mean_R": 133.8,
+          "mean_G": 67.6,
+          "mean_B": 2.0,
+          "mean_RB": 131.9,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 76.9,
+            "lum_p05": 47.5,
+            "lum_p05_pct": 18.6,
+            "lum_p95": 125.9,
+            "warmth_RB": 131.8,
+            "sat_mean": 99.5,
+            "shadow_RB": 116.3,
+            "shadow_L": 49.6,
+            "shadow_L_pct": 19.5,
+            "highlight_p99": 143.9,
+            "micro_contrast": 4.56,
+            "edge_energy": 1.54
+          }
+        },
+        "grade_midtone.py": {
+          "R": 126.4,
+          "G": 66.1,
+          "B": 0.0,
+          "RB": 126.3,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": false
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 14.0,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 100.0,
+          "veg_hue": 63.9,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 112.64,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.08,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.94,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.63,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.36,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 115.22,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 16.9,
+            "p50": 25.8,
+            "dark_r": 37.0,
+            "dark_g": 19.0,
+            "dark_b": 0.0,
+            "dark_rb": 37.0
+          },
+          "G5": {
+            "pass": false
+          },
+          "G6": {
+            "pass": false
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.6,
+          "p05": 16.9,
+          "p10": 19.2,
+          "p50": 25.8,
+          "p90": 38.4,
+          "p99": 50.0,
+          "dark_r": 36.9,
+          "dark_g": 19.4,
+          "dark_b": 0.0,
+          "dark_L": 8.53,
+          "dark_RB": 36.9,
+          "mean_R": 115.5,
+          "mean_G": 63.6,
+          "mean_B": 1.9,
+          "mean_RB": 113.5,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 70.1,
+            "lum_p05": 39.9,
+            "lum_p05_pct": 15.6,
+            "lum_p95": 115.2,
+            "warmth_RB": 113.4,
+            "sat_mean": 99.6,
+            "shadow_RB": 75.8,
+            "shadow_L": 41.9,
+            "shadow_L_pct": 16.4,
+            "highlight_p99": 145.8,
+            "micro_contrast": 4.36,
+            "edge_energy": 1.46
+          }
+        },
+        "grade_midtone.py": {
+          "R": 112.7,
+          "G": 62.1,
+          "B": 0.1,
+          "RB": 112.6,
+          "sat": 99.9
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": false
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 12.57,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 100.0,
+          "veg_hue": 83.9,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "grade-vista",
+      "before_file": "_poppy_shotset\\before\\grade-vista-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\grade-vista-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 135.23,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.01,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.99,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.9,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 5.39,
+            "pass": true,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 118.2,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 15.8,
+            "p50": 28.0,
+            "dark_r": 62.0,
+            "dark_g": 16.0,
+            "dark_b": 0.0,
+            "dark_rb": 62.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.1,
+          "p05": 15.8,
+          "p10": 18.1,
+          "p50": 28.0,
+          "p90": 42.4,
+          "p99": 81.2,
+          "dark_r": 62.5,
+          "dark_g": 16.5,
+          "dark_b": 0.0,
+          "dark_L": 9.83,
+          "dark_RB": 62.5,
+          "mean_R": 143.6,
+          "mean_G": 58.9,
+          "mean_B": 0.9,
+          "mean_RB": 142.8,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 72.7,
+            "lum_p05": 41.0,
+            "lum_p05_pct": 16.1,
+            "lum_p95": 118.2,
+            "warmth_RB": 142.7,
+            "sat_mean": 99.6,
+            "shadow_RB": 114.9,
+            "shadow_L": 42.5,
+            "shadow_L_pct": 16.7,
+            "highlight_p99": 188.7,
+            "micro_contrast": 5.39,
+            "edge_energy": 1.65
+          }
+        },
+        "grade_midtone.py": {
+          "R": 135.2,
+          "G": 60.4,
+          "B": 0.0,
+          "RB": 135.2,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 4.0,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 96.9,
+          "veg_hue": 58.7,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 121.83,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.01,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.99,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.87,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 5.16,
+            "pass": true,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 109.96,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 15.1,
+            "p50": 26.6,
+            "dark_r": 61.0,
+            "dark_g": 11.0,
+            "dark_b": 0.0,
+            "dark_rb": 61.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.1,
+          "p05": 15.1,
+          "p10": 17.9,
+          "p50": 26.6,
+          "p90": 39.2,
+          "p99": 81.1,
+          "dark_r": 61.2,
+          "dark_g": 11.1,
+          "dark_b": 0.0,
+          "dark_L": 8.22,
+          "dark_RB": 61.2,
+          "mean_R": 128.0,
+          "mean_G": 58.5,
+          "mean_B": 0.9,
+          "mean_RB": 127.1,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 69.1,
+            "lum_p05": 39.2,
+            "lum_p05_pct": 15.4,
+            "lum_p95": 110.0,
+            "warmth_RB": 127.0,
+            "sat_mean": 99.6,
+            "shadow_RB": 110.6,
+            "shadow_L": 40.9,
+            "shadow_L_pct": 16.1,
+            "highlight_p99": 181.5,
+            "micro_contrast": 5.16,
+            "edge_energy": 1.54
+          }
+        },
+        "grade_midtone.py": {
+          "R": 121.8,
+          "G": 59.4,
+          "B": 0.0,
+          "RB": 121.8,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 5.64,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 96.6,
+          "veg_hue": 80.2,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "hero",
+      "before_file": "_poppy_shotset\\before\\hero-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\hero-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 130.79,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.03,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.97,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 1.09,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 3.73,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 91.31,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 14.5,
+            "p50": 22.6,
+            "dark_r": 72.0,
+            "dark_g": 15.0,
+            "dark_b": 0.0,
+            "dark_rb": 72.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.7,
+          "p05": 14.5,
+          "p10": 15.8,
+          "p50": 22.6,
+          "p90": 31.3,
+          "p99": 36.6,
+          "dark_r": 72.0,
+          "dark_g": 15.1,
+          "dark_b": 0.0,
+          "dark_L": 10.24,
+          "dark_RB": 72.0,
+          "mean_R": 126.0,
+          "mean_G": 48.8,
+          "mean_B": 0.3,
+          "mean_RB": 125.7,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 61.7,
+            "lum_p05": 36.7,
+            "lum_p05_pct": 14.4,
+            "lum_p95": 91.3,
+            "warmth_RB": 125.7,
+            "sat_mean": 99.9,
+            "shadow_RB": 104.9,
+            "shadow_L": 37.7,
+            "shadow_L_pct": 14.8,
+            "highlight_p99": 104.5,
+            "micro_contrast": 3.73,
+            "edge_energy": 1.18
+          }
+        },
+        "grade_midtone.py": {
+          "R": 130.8,
+          "G": 49.5,
+          "B": 0.0,
+          "RB": 130.8,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] no shadow edges detected on floor -> FAIL\n## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)\n   grooves=3242  top-40 mean dip=31.2 L-units\n   -> VISUAL call (compare under-bowl darkening old vs new)\n   G4a penumbra=0px is the objective half; G4b AO = eyeball"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 7.64,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 99.9,
+          "veg_hue": 58.7,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 109.13,
+            "pass": false,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.07,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.94,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.97,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 3.33,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 90.33,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 13.8,
+            "p50": 23.2,
+            "dark_r": 72.0,
+            "dark_g": 6.0,
+            "dark_b": 0.0,
+            "dark_rb": 72.0
+          },
+          "G5": {
+            "pass": false
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 10.7,
+          "p05": 13.8,
+          "p10": 15.1,
+          "p50": 23.2,
+          "p90": 31.7,
+          "p99": 38.7,
+          "dark_r": 71.8,
+          "dark_g": 6.0,
+          "dark_b": 0.0,
+          "dark_L": 7.66,
+          "dark_RB": 71.8,
+          "mean_R": 115.0,
+          "mean_G": 50.8,
+          "mean_B": 0.4,
+          "mean_RB": 114.6,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 60.8,
+            "lum_p05": 34.9,
+            "lum_p05_pct": 13.7,
+            "lum_p95": 90.3,
+            "warmth_RB": 114.6,
+            "sat_mean": 99.8,
+            "shadow_RB": 109.8,
+            "shadow_L": 35.4,
+            "shadow_L_pct": 13.9,
+            "highlight_p99": 102.0,
+            "micro_contrast": 3.33,
+            "edge_energy": 1.05
+          }
+        },
+        "grade_midtone.py": {
+          "R": 109.2,
+          "G": 56.3,
+          "B": 0.1,
+          "RB": 109.1,
+          "sat": 99.9
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G4a_info": "## G4a [MEASURED] no shadow edges detected on floor -> FAIL\n## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)\n   grooves=2814  top-40 mean dip=34.7 L-units\n   -> VISUAL call (compare under-bowl darkening old vs new)\n   G4a penumbra=0px is the objective half; G4b AO = eyeball"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 10.93,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 99.9,
+          "veg_hue": 81.9,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "s1-vista",
+      "before_file": "_poppy_shotset\\before\\s1-vista-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\s1-vista-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 172.27,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 16.59,
+            "pass": false,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 91.33,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 3.45,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 5.16,
+            "pass": true,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 160.91,
+            "pass": true,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 30.3,
+            "p50": 46.2,
+            "dark_r": 121.0,
+            "dark_g": 34.0,
+            "dark_b": 1.0,
+            "dark_rb": 120.0
+          },
+          "G5": {
+            "pass": false
+          },
+          "G6": {
+            "pass": false
+          }
+        },
+        "grade_g3.py": {
+          "p01": 27.1,
+          "p05": 30.3,
+          "p10": 32.1,
+          "p50": 46.2,
+          "p90": 63.0,
+          "p99": 63.3,
+          "dark_r": 120.8,
+          "dark_g": 34.0,
+          "dark_b": 0.9,
+          "dark_L": 19.64,
+          "dark_RB": 120.0,
+          "mean_R": 162.5,
+          "mean_G": 110.7,
+          "mean_B": 55.3,
+          "mean_RB": 107.2,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 117.6,
+            "lum_p05": 73.6,
+            "lum_p05_pct": 28.9,
+            "lum_p95": 160.9,
+            "warmth_RB": 107.6,
+            "sat_mean": 86.3,
+            "shadow_RB": 127.1,
+            "shadow_L": 74.5,
+            "shadow_L_pct": 29.2,
+            "highlight_p99": 161.6,
+            "micro_contrast": 5.16,
+            "edge_energy": 2.15
+          }
+        },
+        "grade_midtone.py": {
+          "R": 188.9,
+          "G": 114.4,
+          "B": 16.6,
+          "RB": 172.3,
+          "sat": 91.3
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G6_pass": false
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G4a_info": "## G4a [MEASURED] no shadow edges detected on floor -> FAIL\n## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)\n   grooves=8901  top-40 mean dip=36.1 L-units\n   -> VISUAL call (compare under-bowl darkening old vs new)\n   G4a penumbra=0px is the objective half; G4b AO = eyeball"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 8.93,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 99.9,
+          "veg_hue": 46.5,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 157.94,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 21.27,
+            "pass": false,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 88.76,
+            "pass": false,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 3.13,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.75,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 160.91,
+            "pass": true,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 28.9,
+            "p50": 45.0,
+            "dark_r": 126.0,
+            "dark_g": 29.0,
+            "dark_b": 0.0,
+            "dark_rb": 126.0
+          },
+          "G5": {
+            "pass": false
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 25.6,
+          "p05": 28.9,
+          "p10": 30.9,
+          "p50": 45.0,
+          "p90": 63.0,
+          "p99": 63.3,
+          "dark_r": 125.8,
+          "dark_g": 28.6,
+          "dark_b": 0.0,
+          "dark_L": 18.5,
+          "dark_RB": 125.8,
+          "mean_R": 155.7,
+          "mean_G": 110.1,
+          "mean_B": 59.8,
+          "mean_RB": 96.0,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 116.0,
+            "lum_p05": 72.6,
+            "lum_p05_pct": 28.5,
+            "lum_p95": 160.9,
+            "warmth_RB": 96.3,
+            "sat_mean": 84.0,
+            "shadow_RB": 125.3,
+            "shadow_L": 73.7,
+            "shadow_L_pct": 28.9,
+            "highlight_p99": 161.6,
+            "micro_contrast": 4.75,
+            "edge_energy": 1.97
+          }
+        },
+        "grade_midtone.py": {
+          "R": 179.2,
+          "G": 112.7,
+          "B": 21.3,
+          "RB": 157.9,
+          "sat": 88.8
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G4a_info": "## G4a [MEASURED] no shadow edges detected on floor -> FAIL\n## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)\n   grooves=7682  top-40 mean dip=39.3 L-units\n   -> VISUAL call (compare under-bowl darkening old vs new)\n   G4a penumbra=0px is the objective half; G4b AO = eyeball"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 11.21,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 99.8,
+          "veg_hue": 51.3,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "s3-clash",
+      "before_file": "_poppy_shotset\\before\\s3-clash-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\s3-clash-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 133.66,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.0,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 100.0,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 1.06,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.69,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 124.19,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 15.2,
+            "p50": 24.7,
+            "dark_r": 110.0,
+            "dark_g": 9.0,
+            "dark_b": 0.0,
+            "dark_rb": 110.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.0,
+          "p05": 15.2,
+          "p10": 16.1,
+          "p50": 24.7,
+          "p90": 36.4,
+          "p99": 51.5,
+          "dark_r": 110.3,
+          "dark_g": 8.9,
+          "dark_b": 0.0,
+          "dark_L": 11.7,
+          "dark_RB": 110.3,
+          "mean_R": 154.6,
+          "mean_G": 51.1,
+          "mean_B": 1.0,
+          "mean_RB": 153.6,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 69.5,
+            "lum_p05": 39.8,
+            "lum_p05_pct": 15.6,
+            "lum_p95": 124.2,
+            "warmth_RB": 153.6,
+            "sat_mean": 99.6,
+            "shadow_RB": 143.3,
+            "shadow_L": 40.0,
+            "shadow_L_pct": 15.7,
+            "highlight_p99": 207.2,
+            "micro_contrast": 4.69,
+            "edge_energy": 1.24
+          }
+        },
+        "grade_midtone.py": {
+          "R": 133.7,
+          "G": 53.9,
+          "B": 0.0,
+          "RB": 133.7,
+          "sat": 100.0
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 2.93,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 83.5,
+          "veg_hue": 50.0,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 129.34,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 0.11,
+            "pass": true,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 99.9,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 0.94,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.52,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 111.43,
+            "pass": false,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 14.5,
+            "p50": 27.1,
+            "dark_r": 65.0,
+            "dark_g": 20.0,
+            "dark_b": 0.0,
+            "dark_rb": 65.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": true
+          }
+        },
+        "grade_g3.py": {
+          "p01": 12.8,
+          "p05": 14.5,
+          "p10": 17.1,
+          "p50": 27.1,
+          "p90": 33.8,
+          "p99": 47.5,
+          "dark_r": 65.4,
+          "dark_g": 19.7,
+          "dark_b": 0.0,
+          "dark_L": 10.98,
+          "dark_RB": 65.4,
+          "mean_R": 139.1,
+          "mean_G": 60.2,
+          "mean_B": 1.1,
+          "mean_RB": 138.1,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 72.8,
+            "lum_p05": 41.0,
+            "lum_p05_pct": 16.1,
+            "lum_p95": 111.4,
+            "warmth_RB": 138.0,
+            "sat_mean": 99.5,
+            "shadow_RB": 132.7,
+            "shadow_L": 43.6,
+            "shadow_L_pct": 17.1,
+            "highlight_p99": 207.2,
+            "micro_contrast": 4.52,
+            "edge_energy": 1.19
+          }
+        },
+        "grade_midtone.py": {
+          "R": 129.4,
+          "G": 63.2,
+          "B": 0.1,
+          "RB": 129.3,
+          "sat": 99.9
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G6_pass": false
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 3.07,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 82.3,
+          "veg_hue": 60.1,
+          "veg_pass": false
+        }
+      }
+    },
+    {
+      "label": "s4-raking",
+      "before_file": "_poppy_shotset\\before\\s4-raking-nohud2.png",
+      "after_file": "_poppy_shotset\\after\\s4-raking-nohud2.png",
+      "before": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 146.47,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 10.63,
+            "pass": false,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 94.09,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 1.85,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.92,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 160.91,
+            "pass": true,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 24.2,
+            "p50": 36.1,
+            "dark_r": 142.0,
+            "dark_g": 25.0,
+            "dark_b": 0.0,
+            "dark_rb": 142.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": false
+          }
+        },
+        "grade_g3.py": {
+          "p01": 21.5,
+          "p05": 24.2,
+          "p10": 27.1,
+          "p50": 36.1,
+          "p90": 62.3,
+          "p99": 63.1,
+          "dark_r": 142.0,
+          "dark_g": 25.4,
+          "dark_b": 0.0,
+          "dark_L": 18.95,
+          "dark_RB": 142.0,
+          "mean_R": 138.0,
+          "mean_G": 100.1,
+          "mean_B": 56.7,
+          "mean_RB": 81.4,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 104.9,
+            "lum_p05": 63.9,
+            "lum_p05_pct": 25.1,
+            "lum_p95": 160.9,
+            "warmth_RB": 81.7,
+            "sat_mean": 86.4,
+            "shadow_RB": 107.5,
+            "shadow_L": 65.6,
+            "shadow_L_pct": 25.7,
+            "highlight_p99": 161.6,
+            "micro_contrast": 4.92,
+            "edge_energy": 2.06
+          }
+        },
+        "grade_midtone.py": {
+          "R": 157.1,
+          "G": 94.5,
+          "B": 10.6,
+          "RB": 146.5,
+          "sat": 94.1
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] no shadow edges detected on floor -> FAIL\n## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)\n   grooves=6846  top-40 mean dip=36.4 L-units\n   -> VISUAL call (compare under-bowl darkening old vs new)\n   G4a penumbra=0px is the objective half; G4b AO = eyeball"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 7.5,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 100.0,
+          "veg_hue": 54.3,
+          "veg_pass": false
+        }
+      },
+      "after": {
+        "grade_axes.py": {
+          "warmth R-B (mid)": {
+            "value": 130.43,
+            "pass": true,
+            "target": ">= 110",
+            "ref": 120.9
+          },
+          "blue B (mid)": {
+            "value": 16.23,
+            "pass": false,
+            "target": "<= 10",
+            "ref": 4.3
+          },
+          "saturation (mid)": {
+            "value": 90.63,
+            "pass": true,
+            "target": ">= 90",
+            "ref": 96.1
+          },
+          "DOF fg:bg ratio": {
+            "value": 1.67,
+            "pass": false,
+            "target": ">= 3",
+            "ref": 3.5
+          },
+          "micro-contrast": {
+            "value": 4.6,
+            "pass": false,
+            "target": ">= 5",
+            "ref": 5.24
+          },
+          "highlight p95": {
+            "value": 160.91,
+            "pass": true,
+            "target": "150..185",
+            "ref": 165.8
+          }
+        },
+        "grade_gate.py": {
+          "G3": {
+            "pass": true,
+            "p05": 24.3,
+            "p50": 36.2,
+            "dark_r": 153.0,
+            "dark_g": 3.0,
+            "dark_b": 0.0,
+            "dark_rb": 153.0
+          },
+          "G5": {
+            "pass": true
+          },
+          "G6": {
+            "pass": false
+          }
+        },
+        "grade_g3.py": {
+          "p01": 17.3,
+          "p05": 24.3,
+          "p10": 26.8,
+          "p50": 36.2,
+          "p90": 62.3,
+          "p99": 63.1,
+          "dark_r": 152.8,
+          "dark_g": 3.0,
+          "dark_b": 0.0,
+          "dark_L": 13.59,
+          "dark_RB": 152.8,
+          "mean_R": 131.5,
+          "mean_G": 100.9,
+          "mean_B": 60.4,
+          "mean_RB": 71.1,
+          "p05_pass": true,
+          "warm_pass": true
+        },
+        "grade_beauty.py": {
+          "ref": {
+            "lum_mean": 70.1,
+            "lum_p95": 165.8,
+            "warmth_RB": 118.5,
+            "sat_mean": 94.4,
+            "shadow_RB": 50.3,
+            "highlight_p99": 227.0,
+            "micro_contrast": 5.24,
+            "edge_energy": 2.87
+          },
+          "cur": {
+            "lum_mean": 104.4,
+            "lum_p05": 63.5,
+            "lum_p05_pct": 24.9,
+            "lum_p95": 160.9,
+            "warmth_RB": 71.4,
+            "sat_mean": 84.1,
+            "shadow_RB": 106.2,
+            "shadow_L": 64.1,
+            "shadow_L_pct": 25.1,
+            "highlight_p99": 161.6,
+            "micro_contrast": 4.6,
+            "edge_energy": 1.92
+          }
+        },
+        "grade_midtone.py": {
+          "R": 146.7,
+          "G": 96.0,
+          "B": 16.2,
+          "RB": 130.4,
+          "sat": 90.6
+        },
+        "grade_hero.py": {
+          "G3_pass": true,
+          "G5_pass": false,
+          "G6_pass": true
+        },
+        "grade_look.py": {
+          "G3_pass": true,
+          "G5_pass": true,
+          "G4a_info": "## G4a [MEASURED] no shadow edges detected on floor -> FAIL\n## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)\n   grooves=5829  top-40 mean dip=37.5 L-units\n   -> VISUAL call (compare under-bowl darkening old vs new)\n   G4a penumbra=0px is the objective half; G4b AO = eyeball"
+        },
+        "measure_penumbra.py": {
+          "mean_px": 6.0,
+          "edges": 14
+        },
+        "grade_g7.py": {
+          "veg_sat": 100.0,
+          "veg_hue": 67.0,
+          "veg_pass": false
+        }
+      }
+    }
+  ]
+}

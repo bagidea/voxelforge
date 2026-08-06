@@ -190,6 +190,32 @@ _*.patch
 # Add to this list only when a TRACKED file requires the path.
 # tests/test_nohud2_guard.py fails if either of these stops being tracked.
 !scripts/_flamingo_dehud2.py
+#
+# The regrade shotset pair (2026-08-07). docs/note-poppy-shotset-harness-2026-08-07.md
+# gives `powershell -File scripts/_poppy_shotset.ps1` as the capture step, and
+# docs/note-poppy-regrade-results-2026-08-07.md names the sheet script as the site of a
+# fix it describes — two tracked docs depending on two files `_[!_]*.py` and `_*.ps1`
+# swallowed. Un-ignored in place rather than renamed: the ps1 is invoked by name from
+# both docs and from REGRADE.cmd on disk, and the `_` prefix pairs it with the
+# `_poppy_shotset/` output dir it writes.
+!scripts/_poppy_shotset.ps1
+!scripts/_poppy_shotset_sheet.py
+
+# ── The regrade shotset's numeric evidence (2026-08-07) ───────────────────
+# `_*/` above ignores the whole `_poppy_shotset/` output dir, and it should: that dir is
+# 110 MB, most of it a copied 80 MB vfprobe.exe plus per-plate PNGs — artifacts, not
+# source. But docs/note-poppy-regrade-results-2026-08-07.md (tracked) reports gate
+# numbers and says "see regrade_table.txt for the full grid", so those three small text
+# artifacts have to be carryable or the note cites nothing.
+# Git cannot re-include a file inside an excluded directory, so the dir is un-ignored and
+# its contents immediately re-ignored — allowlist, not blocklist. Adding a PNG or an exe
+# to that dir still cannot reach the repo. Add a line here only for a file a TRACKED doc
+# reads, and only if it is small and textual.
+!/_poppy_shotset/
+/_poppy_shotset/*
+!/_poppy_shotset/regrade.json
+!/_poppy_shotset/regrade_table.txt
+!/_poppy_shotset/regrade_gates_crosscheck.txt
 
 # ── One-shot artifacts (2026-08-06 Kevin cleanup) ──
 # One-shot rebuild script with a hardcoded local path.

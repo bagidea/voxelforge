@@ -230,12 +230,21 @@ def _parse_midtone(output):
 
 
 def _parse_hero(output):
-    """Parse grade_hero.py output -> {G3, G5, G6 verdicts + detail}."""
+    """Parse grade_hero.py output -> {G3, G5, G6 verdicts + detail}.
+
+    Read the script's own `== SUMMARY ==` block, not the per-gate sections: the
+    detail lines above it also carry PASS/FAIL words (every sampled pixel prints
+    `OK`, the G6 section prints its own verdict mid-block), so a `.*?` reaching
+    from `[G3]` forward lands on whichever verdict came first, not G3's.
+    """
     result = {}
+    tail = output.split("== SUMMARY ==", 1)
+    if len(tail) < 2:
+        return result
     for g in ("G3", "G5", "G6"):
-        m = re.search(rf"\[{g}\].*?({{PASS|FAIL}})", output)
+        m = re.search(rf"^\s*{g}\b[^\n:]*:\s*(PASS|FAIL)", tail[1], re.M)
         if m:
-            result[f"{g}_pass"] = "PASS" in m.group(1)
+            result[f"{g}_pass"] = m.group(1) == "PASS"
     return result
 
 
@@ -339,7 +348,7 @@ def grade_one_frame(path, profile="gameplay", extra_args=None):
             results[script] = {"_error": str(e)}
     # G7 axis C (vegetation) — same frame
     try:
-        rc, out = _run(*G7_SCRIPT[0], "--frame", path)
+        rc, out = _run(G7_SCRIPT[0], "--frame", path)
         parsed = G7_SCRIPT[1](out) if rc in (0, 1) else None
         if parsed:
             results["grade_g7.py"] = parsed
