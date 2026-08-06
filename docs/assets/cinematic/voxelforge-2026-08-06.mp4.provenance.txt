@@ -1,0 +1,81 @@
+voxelforge-2026-08-06.mp4 — provenance
+======================================
+Captured 2026-08-06 07:49:07 +0700 by Poppy.
+
+BINARY
+  _poppy_cine.exe  (frozen copy of target/release/voxelforge.exe)
+  sha256 bb3e1b4168a2fc18db52e92c260aad1787fcdb1ad4bdc03192dc425cd4d76cfe
+  mtime  2026-08-06 07:37:12 +0700 (copy) / 06:31 (build)
+  NOT rebuilt: Flamingo holds the build lock and is rewriting
+  target/release/voxelforge.exe. No cargo command was run for this clip.
+  repo HEAD f3588093ff8a395d4cfc2fed3c9dd8ba7e653702 (branch poppy/native-only)
+
+RUN
+  _poppy_cine.exe --quest-demo        (scripted quest run: walk out of spawn ->
+                                       village -> gate square -> Elder Maren ->
+                                       east to the guard post -> fight Garren
+                                       the Husk -> kill)
+  world: maps/edhari.json (scene.rs PLAY_MAP), loaded from disk at runtime
+  window: 1280x720 client, parked at screen (8,31), topmost + foreground
+  stdout: _poppy_cine/run_20260806-074907.log  (4173 lines)
+
+CAPTURE
+  scripts/_poppy_cine_capture.ps1 -Seconds 28
+  ffmpeg -f gdigrab -framerate 60 -draw_mouse 0 -offset_x 8 -offset_y 31
+         -video_size 1280x720 -i desktop -c:v libx264 -crf 12 -pix_fmt yuv444p
+  raw: _poppy_cine/raw_20260806-074907.mkv — 1624 frames @ 60fps (27.07s)
+  Game started FIRST; ffmpeg started only after the window was sized, so no
+  desktop-only frame exists in the raw take.
+
+CUT + DE-HUD  (scripts/_poppy_cine_render.py)
+  crop      y 52..554 of 720  -> 1280x502 (2.55:1)
+            derived from the layout constants, not by eye:
+              main.rs HudText top 8 f16 (2 lines, ends y~46)
+              hud.rs quest banner top 16 (ends y~44)
+              quest.rs ObjectiveTracker top 16 right 16
+              quest.rs prompts bottom 60/100/140 (highest glyph top y~560)
+              hud.rs HP/ST bars bottom 28/46 left 28
+  inpaint   the two widgets the crop cannot reach because they are centred by
+            construction: main.rs's "+" crosshair (x 633..648, y 352..368) and
+            hud.rs's 40x40 lock reticle (never drawn in this take; the detector
+            fired on 2 of 1286 frames against amber scenery, harmless).
+            cv2.INPAINT_TELEA, radius 4.
+  cut       raw frames [8,682) + [761,1381), 8-frame dissolve at the seam.
+            The removed 79 frames are the ones where dialogue_ui.rs's opaque
+            70%-width plaque is on screen (top edge reaches y=488 — inside any
+            watchable frame). Found by scripts/_poppy_cine_probe.py.
+  fades     24 frames in, 40 frames out.
+  NOTHING else: no re-render, no relight, no colour grade. The look in the clip
+  is look.rs's, straight out of the exe.
+
+OUTPUT
+  docs/assets/cinematic/voxelforge-2026-08-06.mp4
+  sha256 1f017a2c37251e7f3d7d95fdf3395979bac73fad8a047ef335725b99445d21f6
+  h264 / yuv420p, 1280x502, 1286 frames, 60/60 fps (r_frame_rate = avg = 60/1),
+  21.433s, 8,636,198 bytes
+
+PASS LINES — emitted by the game, not by the driver
+  grep -c PASS on all three driver scripts: 0 / 0 / 0.
+  The 15 "=> PASS" lines below are the exe's own stdout (the format strings are
+  in the binary: `grep -a -c "QUEST_STAGE_COMPLETE qid=" _poppy_cine.exe` = 6).
+
+    SPAWN_GROUND col=(32,32) top=0 feet=1 => PASS
+    QUEST_STAGE_COMPLETE qid=q1_embers oid=o1_campfire => PASS (approach dist=3.5)
+    QUEST_COMPLETE id=q1_embers => PASS
+    QUEST_ACCEPT id=q2_voice_in_stone => PASS
+    QUEST_NEXT_OPEN next=q2_voice_in_stone => PASS
+    QUEST_STAGE_COMPLETE qid=q2_voice_in_stone oid=o1_gate => PASS (reach_zone)
+    QUEST_STAGE_COMPLETE qid=q2_voice_in_stone oid=o2_listen => PASS
+    QUEST_COMPLETE id=q2_voice_in_stone => PASS
+    QUEST_ACCEPT id=q3_gatekeeper => PASS
+    QUEST_NEXT_OPEN next=q3_gatekeeper => PASS
+    QUEST_NEXT_OPEN next=q4_what_walls_remember => PASS
+    QUEST_STAGE_COMPLETE qid=q3_gatekeeper oid=o1_east => PASS (reach_zone)
+    QUEST_STAGE_COMPLETE qid=q3_gatekeeper oid=o2_observe => PASS (approach dist=3.8)
+    QUEST_STAGE_COMPLETE qid=q3_gatekeeper oid=o3_defeat => PASS (defeat)
+    QUEST_COMPLETE id=q3_gatekeeper => PASS
+
+  Not claimed: q4_what_walls_remember. The demo opens it and then wedges
+  ("QUEST_DEBUG_P4 waiting for q4 activation (status=Available)" to the end of
+  the log) — that is the known open bug, and the run was stopped by the capture
+  script, not by AppExit. The clip ends on the q3 kill, before that point.
