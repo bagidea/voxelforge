@@ -49,7 +49,8 @@ use bevy::light::{
     VolumetricLight,
 };
 use bevy::pbr::{
-    DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
+    ContactShadows, DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion,
+    ScreenSpaceAmbientOcclusionQualityLevel,
 };
 use bevy::post_process::bloom::{Bloom, BloomPrefilter};
 use bevy::post_process::dof::DepthOfField;
@@ -343,6 +344,48 @@ pub const FOG_SUN_EXPONENT: f32 = 30.0;
 /// not start shading whole faces.
 pub const AO_THICKNESS: f32 = 1.45;
 
+/// Length of the screen-space contact-shadow ray, in world units (= blocks).
+///
+/// WHY A SECOND OCCLUSION LAYER AT ALL, WHEN SSAO IS ALREADY ON AT EVERY TIER.
+/// Because SSAO could not do this job here, and that is measured, not argued.
+/// Bevy's SSAO darkens the DIFFUSE INDIRECT term only — i.e. it can remove at
+/// most the [`Hour::ambient_lux`] contribution and nothing of the key. On the
+/// 2026-08-08 plates that ceiling is small: an A/B off the SAME binary
+/// (`VOXELFORGE_LOOK_SSAO=off` against the shipped stack, s4 framing) moved the
+/// frame by a mean of **0.65 L**, with only **2.24 %** of pixels darkened by more
+/// than 4 L and **0.084 %** by more than 12. The layer was reaching the frame —
+/// it simply had almost nothing it was allowed to take away, which is exactly the
+/// "blocks hover off the ground" the CEO called. Raising `AO_THICKNESS` cannot
+/// fix that; the cap is the fill's share of the light, not the crease depth.
+///
+/// `ContactShadows` is a different mechanism with a different budget: it
+/// ray-marches the depth buffer toward the light and attenuates the DIRECT term,
+/// so at the foot of a block — where the key is most of the light — it has the
+/// whole key to bite into. It is what puts the dark seam back under an object
+/// that a 4 K cascade covering 320 blocks is far too coarse to resolve.
+///
+/// 0.75 BLOCKS, NOT BEVY'S 0.3 DEFAULT. The default is authored for
+/// metre-scale character scenes; here one world unit is one block, so 0.3 is a
+/// third of a block and the seam it draws is thinner than the voxel it is
+/// supposed to be grounding. 0.75 keeps the groove inside a single block (so it
+/// reads as contact, not as a second cast shadow) while being wide enough to
+/// survive the 1600-px plate downsample. Sweep with `VOXELFORGE_LOOK_CONTACT`
+/// before moving it.
+pub const CONTACT_SHADOW_LENGTH: f32 = 0.75;
+
+/// Assumed depth-buffer fragment thickness for the contact-shadow ray-march, in
+/// world units. The depth buffer is 2.5 D, so the march has to guess how solid
+/// what it hits is; too thin and the ray tunnels through block faces seen at a
+/// grazing angle (and a 22-degree key is ALL grazing angles), too thick and every
+/// silhouette in front of open ground casts a halo onto it. 0.2 is a fifth of a
+/// block — under the smallest feature the greedy mesher emits.
+pub const CONTACT_SHADOW_THICKNESS: f32 = 0.2;
+
+/// Ray-march steps for the contact shadow. Bevy's default; kept because the
+/// march is over 0.75 of a block, so 16 steps is ~0.05 blocks per step and the
+/// cost is a short loop in the PBR shader rather than another full-screen pass.
+pub const CONTACT_SHADOW_STEPS: u32 = 16;
+
 /// PCSS penumbra width for the sun, where the tier turns it on.
 ///
 /// 3.0 → 4.0 (2026-08-06). `measure_penumbra.py` read a 4 px median edge on
@@ -552,9 +595,62 @@ pub struct Hour {
 impl Hour {
     /// The shipped default: late-afternoon raking sun under a vivid sky.
     pub const GOLDEN: Self = Self {
-        elev_deg: 17.0,
+        // 17 -> 22 deg and 11_000 -> 22_000 lux, 2026-08-08. ONE decision, two
+        // numbers, because they are two terms of the same product.
+        //
+        // THE FAULT. Every one of the 8 canonical plates rendered with a key
+        // light that cast a real shadow map and a frame in which no shadow was
+        // visible. It was not a broken shadow pass — `VOXELFORGE_LOOK_DISABLE=1`
+        // on the SAME binary (main.rs's own 57-deg key over its 380-lux fill)
+        // shoots crisp cast shadows on the same meshes. It was the RATIO. Ground
+        // is horizontal, so it receives `illuminance * sin(elev)`, and open shade
+        // receives [`Self::ambient_lux`], which no shadow map can attenuate
+        // because `AmbientLight` is a flat term. At 17 deg / 11 000 lux that is
+        // 11000*0.292 = 3212 against a 2200-lux fill: a sunlit-to-shadowed ratio
+        // of **2.46**, half a stop and change. A shadow was being drawn and there
+        // was almost nothing for it to subtract.
+        //
+        // WHY NOT CUT THE FILL, WHICH IS THE SHORTER LEVER. Measured: it works
+        // and it is unshippable. `VOXELFORGE_LOOK_AMBIENT=200` on the shipped sun
+        // opens the split outright (grass dip 0.000 -> 0.752). But the fill IS
+        // G3's floor — the note on `ambient_lux` below records p05-L 2.2-3.8 %
+        // at 1100 lux against an 8 % gate — so buying G2 that way spends G3.
+        //
+        // SO THE OTHER SIDE OF THE SAME RATIO WAS MOVED, AND THAT IS THE WHOLE
+        // TRICK: shadowed ground is lit by ambient ALONE, so raising the key does
+        // not move it at all. Measured across the illuminance ladder
+        // (`scripts/_pixel_light_ladder.ps1`, s4 framing, one binary, only
+        // `VOXELFORGE_LOOK_SUN` moving), the shade mode sat at L = 33.9 / 34.3 /
+        // 34.7 / 34.4 / 34.7 across 20 k -> 45 k while the sun mode climbed
+        // 52.2 -> 64.4. G3's floor is untouched by construction.
+        //
+        // BOUNDED ABOVE, AND THE BOUND IS MEASURED. Past ~24 k the sunlit ground
+        // climbs THROUGH the sky plateau (L = 160.9, which `sky_gain`'s note
+        // already pins as byte-constant), and `grade_axes`' midtone band [p35,p75]
+        // starts sampling sky instead of ground: sky share of that band goes
+        // 4.9 % (shipped) -> 11.5 % (this) -> 43.0 % (30 k) -> 59.6 % (45 k), and
+        // warmth R-B "collapses" 135.9 -> 44.6 -> -20.0 as it does. That collapse
+        // is the band migrating, not the ground going cold — but a frame whose
+        // ground is as bright as its sky is wrong on its own terms, so 24 k is a
+        // ceiling either way and 22 k sits under it.
+        //
+        // AND WHY THE ANGLE MOVED TOO, RATHER THAN ILLUMINANCE ALONE. Holding
+        // 17 deg and buying the same ground irradiance from lux only needs 26 k,
+        // which is over that ceiling: 17/26k measured warmth **101.8** on the
+        // vista framing (FAIL) against **138.0** for 22/22k (PASS), because
+        // elevation raises what the GROUND receives without raising the peak on
+        // sunlit vertical faces. 22 deg is still a raking key — long shadows, the
+        // thing the hour is named for — and every colour constant in this struct
+        // is untouched.
+        //
+        // MEASURED RESULT, `scripts/grade_sunsplit.py`, s4 framing:
+        // grass separation 5.8 -> 19.8 L, dip 0.048 -> 0.347 (bar 0.20, repeat
+        // spread +-0.02), one hump -> two. Collateral on the same frame: warmth
+        // 135.9 -> 133.5 (PASS both), p95 160.9 -> 161.6 (in the 150-185 band),
+        // micro-contrast 6.2 -> 9.4, G3/G5/G6 all PASS.
+        elev_deg: 22.0,
         azim_deg: 205.0,
-        illuminance: 11_000.0,
+        illuminance: 22_000.0,
         // G LIFTED, B HELD — 2026-08-05. `docs/gate3-colour-review-2026-08-01.md`
         // §5.4 rule 1 is the safety envelope that keeps a warm frame out of
         // magenta: `G − B >= 0.30` AND `G >= 0.85 × R`, on BOTH key and ambient.
@@ -848,6 +944,7 @@ type LookStack = (
     Bloom,
     DepthOfField,
     ScreenSpaceAmbientOcclusion,
+    ContactShadows,
     VolumetricFog,
     DistanceFog,
 );
@@ -1174,6 +1271,37 @@ fn ssao(tier_quality: ScreenSpaceAmbientOcclusionQualityLevel) -> Option<ScreenS
     })
 }
 
+/// The contact-shadow layer, or `None` when it is switched off.
+///
+/// `VOXELFORGE_LOOK_CONTACT=off` lifts the layer out so the before/after comes
+/// out of ONE binary — the same A/B discipline `VOXELFORGE_LOOK_SSAO=off` exists
+/// for, and the reason the SSAO ceiling in [`CONTACT_SHADOW_LENGTH`] could be
+/// quoted as a measurement instead of a guess.
+/// `VOXELFORGE_LOOK_CONTACT=<length>,<thickness>,<steps>` sweeps all three.
+/// Unset ⇒ the constants, byte-for-byte, which is what every gate run gets.
+fn contact_shadows() -> Option<ContactShadows> {
+    let raw = std::env::var("VOXELFORGE_LOOK_CONTACT").unwrap_or_default();
+    if raw.trim().eq_ignore_ascii_case("off") {
+        return None;
+    }
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    let (length, thickness, steps) = match v[..] {
+        [l, t, s] => (l, t, s.max(1.0) as u32),
+        // Malformed input falls back to the constants rather than panicking
+        // mid-frame: this is a sweep hook, not a config file.
+        _ => (
+            CONTACT_SHADOW_LENGTH,
+            CONTACT_SHADOW_THICKNESS,
+            CONTACT_SHADOW_STEPS,
+        ),
+    };
+    Some(ContactShadows {
+        linear_steps: steps,
+        thickness,
+        length,
+    })
+}
+
 /// PCSS penumbra width for the sun, or `None` for a fixed-width filter.
 ///
 /// `VOXELFORGE_LOOK_PCSS=off|<width>`; unset ⇒ the tier's own call.
@@ -1218,6 +1346,16 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
         LookQuality::Ultra => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
     }) {
         e.insert(ao);
+    }
+    // The second contact layer, and present at EVERY tier for the same reason
+    // SSAO is: it is the thing that stops a block hovering, which
+    // look-tier-spec.md §1 ranks "cut = dies". It is also close to free HERE
+    // specifically — it needs a depth prepass, and SSAO above has already put one
+    // on this camera at every tier, so the added cost is a 16-step loop in the
+    // PBR shader and not another pass. It does not tier: unlike SSAO's sample
+    // count there is no cheaper version of it that still grounds an object.
+    if let Some(cs) = contact_shadows() {
+        e.insert(cs);
     }
     match quality {
         LookQuality::Low => {
@@ -1356,9 +1494,11 @@ fn apply_look_to_cameras(
 
 /// Point, colour and tier the sun.
 ///
-/// This mutates the existing `DirectionalLight` rather than inserting a new one:
-/// `shadow_maps_enabled` stays as `main.rs` set it and the light entity keeps
-/// whatever else its owner hung on it.
+/// This mutates the existing `DirectionalLight` rather than inserting a new one,
+/// so the light entity keeps whatever else its owner hung on it. The two shadow
+/// SWITCHES (`shadow_maps_enabled`, `contact_shadows_enabled`) are this lane's
+/// though, and are set here rather than inherited — see the note at the
+/// assignment for why borrowing them from `main.rs` was a hole.
 ///
 /// Angle and illuminance ARE this lane's call (they used to be `main.rs`'s: a
 /// white 9000-lux key 59° up). "Raking golden-hour sun" is the brief itself, not
@@ -1388,6 +1528,23 @@ fn apply_look_to_sun(
         tf.translation = -dir * 200.0;
         tf.look_to(dir, Vec3::Y);
         dl.illuminance = h.illuminance;
+        // THE LOOK LANE OWNS ITS OWN KEY'S SHADOW MAP — 2026-08-08. This used to
+        // be left as whoever spawned the light set it, on the reasoning recorded
+        // in this function's doc comment ("`shadow_maps_enabled` stays as main.rs
+        // set it"). That is fine while main.rs is the only spawner and it happens
+        // to say `true`, and it is a silent hole the moment it isn't: the look is
+        // reachable over a `--map-load` world through `VOXELFORGE_LOOK_FORCE`, and
+        // "the key light of the golden hour casts shadows" is not a property this
+        // lane can borrow from another file and still claim to have set. Nothing
+        // else on the light is taken over — the entity keeps everything its owner
+        // hung on it, exactly as before.
+        dl.shadow_maps_enabled = true;
+        // The direct-light half of contact occlusion; the camera carries the
+        // settings (see [`contact_shadows`]) and the light carries the opt-in, so
+        // both have to agree before a single ray is marched. Kept in step with the
+        // camera's own layer so `VOXELFORGE_LOOK_CONTACT=off` really is off rather
+        // than half-off.
+        dl.contact_shadows_enabled = contact_shadows().is_some();
         // PCSS penumbra is on only at Ultra: High cuts it first (spec §1 ranks it
         // the cheapest thing to drop, before the volumetric ray-march it now keeps).
         // High and Ultra opt the light into the volumetric pass; Medium/Low don't.
