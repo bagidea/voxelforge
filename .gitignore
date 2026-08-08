@@ -210,6 +210,19 @@ _*.patch
 !scripts/_grade_*.py
 !scripts/_flamingo_ev_ladder.ps1
 
+# ── Lane shoot/grade/capture tooling under `_` names (Director 2026-08-08) ──
+# The `_[!_]*.py` / `_*.sh` / `_*.ps1` blanket rules above were right for OUTPUT
+# scratch, but they also swallowed the TOOLING each lane wrote under a `_` prefix
+# (shoot/grade/capture/probe/sheet/chain/sweep scripts). That is source, not
+# scratch: the repo header lists `scripts` as kept source, and a disk failure
+# takes every one of them with no recovery. Un-ignored in place, scoped to
+# scripts/ and to code extensions only — root `_*.py` scratch and every `_*/`
+# output dir (PNG/log/json/exe artifacts) stay ignored by the rules above, so
+# nothing bulky reaches the repo through these three lines.
+!scripts/_*.py
+!scripts/_*.sh
+!scripts/_*.ps1
+
 # ── The regrade shotset's numeric evidence (2026-08-07) ───────────────────
 # `_*/` above ignores the whole `_poppy_shotset/` output dir, and it should: that dir is
 # 110 MB, most of it a copied 80 MB vfprobe.exe plus per-plate PNGs — artifacts, not
