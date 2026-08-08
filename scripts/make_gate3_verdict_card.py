@@ -110,10 +110,25 @@ def colour_gates_pass(m):
 
 
 def axes_pass(ax):
-    """The gameplay profile of grade_axes.TARGETS — its table, not a copy of it."""
+    """The gameplay profile of grade_axes.TARGETS — its table, not a copy of it.
+
+    sat is graded on the HONEST value via grade_axes.sat_status (N-A once the
+    clip co-gate fires); a None (N-A) verdict does not FAIL the frame here --
+    the clip axis carries that FAIL, never sat. (Pre-2026-08-09 this read
+    ax["sat"] legacy with a bare >=90 and graded B-clipped wrecks as PASS.)"""
     active = grade_axes.PROFILES["gameplay"]
-    return all(grade_axes.verdict(cmp_, bound, ax[key])
-               for key, _, cmp_, bound, _ in grade_axes.TARGETS if key in active)
+    ok = True
+    for key, _, cmp_, bound, _ in grade_axes.TARGETS:
+        if key not in active:
+            continue
+        if key == "sat":
+            sat_ok, _ = grade_axes.sat_status(ax)
+            if sat_ok is False:
+                ok = False
+            continue
+        if not grade_axes.verdict(cmp_, bound, ax[key]):
+            ok = False
+    return ok
 
 
 def stamp(path):
@@ -241,9 +256,11 @@ def main():
 
     b, w_, c = frames["boot"], frames["walk"], frames["combat"]
     ab, aw, ac = axes["boot"], axes["walk"], axes["combat"]
+    _sc = lambda a: grade_axes.sat_status(a)[1]   # honest sat text, or 'N-A' if clip co-gate fired
     row(471, "P0 axes (chromatic only)",
-        f"blue B: {ab['blue']:.1f} / {aw['blue']:.1f} / {ac['blue']:.1f}  vs target <=10"
-        f"      saturation: {ab['sat']:.0f} / {aw['sat']:.0f} / {ac['sat']:.0f}  vs target >=90",
+        f"blue B: {ab['blue']:.1f} / {aw['blue']:.1f} / {ac['blue']:.1f}  <=10"
+        f"      sat(honest): {_sc(ab)} / {_sc(aw)} / {_sc(ac)}  >=90"
+        f"      clip: {ab['clip']:.0f}% / {aw['clip']:.0f}% / {ac['clip']:.0f}%  <=35",
         GRN if axes_ok else RED)
     warm_ok = min(fpct(m, "warm_frac_lit") for m in frames.values()) >= 80.0
     row(492, "Warm-ordered px (R>G>B, of lit)",

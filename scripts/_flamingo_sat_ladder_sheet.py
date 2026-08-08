@@ -61,7 +61,8 @@ def main():
     sheet = Image.new("RGB", (W, H), (22, 22, 26))
     d = ImageDraw.Draw(sheet)
     d.text((PAD, 14), "Voxelforge — POST_SATURATION ladder, --play boot frame, one binary "
-                      "(2026-08-05, Flamingo).  Axis targets: warmth >=110 · blue <=10 · sat >=90",
+                      "(2026-08-05, Flamingo).  Axis targets: warmth >=110 · blue <=10 · "
+                      "clip <=35% · sat >=90 (honest; N-A if clip > 35%)",
            font=font(19, True), fill=(235, 235, 240))
 
     for i, (im, cap, m) in enumerate(tiles):
@@ -74,11 +75,16 @@ def main():
         for line in cap.split("\n"):
             d.text((x + 4, ty), line, font=font(17, True), fill=(240, 240, 245))
             ty += 21
-        ok = (m["warmth"] >= 110, m["blue"] <= 10, m["sat"] >= 90)
+        sat_ok, sat_txt = grade_axes.sat_status(m)   # honest sat, or N-A if clip co-gate fired
+        clip_ok = m["clip"] <= grade_axes.CLIP_THRESH
+        # sat N-A (None) does NOT fail the row -- the clip axis carries that FAIL.
+        ok = (m["warmth"] >= 110, m["blue"] <= 10, clip_ok, False if sat_ok is False else True)
+        sat_tag = "N-A" if sat_ok is None else ("PASS" if sat_ok else "FAIL")
         d.text((x + 4, ty + 2),
                f"warmth {m['warmth']:6.1f} {'PASS' if ok[0] else 'FAIL'}   "
                f"blue {m['blue']:5.1f} {'PASS' if ok[1] else 'FAIL'}   "
-               f"sat {m['sat']:5.1f} {'PASS' if ok[2] else 'FAIL'}",
+               f"clip {m['clip']:5.1f}% {'PASS' if ok[2] else 'FAIL'}   "
+               f"sat {sat_txt:>5} {sat_tag}",
                font=font(16), fill=(120, 230, 140) if all(ok) else (235, 175, 110))
 
     out = "docs/assets/look-2026-08-05/sat-ladder.png"

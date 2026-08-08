@@ -17,7 +17,7 @@ from PIL import Image  # noqa: E402
 
 HDR = (
     f"{'frame':<18} {'mag%':>6} {'sky R,G,B':>19} {'order':>9} "
-    f"{'sunlit R,G,B':>19} {'order':>9} {'warm':>7} {'blue':>6} {'sat':>6}"
+    f"{'sunlit R,G,B':>19} {'order':>9} {'warm':>7} {'blue':>6} {'clip%':>6} {'sat':>6}"
 )
 
 
@@ -41,14 +41,15 @@ def main():
             return "  n/a  " if v is None else f"{v[0]:5.1f},{v[1]:5.1f},{v[2]:5.1f}"
 
         name = os.path.basename(path)[:-4]
+        sat_txt = grade_axes.sat_status(ax)[1]   # honest sat, or N-A if clip co-gate fired
         print(
             f"{name:<18} {mag:6.2f} {trip(sky):>19} "
             f"{(colour_gate.order(sky) if sky is not None else '-'):>9} "
             f"{trip(sun):>19} {(colour_gate.order(sun) if sun is not None else '-'):>9} "
-            f"{ax['warmth']:7.1f} {ax['blue']:6.1f} {ax['sat']:6.1f}"
+            f"{ax['warmth']:7.1f} {ax['blue']:6.1f} {ax['clip']:6.1f} {sat_txt:>6}"
         )
     print("\ntargets:  mag <= 2.00 | sky B > G > R | sunlit R > G > B | "
-          "warm >= 110 | blue <= 10 | sat >= 90")
+          "warm >= 110 | blue <= 10 | clip <= 35% | sat >= 90 (honest; N-A if clip > 35%)")
 
 
 if __name__ == "__main__":

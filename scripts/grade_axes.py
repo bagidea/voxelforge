@@ -98,6 +98,31 @@ def fmt_target(cmp, bound):
     if cmp == "le":   return f"<= {bound:g}"
     if cmp == "band": return f"{bound[0]:g}..{bound[1]:g}"
 
+def sat_status(m):
+    """Honest-saturation verdict for a measured frame, with the clip co-gate.
+
+    Downstream callers (make_gate3_verdict_card, _flamingo_sat_ladder_sheet,
+    _poppy_sweep_report) used to read m["sat"] -- the LEGACY clip-signature
+    value -- with a hard >=90 and graded a wrecked B-clipped frame as
+    "100% saturated = PASS". This is the honest replacement. It mirrors the
+    sat branch of main() exactly: judge m["sat_honest"] against the sat target
+    pulled from TARGETS, but auto-report N-A once m["clip"] > CLIP_THRESH -- over
+    a mostly-railed band the rail-excluded mean runs on too few survivors to mean
+    anything, and the frame is already carried FAIL by the clip axis. Keeping
+    this as the one shared function means the three callers cannot drift from
+    the gate's own N-A rule.
+
+    Returns (ok, text):
+      ok   = True/False when judged, or None when N-A (callers must NOT FAIL on
+             sat when ok is None -- the clip axis carries that FAIL, not sat).
+      text = '95.2' (judged) or 'N-A' (co-gate fired), for display.
+    """
+    _, _, cmp, bound, _ = next(t for t in TARGETS if t[0] == "sat")  # target from the table
+    if m["clip"] > CLIP_THRESH:
+        return None, "N-A"
+    v = m["sat_honest"]
+    return verdict(cmp, bound, v), f"{v:.1f}"
+
 def measure(path):
     # HARD GUARD, AT THE MEASUREMENT — not only in main(). This module is
     # imported: `make_gate3_verdict_card.py` called measure() directly and put
