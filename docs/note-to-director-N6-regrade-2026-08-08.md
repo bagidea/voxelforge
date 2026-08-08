@@ -144,31 +144,99 @@ plate whose pixels moved 95.85 % between two runs of *identical code*, and its o
 overlap swung 58.2 % → 21.1 % across those two runs. A number that moves 37 points at
 fixed code is measuring the animation phase, not the light.
 
-## Wall shadow edge, gate3-boot
+## Wall shadow edge, gate3-boot — RETRACTED AND REDONE
 
-There **is** a genuine cast shadow in this frame — a sunbeam band across the upper-left
-terracotta wall, bounded by two parallel ~40°-off-axis edges. I could not recover the
-exact `--at` coordinates behind the 13:53 "median 3.49 px" line (they were never written
-to disk), so I re-derived 14 sites, locking them on the **N5** plate by snapping to the
-local gradient ridge, then measured the identical pixel coordinates on all three columns.
+**The first version of this section was wrong and it is withdrawn.** It read:
+
+> 13 of 14 sites have no gradeable ramp at all in the `before` plate — the edge those
+> sites sit on did not exist before the relight. […] it did not soften an edge, it
+> created one.
+
+Two defects, both mine, both the ones I have written up as other people's before:
+
+1. **The sites were locked on N5 and read off `before`.** A site is kept only if it is
+   gradeable on the lock plate, so the lock plate scores 14/14 by construction. And
+   `8303db5` moves `Hour::GOLDEN` `elev_deg 17 -> 22`, which *slides the cast shadow
+   across its receiver* — so "no ramp at (x,y) in before" cannot be told apart from "the
+   ramp is at (x+d,y) in before". This is also backwards from the standard I set in
+   `40cf97e` ("sites whose x was LOCKED on the PCSS-off reference first").
+2. **The 14 coordinates were never written to disk** — the same defect I complained about
+   one round earlier when I could not recover the 13:53 `--at` list. Nothing in that
+   table was re-checkable.
+
+Both are fixed in `scripts/shadow_edge_sites.py`, which locks on **every** plate in turn
+and prints the whole square, tracks a site's edge along its own normal out to ±24 px
+before calling it absent, and dumps its site list to JSON on every run. Derivation is a
+pure function of `(plate, roi, orient, n)` — no seed, no clicking; re-running gives a
+byte-identical table (checked).
+
+```
+python scripts/shadow_edge_sites.py --roi 0,0,470,300 --n 14 --orient 30,46 --track 24 \
+  --out docs/assets/shadow-sites-gate3-boot.json \
+  before=_pixel_shotset_N6/before/gate3-boot-nohud2.png \
+  N5=_pixel_shotset_N5/after/gate3-boot-nohud2.png \
+  N6=_pixel_shotset_N6/after/gate3-boot-nohud2.png
+```
+
+Console + the 3×14 coordinates: `docs/assets/shadow-sites-gate3-boot.{txt,json}`.
+The `--at` lists, in the note so they survive the directory:
+
+| locked on | `--at` |
+|---|---|
+| before | `124,6;4,16;141,18;262,31;276,42;292,54;300,61;107,66;236,81;251,89;350,97;356,109;220,126;239,136` |
+| N5 | `109,7;123,18;144,34;148,38;258,66;199,78;279,85;211,88;233,106;10,112;255,122;68,141;109,162;250,231` |
+| N6 | `104,3;116,12;166,22;180,63;267,74;279,85;297,102;299,105;303,109;244,114;80,148;153,184;175,194;229,240` |
+
+### The square — sites yielding a ramp / pooled median / ratio to that plate's own control
+
+| lock ↓ measured → | before | N5 | N6 |
+|---|---|---|---|
+| **before** | 14/14 · 2.56 px · **1.44×** | 1/14 · 1.32 px · 0.72× | 1/14 · 1.31 px · 0.72× |
+| **N5** | 1/14 · 10.06 px · 5.68× | 14/14 · 3.43 px · **1.89×** | 14/14 · 3.42 px · 1.88× |
+| **N6** | 0/14 — but the edge is **6 px away** on 5/14 normals | 13/14 · 2.30 px · 1.26× | 14/14 · 2.35 px · **1.29×** |
+
+The diagonal is the only comparable set of cells; every off-diagonal cell is the lock
+plate beating the others by construction. Lock on `before` and it is **N5** that comes
+back 1/14 — the exact mirror of the sentence I retracted. The `--track` row makes the
+mechanism explicit: on the `before` plate the N6-locked sites do not sit on nothing, they
+sit 6 px off an edge that is still there.
+
+### The number that does not need registration
+
+Every gradeable edge in the ROI in the 30–46° band — no site picking at all, so the edge
+is free to move:
 
 | | before | N5 | N6 |
 |---|---|---|---|
-| sites yielding a gradeable ramp | **1 / 14** | 14 / 14 | 14 / 14 |
-| pooled median at those sites | 17.32 px (n=1) | **2.62 px** | **2.63 px** |
-| CONTROL sky silhouette median | 1.77 px | 1.82 px | 1.82 px |
-| ratio | — | **1.44×** | **1.45×** |
-| sites scoring SOFT (≥1.5× control) | — | 6 / 14 | 6 / 14 |
+| edges found | 170 | 412 | 421 |
+| median width | **3.20 px** | 2.78 px | 2.78 px |
+| p25 / p75 | 2.02 / 7.08 | 2.01 / 3.69 | 2.04 / 3.79 |
+| same-orientation control | 1.81 px | 1.81 px | 1.79 px |
+| ratio | **1.77×** | **1.54×** | **1.56×** |
 
-Per-site N5 → N6: 2.28→2.29, 2.96→2.97, 3.52→3.49, 3.94→3.90, 3.39→3.39, 4.82→5.29,
-1.88→1.86, 9.58→9.62, 8.59→8.68, 1.58→1.56, 1.52→1.50, 1.71→1.79, 1.52→1.66, 1.71→1.72.
-No movement outside repeat-shot noise.
+Frame-wide, `cast_shadow_penumbra.py` with no ROI at all says the same thing:
+before `n=112 median=2.69px`, N5 `n=138 median=2.21px`, N6 `n=141 median=2.14px`.
 
-**13 of 14 sites have no gradeable ramp at all in the `before` plate** — the edge those
-sites sit on did not exist before the relight. That is the cleanest single statement of
-what the ratio fix bought: it did not soften an edge, it created one.
+**So the corrected finding is the opposite of the retracted one.** The relight did not
+create the edge and did not soften it — relative to its own control the ROI's edges came
+out *slightly narrower* (1.77× → 1.54×), and `before`'s long tail (p75 7.08 px) is wide
+low-contrast ramps that the higher key resolved into cleaner steps. What the relight
+actually bought here is **contrast, not softness**: 170 → 412 edges clear `MIN_STEP=10 L`
+and become measurable at all, which is the same thing `grass_bimodality` (0/8 → 4/8),
+`grade_sunsplit` (1/5 → 5/7) and G6 (5/8 → 7/8) are reporting in their own units. That
+part of the round stands unchanged; only the penumbra sentence was wrong.
 
-![before / N5 / N6, gate3-boot upper-left wall](assets/shadow-before-N5-N6-gate3-boot.png)
+Consistent with `40cf97e`: at `PCSS_WIDTH = 4.0` the penumbra term is inside the capture
+noise floor, so a relight that did not touch it should not move edge width — and it did
+not.
+
+Each lock's sites drawn on all three plates (teal = locked on before, orange = N5,
+purple = N6) — three parallel dotted lines, not one line and two absences:
+
+![symmetric site sets, gate3-boot upper-left wall](assets/shadow-sites-symmetric-gate3-boot.png)
+
+The superseded single-lock sheet is kept for the record:
+`assets/shadow-before-N5-N6-gate3-boot.png`.
 
 ## What N6 does NOT contain
 
@@ -180,9 +248,14 @@ round was to move the edge width, that shot still has to be taken.
 
 ## What is not measurable from here
 
-- Whether the sunbeam edge is soft *because of* PCSS or because of AA/TAA: at 1.44×
-  control with 8/14 sites sitting at the AA floor, the tool cannot separate them, and
-  it says so rather than averaging them into a "soft" verdict.
+- Whether the sunbeam edge is soft *because of* PCSS or because of AA/TAA: the ROI
+  population sits at 1.5–1.8× control in every column including `before`, i.e. the
+  softness that is there was there before the relight too. With `PCSS_WIDTH = 4.0` shot
+  in all three columns, nothing here can attribute it, and the tool says so rather than
+  averaging it into a "soft" verdict.
+- Whether any of this changes at `PCSS_WIDTH = 16.0`: unshot (see below). The ROI
+  population is the row to re-run first when that binary exists — it needs no site list
+  and no registration, so it survives the shadow moving again.
 - The albedo question on gate3-combat / hero / s3-clash / s4-raking: their grass is one
   hump, so there is no shade population to test the overlap of. Not a pass, not a fail.
 - s4-raking is pinned to `VOXELFORGE_LOOK_SUN=6,140,9000` by `_poppy_shotset.ps1`, so it

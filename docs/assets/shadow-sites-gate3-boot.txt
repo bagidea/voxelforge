@@ -1,0 +1,25 @@
+ROI (0, 0, 470, 300)  n=14  orient 30-46deg off-axis  track +/-24px
+   before   control sky silhouette median  1.77px (n=128)
+   N5       control sky silhouette median  1.82px (n=109)
+   N6       control sky silhouette median  1.82px (n=108)
+
+POPULATION -- every gradeable edge in the ROI, no site picking:
+   before   n= 170 median= 3.20px p25= 2.02 p75= 7.08  vs same-orientation control  1.81px = 1.77x
+   N5       n= 412 median= 2.78px p25= 2.01 p75= 3.69  vs same-orientation control  1.81px = 1.54x
+   N6       n= 421 median= 2.78px p25= 2.04 p75= 3.79  vs same-orientation control  1.79px = 1.56x
+
+   lock \ measured |               before               |                 N5                 |                 N6                
+  locked on before |    14/14   2.56px 1.44x  SOFT 5    |     1/14   1.32px 0.72x  SOFT 0    |     1/14   1.31px 0.72x  SOFT 0   
+      locked on N5 |     1/14  10.06px 5.68x  SOFT 1    |   14/14   3.43px 1.89x  SOFT 10    |   14/14   3.42px 1.88x  SOFT 10   
+      locked on N6 |  0/14  edge found 6px away (5/14)  |    13/14   2.30px 1.26x  SOFT 5    |    14/14   2.35px 1.29x  SOFT 6   
+
+--at for sites locked on before:
+  124,6;4,16;141,18;262,31;276,42;292,54;300,61;107,66;236,81;251,89;350,97;356,109;220,126;239,136
+
+--at for sites locked on N5:
+  109,7;123,18;144,34;148,38;258,66;199,78;279,85;211,88;233,106;10,112;255,122;68,141;109,162;250,231
+
+--at for sites locked on N6:
+  104,3;116,12;166,22;180,63;267,74;279,85;297,102;299,105;303,109;244,114;80,148;153,184;175,194;229,240
+
+written: _poppy_shadow/sites-gate3-boot.json
