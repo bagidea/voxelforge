@@ -388,13 +388,57 @@ pub const CONTACT_SHADOW_STEPS: u32 = 16;
 
 /// PCSS penumbra width for the sun, where the tier turns it on.
 ///
-/// 3.0 → 4.0 (2026-08-06). `measure_penumbra.py` read a 4 px median edge on
-/// `wide-hero-final-nohud2.png` and 3 px on the vista frame, against G4a's 5 px
-/// floor; the gameplay frames, which are shot at High and take the Gaussian
-/// path instead, already read 5–9 px. So the miss is specific to the tier that
-/// runs THIS constant, and this is the only knob it has. Sweep it with
-/// `VOXELFORGE_LOOK_PCSS=<width>` before moving it again.
-pub const PCSS_WIDTH: f32 = 4.0;
+/// 3.0 → 4.0 (2026-08-06), 4.0 → 16.0 (2026-08-08). The 08-06 move was the right
+/// knob turned far too little, and the reason is a floor in Bevy, not in us.
+///
+/// WHY 4.0 MEASURED AS "NO PENUMBRA". `bevy_pbr` 0.19 `shadow_sampling.wgsl:303`
+/// computes, in TEXELS:
+///     blur_size = max((z_blocker - depth) * light_size / depth, 0.5)
+/// Both z's are cascade NDC, and the cascade projection is reverse-Z ortho
+/// (`bevy_light/cascade.rs`: `ndc = 1 + z_lightspace/dz`), so `z_blocker - depth`
+/// is `gap_blocks / cascade_depth_span` — a number in the THOUSANDTHS at this
+/// scale. Multiply by 4.0 and it stays far under the 0.5 floor everywhere except
+/// where an occluder stands unusually far off its receiver. That is not a
+/// derivation, it is what the frame shows: an A/B off ONE binary, `=off` against
+/// `=4`, moved the frame by **0.229 mean L** against a **0.085–0.223** noise
+/// floor (four repeat shots at identical settings). The shipped penumbra was
+/// inside the run-to-run noise of the capture. It was decorative.
+///
+/// THE MEASURED LADDER. s4 framing, Ultra, one binary, only `VOXELFORGE_LOOK_PCSS`
+/// moving; 20–80 % edge width at 15 sites whose x was LOCKED on the PCSS-off
+/// reference first, so every rung is measured across the same edges (`scripts/
+/// _pixel_pcss_ladder.ps1`):
+///     off   4.3 px mean /  4.0 median —  0/15 sites widened
+///     4     5.8         /  5.0        —  3/15   <- shipped, and G4a's 5 px floor
+///     8     7.5         /  5.0        —  5/15      was being cleared on a mean
+///     12    8.9         /  6.0        —  9/15      that 12 of 15 edges did not
+///     16   11.2         /  9.0        — 10/15      contribute to at all
+///     24   17.9         / 16.0        — 11/15
+///     32   20.5         / 16.0        — 10/15
+///
+/// BOUNDED ABOVE, TWICE, AND THE SECOND BOUND IS A TRAP. Visually the silhouette
+/// starts dissolving past ~24 (the stepped voxel shadow stops reading as the
+/// tower that casts it). Past ~128 it fails a different way: the blocker search
+/// offsets by `search_size / (texel_size * 4096)` = `light_size / cascade_diameter`
+/// in UV, so a large enough width throws every blocker tap off the shadow map,
+/// `sum.y == 0` returns `z_blocker = 0`, and `blur_size` clamps straight back to
+/// the 0.5 floor. Measured: 256 and 1024 are indistinguishable from PCSS OFF
+/// (0.277 / 0.259 mean L against that 0.223 noise floor). The knob silently
+/// switches ITSELF off at the top of its range, so "bigger is softer" is false
+/// and a sweep is the only safe way to move it. 16.0 sits mid-window.
+///
+/// COLLATERAL AT 16, MEASURED, NOT ASSUMED. `grade_axes` on the Ultra vista plate:
+/// warmth 162.98 → 157.03, micro-contrast 7.38 → 6.80, p95 163.89 → 159.97 — all
+/// PASS at both widths (the DOF axis fails at both; DoF is stripped, see §5 of
+/// docs/look-contract.md). `grade_sunsplit` on s4: separation 23.42 → 21.48 L,
+/// dip 0.708 → 0.634, TWO HUMPS at both.
+///
+/// SCOPE, SO THIS IS NOT OVERSOLD: `apply_look_to_sun` turns PCSS on at Ultra
+/// ONLY, so this constant reaches exactly one of the 8 canonical plates
+/// (`grade-vista`). The other seven shoot High and take the Gaussian/Temporal
+/// path, where the shadow edge is whatever that filter gives and this number is
+/// not in the picture. Sweep with `VOXELFORGE_LOOK_PCSS=<width>` before moving it.
+pub const PCSS_WIDTH: f32 = 16.0;
 
 /// Post-grade constants.
 ///
@@ -1387,12 +1431,17 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
         LookQuality::High => {
             // Default tier. Temporal soft shadows (no PCSS) + high SSAO +
             // volumetric fog at a reduced step count. The one effect cut vs Ultra
-            // is PCSS: per look-tier-spec.md §1 the hero-shot measurement found
-            // Bevy clamps `soft_shadow_size` to its 0.5 floor in a room that size,
-            // so PCSS buys almost nothing — cut it BEFORE the volumetric ray-march,
-            // the visible atmosphere that pins the frame (§5 problem #3 swaps the
-            // cut order so High no longer pays for PCSS while dropping the god-ray
-            // layer wholesale).
+            // is PCSS, and the REASON for that cut changed on 2026-08-08. It used
+            // to be "PCSS buys almost nothing here" — look-tier-spec.md §1 read
+            // Bevy clamping `soft_shadow_size` to its 0.5-texel floor and
+            // concluded the effect was inert at any width. Half right: the clamp
+            // is real and it was eating the shipped 4.0 whole, but it is
+            // ESCAPABLE, and [`PCSS_WIDTH`] now carries the ladder showing 16.0
+            // buying a measured 11.2 px penumbra where 4.0 bought 5.8 (against
+            // 4.3 for no PCSS at all). So this is no longer a free cut — High
+            // gives up a real soft shadow, and keeps the volumetric ray-march
+            // instead because the atmosphere is what pins the frame (§5 problem
+            // #3). That is a cost call, not "it does nothing".
             e.insert((
                 // SSAO is stochastic; one frame is visibly noisy. Temporal
                 // filtering + TAA accumulate it into clean contact AO.
