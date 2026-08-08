@@ -1,0 +1,119 @@
+--- a/client/src/look.rs
++++ b/client/src/look.rs
+@@ -1034,6 +1034,36 @@
+     DistanceFog,
+ );
+ 
++/// The capture/profiling tier override: `VOXELFORGE_LOOK_QUALITY=low|medium|high|ultra`.
++///
++/// PUBLIC BECAUSE `SettingsPlugin` HAS TO ASK THE SAME QUESTION. It loads the saved
++/// `graphics` tier and `insert_resource`s it — which "overwrites any existing resource
++/// of the same type" (`bevy_app::App::insert_resource`) — and `main.rs` adds it AFTER
++/// [`LookPlugin`], so from 8176d01 (2026-07-31) until this patch the saved tier landed
++/// on top of this one and every `--play` session ran at settings.json's tier no matter
++/// what the shoot script exported. Nothing warned: the var parsed, the resource was
++/// inserted, and it was replaced one line later.
++///
++/// MEASURED, one exe, one camera, `_poppy_tier_probe/`: `=low`, `=medium`, `=high` and
++/// `=ultra` are all the same frame within 0.28–0.39 mean L — the repeat-shot floor —
++/// while `VOXELFORGE_LOOK_DISABLE=1` moves it by 61.5. The same env on `voxelforge_perf`
++/// (`perf_main.rs`, which does not add `SettingsPlugin`) ladders 5.9 / 6.2 / 6.5 / 16.6 ms.
++/// One binary honoured the tier, the other silently did not, and the difference between
++/// them is this one `insert_resource`. That is what made `grade-vista` "at Ultra" shoot
++/// inside its own PCSS-off noise floor while `VOXELFORGE_LOOK_PCSS=16` — which [`pcss_width`]
++/// applies WITHOUT consulting the tier — moved 45.4 % of the frame.
++pub fn quality_from_env() -> Option<LookQuality> {
++    std::env::var("VOXELFORGE_LOOK_QUALITY")
++        .ok()
++        .and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
++            "low" => Some(LookQuality::Low),
++            "medium" => Some(LookQuality::Medium),
++            "high" => Some(LookQuality::High),
++            "ultra" => Some(LookQuality::Ultra),
++            _ => None,
++        })
++}
++
+ /// Wears the look lane's post stack over whatever camera and sun the game spawned.
+ pub struct LookPlugin;
+ 
+@@ -1042,16 +1072,7 @@
+         // Default High, not Ultra — see `LookQuality`. `VOXELFORGE_LOOK_QUALITY`
+         // overrides the starting tier so Poppy can profile each tier headless
+         // (`=low|medium|high|ultra`); anything unrecognised falls back to High.
+-        let initial = std::env::var("VOXELFORGE_LOOK_QUALITY")
+-            .ok()
+-            .and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
+-                "low" => Some(LookQuality::Low),
+-                "medium" => Some(LookQuality::Medium),
+-                "high" => Some(LookQuality::High),
+-                "ultra" => Some(LookQuality::Ultra),
+-                _ => None,
+-            })
+-            .unwrap_or_default();
++        let initial = quality_from_env().unwrap_or_default();
+         app.insert_resource(initial)
+             // The playable path never inserts a directional shadow map: the only
+             // 4K insert lives in main.rs's hero-shot branch (`if cfg.hero`), so a
+@@ -1598,6 +1619,7 @@
+ fn apply_look_to_sun(
+     mut commands: Commands,
+     quality: Res<LookQuality>,
++    shadow_map: Res<DirectionalLightShadowMap>,
+     mut q: Query<(
+         Entity,
+         &mut DirectionalLight,
+@@ -1683,6 +1705,26 @@
+             // it is doing.
+             e.remove::<VolumetricLight>();
+         }
++        // ONE LINE OF PROVENANCE PER TIER CHANGE, next to every capture's plate.
++        // This lane spent a round measuring a penumbra that was never switched on,
++        // because "Ultra" was set on the command line, accepted by the parser, and
++        // then overwritten — and no artefact of the run recorded which tier actually
++        // reached the frame. It does now. Runs on tier change only (the
++        // `LookLightApplied` guard above), not per frame.
++        #[cfg(feature = "experimental_pbr_pcss")]
++        let pcss_applied = format!("{:?}", dl.soft_shadow_size);
++        #[cfg(not(feature = "experimental_pbr_pcss"))]
++        let pcss_applied = String::from("n/a (built without experimental_pbr_pcss)");
++        println!(
++            "LOOK tier={:?} pcss={} shadow_map={} sun={:.0}deg/{:.0}deg illum={:.0} contact={}",
++            *quality,
++            pcss_applied,
++            shadow_map.size,
++            h.elev_deg,
++            h.azim_deg,
++            dl.illuminance,
++            dl.contact_shadows_enabled,
++        );
+         e.insert(LookLightApplied(*quality));
+     }
+ }
+--- a/client/src/settings_menu.rs
++++ b/client/src/settings_menu.rs
+@@ -122,7 +122,23 @@
+             app.add_plugins(EguiPlugin::default());
+         }
+ 
+-        let settings = load_settings();
++        let mut settings = load_settings();
++        // `VOXELFORGE_LOOK_QUALITY` OUTRANKS THE SAVED FILE — 2026-08-09.
++        //
++        // It is the capture/profiling override every shoot script exports, and the
++        // line below used to stomp it: `insert_resource` "overwrites any existing
++        // resource of the same type", and main.rs adds this plugin AFTER LookPlugin,
++        // so the saved tier always won. Every `--play` plate — the whole canonical
++        // shotset — rendered at settings.json's "High" whatever the script asked for,
++        // which is why `grade-vista` "at Ultra" is a PCSS-off frame. See
++        // `look::quality_from_env` for the two measurements that pin it.
++        //
++        // Assigned into `settings` rather than inserted separately so the menu shows
++        // the tier that is RUNNING; a player who then edits any setting persists it,
++        // which is correct — at that point they are on that tier.
++        if let Some(tier) = crate::look::quality_from_env() {
++            settings.graphics = tier;
++        }
+         // Push loaded settings into the live resources the game already reads.
+         // AudioPlugin and LookPlugin may have inserted their own defaults first;
+         // these calls override them with the player's saved preferences.  The
