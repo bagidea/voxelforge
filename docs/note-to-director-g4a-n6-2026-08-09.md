@@ -53,6 +53,11 @@ correctly and the binary behind it is pre-16.0.
  --albedo-check _pixel_shotset_N6/before/<plate>-nohud2.png`
 Full console output: `docs/assets/g4a-n6-albedo-check.txt`.
 
+> **That command no longer runs (2026-08-09, §3.1 shipped).** The last column is the
+> confounded one this note is about, and the tool now REFUSES a same-azimuth control
+> instead of printing it. The console text is kept as the record of what was measured;
+> the edge-width columns beside it are unaffected — they never used that control.
+
 | plate | old `measure_penumbra.py` | control (sky silhouette, 0 penumbra) | all in-scene edges | ratio | albedo-check |
 |---|---|---|---|---|---|
 | gate3-boot   | 8.36 px | 1.82 px (n=108) | 2.14 px (n=141) | 1.18× | **93.3 %** (base 56.5) — flagged |
@@ -154,11 +159,20 @@ shadow"; it is "is its edge soft", and the honest answer on N6 is no, at 1.33×.
 
 ## 3. Not fixed, as asked. Ranked for your approval
 
-1. **Give `--albedo-check` a control that cannot be confounded** — swap the pre-light plate
-   for an azimuth-moved plate of the same binary (that is what `sun_locked_edges.py` does).
-   The pre-light control keeps its use as an exposure reference; it just cannot answer
-   "cast or painted" while it shares an azimuth. Retract the 89–94 % claim wherever it is
-   quoted as "the grass has no cast shadow" (a99841f, and §5 of the regrade).
+1. ~~**Give `--albedo-check` a control that cannot be confounded**~~ — **DONE 2026-08-09,
+   approved.** The flag now takes an azimuth-moved plate and shares one implementation of
+   the correlation with `sun_locked_edges.py` (`corr_stats`). Both plates' suns are read
+   from the shoot script's own `manifest.json` — provenance, not a promise — and the check
+   **refuses, printing no verdict**, when the control is within 90° of the plate's azimuth,
+   when nothing on disk establishes either sun, or when the control keeps under half the
+   plate's grass. On `s1-vista` the overlap statistic that read 91.5 % against the pre-light
+   plate reads **58.5 % against a base rate of 58.5 %** against the +180° plate — chance.
+   `scripts/tests/test_albedo_check_control.py` locks the four constants and all four
+   verdicts (CAST / PAINTED / REFUSED / UNRELIABLE) through both the API and the CLI,
+   including the retracted invocation itself. The "no cast shadow" claim is retracted in
+   place in `docs/note-to-director-N6-regrade-2026-08-08.md`.
+   The pre-light plate keeps its use as an exposure reference; it just cannot answer
+   "cast or painted" while it shares an azimuth.
 2. **Shoot PCSS 16.0 for real.** It is a one-line constant that no shipped plate has ever
    carried, and the only plate it reaches is `grade-vista` (Ultra). The forced `=16` frame
    already on disk moves 45 % of pixels vs the shipped default, so it is not a subtle change

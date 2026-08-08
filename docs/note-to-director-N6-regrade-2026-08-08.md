@@ -121,28 +121,72 @@ G3 is 8/8 in all three columns — the relight did not spend the shade floor.
 G5 fails on `hero` and `s1-vista` in both after-columns (it passed on `before`): the
 brightest near-neutral pixel is now clipped, which is the cost of the brighter key.
 
-## The question that matters: is there a cast shadow ON THE GRASS yet?
+## The question that matters: is there a cast shadow ON THE GRASS yet? — RETRACTED AND ANSWERED
 
-`--albedo-check`, same camera, against the pre-light plate. Percentage = share of the
-"in shade now" grass blobs (≥500 px) that were **already** the dark half before the light
-changed. >80 % ⇒ the split is painted into the texture.
+**This section was wrong and it is withdrawn. There IS a cast shadow on the grass, and
+there always was.** What it read (2026-08-08):
 
-| plate | N5 overlap (base rate) | N6 overlap (base rate) | verdict |
-|---|---|---|---|
-| gate3-boot | 94.2 % (56.4 %) | **93.3 %** (56.5 %) | ALBEDO |
-| grade-vista | 89.3 % (54.1 %) | **90.6 %** (54.1 %) | ALBEDO |
-| s1-vista | 91.5 % (67.7 %) | **91.5 %** (67.5 %) | ALBEDO |
-| gate3-walk | 58.2 % (40.4 %) | **21.1 %** (36.6 %) | not albedo-locked — but see below |
-| gate3-combat, hero, s3-clash, s4-raking | grass reads one hump — no shade population to test | same | untestable |
+> **Answer: no. Still 89–94 %, unchanged from N5.** On the three plates where the question
+> is answerable and the framing is static, the dark grass is still the grass texture's own
+> dark checker, brought out by the higher key — not a shadow cast onto it.
+>
+> | plate | N5 overlap (base rate) | N6 overlap (base rate) | verdict |
+> |---|---|---|---|
+> | gate3-boot | 94.2 % (56.4 %) | **93.3 %** (56.5 %) | ALBEDO |
+> | grade-vista | 89.3 % (54.1 %) | **90.6 %** (54.1 %) | ALBEDO |
+> | s1-vista | 91.5 % (67.7 %) | **91.5 %** (67.5 %) | ALBEDO |
+> | gate3-walk | 58.2 % (40.4 %) | **21.1 %** (36.6 %) | not albedo-locked |
 
-**Answer: no. Still 89–94 %, unchanged from N5.** On the three plates where the question
-is answerable and the framing is static, the dark grass is still the grass texture's own
-dark checker, brought out by the higher key — not a shadow cast onto it.
+**Why it was wrong — the control, not the renderer.** `--albedo-check` asked "were these
+'in shade now' pixels already the dark half *before the light changed*", against the
+pre-light plate of the same camera. That plate is the **same azimuth, 205°** — only 17°
+instead of 22°. 8303db5 changed the sunlit-to-shadowed RATIO; it did not change whether a
+shadow is drawn (`shadow_maps_enabled` was already true). So the same walls threw the same
+bands onto the same grass in both frames, and **a real cast shadow that barely moved is
+indistinguishable, to that control, from paint**. The 89–94 % was measuring the control's
+blind spot. Every "ALBEDO" verdict in the withdrawn table is void — not "unproven", void:
+the instrument could not have returned anything else.
 
-`gate3-walk` is the one that reads "real", and I do not trust it as evidence: it is the
-plate whose pixels moved 95.85 % between two runs of *identical code*, and its own
-overlap swung 58.2 % → 21.1 % across those two runs. A number that moves 37 points at
-fixed code is measuring the animation phase, not the light.
+**The control the albedo cannot follow is an azimuth move.** Painted texture is bolted to
+the blocks; a cast shadow must move with the sun. Eleven shots off ONE exe (sha
+`B024BBC2…`), only `VOXELFORGE_LOOK_SUN` moving, `s1-vista`, high-passed (box radius 24 px,
+which removes the smooth in-scatter term that also follows the sun) and correlated over the
+shared grass mask — `scripts/sun_locked_edges.py A.png B.png --corr`:
+
+| control against the shipped 22°/205°/22k plate | shared grass px | r |
+|---|---|---|
+| repeat shot, identical env | 310,673 | **0.994** |
+| contact shadows OFF | 312,674 | **0.996** |
+| the pre-light plate — 17°, **same azimuth** (what this section used) | 125,682 | **0.761** |
+| azimuth 205° → **25° (+180°)** | 275,286 | **0.010** |
+
+Painted albedo scores r ≈ 1 under any sun. The sharp structure on this grass is
+**completely uncorrelated** when the sun swings 180°, and survives contact-shadows-off
+untouched — so it is the shadow map's cast shadow. Asked of that control, the same
+blob-overlap statistic this section reported collapses, on `s1-vista`, from 91.5 % to
+**58.5 % against a base rate of 58.5 %**: exactly chance, i.e. no albedo lock at all —
+`python scripts/cast_shadow_penumbra.py _poppy_pcss_probe/az205/after/s1-vista-nohud2.png
+--albedo-check _poppy_pcss_probe/az025/after/s1-vista-nohud2.png`. Full derivation, the 8-plate table
+and the crop at three azimuths: `docs/note-to-director-g4a-n6-2026-08-09.md` and commit
+21f6675.
+
+**The tool can no longer be run the way that produced this.** `--albedo-check` now reads
+both plates' suns from the shoot script's own `manifest.json` and **refuses**, printing no
+verdict, when the control is within 90° of the plate's azimuth — the exact invocation this
+section used now returns `REFUSED`, and `scripts/tests/test_albedo_check_control.py`
+asserts that it does.
+
+**What stands, and what the honest answer is.** The grass shadow is present; the open
+question was always its *edge*, and there it is hard: sites picked by the sun move rather
+than by a human give a median 2.95 px against that frame's own 2.22 px sky-silhouette
+control = **1.33×**, near the AA/TAA floor. That is consistent with §"What N6 does NOT
+contain" — no working PCSS in these plates.
+
+`gate3-walk`'s 21.1 % was never the outlier this section treated it as. It is the one plate
+whose actor moved between the two shots, which decorrelated its dark blobs by accident: the
+right answer for the wrong reason. Its pixels moved 95.85 % between two runs of *identical
+code* and its own overlap swung 58.2 % → 21.1 % across them, so it was never evidence in
+either direction.
 
 ## Wall shadow edge, gate3-boot — RETRACTED AND REDONE
 
@@ -258,5 +302,11 @@ round was to move the edge width, that shot still has to be taken.
   and no registration, so it survives the shadow moving again.
 - The albedo question on gate3-combat / hero / s3-clash / s4-raking: their grass is one
   hump, so there is no shade population to test the overlap of. Not a pass, not a fail.
+  (Updated 2026-08-09: the *overlap* statistic needs two humps, but the azimuth-move
+  control that replaced it does not — correlating high-passed structure works on a
+  one-hump plate. Those four are answerable as soon as someone shoots them a +180°
+  control off the same exe; only `s1-vista` has one today. Note `s4-raking` carries its
+  own `VOXELFORGE_LOOK_SUN=6,140,9000`, so its control is azimuth 320, not 25 — the tool
+  reads each plate's real sun out of the manifest rather than assuming GOLDEN.)
 - s4-raking is pinned to `VOXELFORGE_LOOK_SUN=6,140,9000` by `_poppy_shotset.ps1`, so it
   never sees `Hour::GOLDEN` at all. It cannot show the ratio fix and it does not.

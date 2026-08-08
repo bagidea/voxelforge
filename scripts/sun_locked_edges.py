@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Which edges in this frame are CAST BY THE SUN, and how wide are they? (G4a)
 
-`cast_shadow_penumbra.py --albedo-check` asks "is that dark region cast by a
-light" against the pre-light plate of the same camera, and on this shotset it
+`cast_shadow_penumbra.py --albedo-check` used to ask "is that dark region cast by
+a light" against the PRE-LIGHT plate of the same camera, and on this shotset it
 answered "89-94 % of the grass shade was already dark before" -> PAINTED IN THE
-ALBEDO. That control is invalid here, measured: the pre-light plate was shot at
-the SAME azimuth (205 deg) and only 5 deg lower (17 -> 22), so the same walls
-throw the same shadows onto the same grass in both frames. A cast shadow that
-barely moved scores as albedo.
+ALBEDO. That control was invalid, measured: the pre-light plate was shot at the
+SAME azimuth (205 deg) and only 5 deg lower (17 -> 22), so the same walls throw
+the same shadows onto the same grass in both frames. A cast shadow that barely
+moved scores as albedo. (The claim it produced is retracted in
+docs/note-to-director-N6-regrade-2026-08-08.md; since 2026-08-09 the flag takes
+the control below instead, shares this file's `corr_stats`, and refuses a control
+within 90 deg of the plate's own azimuth.)
 
 The control that works is the one the albedo cannot follow: MOVE THE SUN'S
 AZIMUTH and re-shoot off the same binary (`VOXELFORGE_LOOK_SUN=<elev>,<azim>,
@@ -61,19 +64,48 @@ def boxblur(a, r):
     return (c[:, k:] - c[:, :-k]) / k
 
 
-def corr(pa, pb, radius=24):
+def corr_stats(pa, pb, radius=24):
+    """The `--corr` numbers as a dict, so the other graders can GATE on them.
+
+    `cast_shadow_penumbra.albedo_check` calls this rather than re-deriving r:
+    one implementation of the azimuth-move control means the two tools cannot
+    drift apart, and a threshold moved here moves everywhere at once. Raises
+    `ValueError` on a size mismatch — the caller decides whether that is fatal
+    (`--corr` exits, the albedo check reports "skipped").
+    """
     a = np.asarray(Image.open(pa).convert("RGB"))
     b = np.asarray(Image.open(pb).convert("RGB"))
     if a.shape != b.shape:
-        sys.exit("the two plates are different sizes -- not the same camera")
-    m = grass_select(a)[0] & grass_select(b)[0]
+        raise ValueError("the two plates are different sizes -- not the same camera")
+    ma = grass_select(a)[0]
+    m = ma & grass_select(b)[0]
     la, lb = lum(a), lum(b)
     ha, hb = (la - boxblur(la, radius))[m], (lb - boxblur(lb, radius))[m]
+    return {
+        "px": int(m.sum()),
+        # the plate's OWN grass, so a caller can see how much of the subject the
+        # control still holds -- `grass_select` is a hue/sat rule, and grass that
+        # falls into deep shade under the moved sun drops out of the mask.
+        "px_plate": int(ma.sum()),
+        "radius": radius,
+        "mean_a": float(la[m].mean()) if m.any() else float("nan"),
+        "mean_b": float(lb[m].mean()) if m.any() else float("nan"),
+        "sd_a": float(ha.std()),
+        "sd_b": float(hb.std()),
+        "r": float(np.corrcoef(ha, hb)[0, 1]) if m.sum() > 1 else float("nan"),
+    }
+
+
+def corr(pa, pb, radius=24):
+    try:
+        s = corr_stats(pa, pb, radius)
+    except ValueError as e:
+        sys.exit(str(e))
     print(f"== {os.path.basename(pa)}  vs  {os.path.basename(pb)}")
-    print(f"   shared grass mask {int(m.sum())} px, high-pass box radius {radius}px")
-    print(f"   mean L {lb[m].mean():.2f} -> {la[m].mean():.2f}   "
-          f"sharp-structure sd {hb.std():.2f} -> {ha.std():.2f}")
-    print(f"   r = {np.corrcoef(ha, hb)[0, 1]:.3f}   "
+    print(f"   shared grass mask {s['px']} px, high-pass box radius {s['radius']}px")
+    print(f"   mean L {s['mean_b']:.2f} -> {s['mean_a']:.2f}   "
+          f"sharp-structure sd {s['sd_b']:.2f} -> {s['sd_a']:.2f}")
+    print(f"   r = {s['r']:.3f}   "
           "(albedo cannot move: painted texture stays r ~ 1 under ANY sun)")
 
 
