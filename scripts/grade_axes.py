@@ -21,7 +21,8 @@ from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 # Axis            channel / definition                    target      REF (golden)
 # warmth  R-B     midtone-band mean (R-B)                 >= +110     +120.9
 # blue    B       midtone-band mean B                     <=  10.0      4.3
-# sat             midtone-band mean saturation %          >=  90.0     96.1
+# clip    any     midtone % px with a channel at 0/255    <=  35.0     18.8  (co-gate)
+# sat     HSV     midtone mean sat over NON-railed px     >=  90.0     95.2  (honest; N-A if clip>35)
 # DOF fg:bg       hi-freq std ratio fg/bg                 >=   3.0      3.50
 # micro-contrast  hi-pass std (GaussianBlur r3) on 1024L  >=   5.0      5.24
 # p95             global luminance 95th pct (~170 band)   150..185    165.8
@@ -44,21 +45,38 @@ from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 #   which is more dangerous than a gate that always passes. — Sun, 2026-08-01
 # ============================================================================
 
+# --- midtone clip co-gate + honest saturation (Rose, 2026-08-09; probe d559e13) -----
+# saturation USED to be a clip-signature liar: per-pixel HSV-V sat = (max-min)/max
+# returns 1.0 for ANY pixel with a channel at 0, so a midtone whose B is gamut-clipped
+# to 0 (POST_SATURATION push + clamp) reads as "100% saturated" and PASSes the >=90
+# target on a wrecked frame -- it scored the DAMAGE as quality. The N6 shotset sat at
+# 99.5-99.8% midtone clip with legacy sat 100.0 on every plate, before AND after.
+# Fix = co-gate: hard-FAIL if the midtone band is mostly railed (any channel 0/255),
+# and grade an HONEST sat = mean over NON-railed pixels only. Honest sat is itself
+# meaningless once the band is mostly railed (mean over a tiny saturated sliver -- e.g.
+# gate3 honSat 82.6 over 877 of 419k px), so it auto-reports N-A when clip fires.
+# Calibrated on golden REF: clip 18.8%, honest sat 95.2. 35% leaves REF a ~2x margin
+# and FAILs every known-bad N6 plate. This also retro-covers warmth/blue, which inflate
+# or collapse on a B-clipped frame but are now moot -- the frame hard-FAILs on clip.
+# (POST_SATURATION itself is Yamamoto's lane; this gate only detects the symptom.)
+CLIP_THRESH = 35.0
+
 TARGETS = [
-    # key,   label,             cmp,   bound(s),          ref
-    ("warmth", "warmth R-B (mid)", "ge",  110.0,            120.9),
-    ("blue",   "blue B (mid)",     "le",   10.0,              4.3),
-    ("sat",    "saturation (mid)", "ge",   90.0,             96.1),
-    ("dof",    "DOF fg:bg ratio",  "ge",    3.0,             3.50),
-    ("micro",  "micro-contrast",   "ge",    5.0,             5.24),
-    ("p95",    "highlight p95",    "band", (150.0, 185.0),  165.8),
+    # key,   label,                        cmp,   bound(s),          ref
+    ("warmth", "warmth R-B (mid)",         "ge",  110.0,            120.9),
+    ("blue",   "blue B (mid)",             "le",   10.0,              4.3),
+    ("clip",   "mid clip %",               "le",   CLIP_THRESH,      18.8),
+    ("sat",    "saturation (mid, honest)", "ge",   90.0,             95.2),
+    ("dof",    "DOF fg:bg ratio",          "ge",    3.0,             3.50),
+    ("micro",  "micro-contrast",           "ge",    5.0,             5.24),
+    ("p95",    "highlight p95",            "band", (150.0, 185.0),  165.8),
 ]
 
 # Which axes are graded per profile.  DOF is excluded from gameplay because
 # its measurement zones assume the hero/beauty-shot composition (see header).
 PROFILES = {
-    "hero":     ["warmth", "blue", "sat", "dof", "micro", "p95"],
-    "gameplay": ["warmth", "blue", "sat", "micro", "p95"],
+    "hero":     ["warmth", "blue", "clip", "sat", "dof", "micro", "p95"],
+    "gameplay": ["warmth", "blue", "clip", "sat", "micro", "p95"],
 }
 
 DOF_EXCLUSION_NOTE = (
@@ -111,9 +129,28 @@ def measure(path):
     # micro-contrast: hi-pass std, GaussianBlur r3 on the full 1024 luminance
     blur3 = np.asarray(Image.fromarray(g.astype(np.uint8)).filter(ImageFilter.GaussianBlur(3))).astype(np.float32)
     micro = float((g-blur3).std())
+    # midtone clip-fraction + honest saturation (co-gate; see CLIP_THRESH above).
+    # Same 1024^2 resample, same L[p35..p75] band as every other axis.
+    Rm, Gm, Bm = R[mm], G[mm], B[mm]
+    railed = (Rm == 0)|(Gm == 0)|(Bm == 0)|(Rm == 255)|(Gm == 255)|(Bm == 255)
+    nmid = int(mm.sum())
+    clip = float(railed.sum()) / nmid * 100.0
+    mxm = np.maximum(np.maximum(Rm, Gm), Bm)
+    mnm = np.minimum(np.minimum(Rm, Gm), Bm)
+    hon = ~railed
+    sat_honest = (float(np.where(mxm[hon] > 0,
+                    (mxm[hon]-mnm[hon])/np.maximum(mxm[hon], 1e-6), 0).mean()*100)
+                  if int(hon.sum()) > 0 else float("nan"))
     return {
         "warmth": float((R[mm]-B[mm]).mean()),
         "blue":   float(B[mm].mean()),
+        "clip":   clip,
+        "sat_honest": sat_honest,
+        # LEGACY saturation (max-min)/max mean over ALL midtone pixels -- a clip
+        # SIGNATURE (1.0 per railed pixel), NOT saturation. Kept so downstream
+        # consumers that still read m["sat"] (make_gate3_verdict_card,
+        # _flamingo_sat_ladder_sheet, _poppy_sweep_report) are not silently broken.
+        # The gate grades on sat_honest; do NOT judge on this value.
         "sat":    float(sat[mm].mean()*100),
         "dof":    fgv/max(bgv, 1e-3),
         "micro":  micro,
@@ -163,18 +200,29 @@ def main():
     for path in args.images:
         m = measure(path)
         print(f"{path}")
-        print(f"  profile: {profile}  context: warmth(global) {m['_warmth_global']:+6.1f}  sat(global) {m['_sat_global']:4.1f}%"
-              f"  DOF fg {m['_dof_fg']:5.2f} bg {m['_dof_bg']:5.2f}")
+        print(f"  profile: {profile}  context: warmth(global) {m['_warmth_global']:+6.1f}  "
+              f"sat(mid,legacy/clip-sig) {m['sat']:5.1f}% [do not judge]  DOF fg {m['_dof_fg']:5.2f} bg {m['_dof_bg']:5.2f}")
         frame_ok = True
         for key, label, cmp, bound, ref in TARGETS:
-            v = m[key]
-            if key in active_axes:
-                ok = verdict(cmp, bound, v)
-                frame_ok = frame_ok and ok
-                tag = "PASS" if ok else "FAIL"
+            if key not in active_axes:
+                v = m[key]
+                print(f"  [SKIP] {label:<24} {v:8.2f}   target {fmt_target(cmp, bound):>10}   (REF {ref})")
+                continue
+            # saturation grades on the HONEST value, and is meaningless (auto N-A) once
+            # the midtone clip co-gate fires: the rail-excluded mean there runs over a
+            # tiny saturated sliver (gate3 = 877 of 419k px). See probe d559e13.
+            if key == "sat":
+                v = m["sat_honest"]
+                if m["clip"] > CLIP_THRESH:
+                    vstr = "nan" if v != v else f"{v:.2f}"
+                    print(f"  [N-A]  {label:<24} {vstr:>8}   midtone clipped {m['clip']:.1f}% -- honest sat over <{100.0-m['clip']:.1f}% survivors is noise")
+                    continue
             else:
-                tag = "SKIP"
-            print(f"  [{tag}] {label:<18} {v:8.2f}   target {fmt_target(cmp, bound):>10}   (REF {ref})")
+                v = m[key]
+            ok = verdict(cmp, bound, v)
+            frame_ok = frame_ok and ok
+            tag = "PASS" if ok else "FAIL"
+            print(f"  [{tag}] {label:<24} {v:8.2f}   target {fmt_target(cmp, bound):>10}   (REF {ref})")
         print(f"  => {'ALL AXES PASS' if frame_ok else 'FAIL (>=1 axis below target)'}")
         any_fail = any_fail or not frame_ok
         print()
