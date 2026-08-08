@@ -1,0 +1,100 @@
+### gate3-boot
+== gate3-boot-nohud2
+   albedo-check: shade cut L=44.5, 29957px in blobs>=500px; 93.3% of them were ALREADY the dark half before the light changed (base rate 56.5%)
+                 -> PAINTED IN THE ALBEDO, not a new cast shadow
+   CONTROL sky silhouette (geometry, zero penumbra) : n= 108 median= 1.82px p25= 1.66 p75= 2.00
+      normal  0-15deg off-axis : n=  99 median= 1.82px p25= 1.65 p75= 2.02
+      normal 15-30deg off-axis : n=   7 median= 1.81px p25= 1.69 p75= 1.93
+      normal 30-46deg off-axis : n=   2 median= 1.79px p25= 1.77 p75= 1.80
+   ALL in-scene edges (shadow AND geometry mixed)   : n= 141 median= 2.14px p25= 1.64 p75= 5.99
+      normal  0-15deg off-axis : n=  81 median= 2.22px p25= 1.68 p75= 6.80
+      normal 15-30deg off-axis : n=  26 median= 2.71px p25= 1.96 p75= 7.72
+      normal 30-46deg off-axis : n=  34 median= 1.81px p25= 1.55 p75= 3.84
+
+### gate3-combat
+== gate3-combat-nohud2
+   albedo-check: grass reads ONE hump -- no shade population to test
+   CONTROL sky silhouette (geometry, zero penumbra) :      n=0
+      normal  0-15deg off-axis :      n=0
+      normal 15-30deg off-axis :      n=0
+      normal 30-46deg off-axis :      n=0
+   ALL in-scene edges (shadow AND geometry mixed)   : n= 117 median= 2.17px p25= 1.73 p75= 5.12
+      normal  0-15deg off-axis : n=  75 median= 1.87px p25= 1.72 p75= 4.80
+      normal 15-30deg off-axis : n=  24 median= 2.19px p25= 1.89 p75= 5.80
+      normal 30-46deg off-axis : n=  18 median= 2.79px p25= 1.87 p75= 8.73
+
+### gate3-walk
+== gate3-walk-nohud2
+   albedo-check: shade cut L=43.5, 7688px in blobs>=500px; 21.1% of them were ALREADY the dark half before the light changed (base rate 36.6%)
+                 -> not albedo-locked -- consistent with a real cast shadow
+   CONTROL sky silhouette (geometry, zero penumbra) : n=  85 median= 1.90px p25= 1.78 p75= 3.20
+      normal  0-15deg off-axis : n=  71 median= 1.88px p25= 1.77 p75= 2.83
+      normal 15-30deg off-axis : n=   9 median= 2.94px p25= 1.85 p75= 8.48
+      normal 30-46deg off-axis : n=   5 median= 2.29px p25= 1.92 p75= 2.86
+   ALL in-scene edges (shadow AND geometry mixed)   : n= 151 median= 2.79px p25= 2.04 p75= 7.86
+      normal  0-15deg off-axis : n=  80 median= 2.44px p25= 2.04 p75= 6.95
+      normal 15-30deg off-axis : n=  44 median= 5.66px p25= 2.23 p75= 8.56
+      normal 30-46deg off-axis : n=  27 median= 3.49px p25= 2.01 p75= 9.45
+
+### grade-vista
+== grade-vista-nohud2
+   albedo-check: shade cut L=45.5, 15768px in blobs>=500px; 90.6% of them were ALREADY the dark half before the light changed (base rate 54.1%)
+                 -> PAINTED IN THE ALBEDO, not a new cast shadow
+   CONTROL sky silhouette (geometry, zero penumbra) :      n=0
+      normal  0-15deg off-axis :      n=0
+      normal 15-30deg off-axis :      n=0
+      normal 30-46deg off-axis :      n=0
+   ALL in-scene edges (shadow AND geometry mixed)   : n= 148 median= 2.28px p25= 1.73 p75= 5.88
+      normal  0-15deg off-axis : n=  77 median= 2.30px p25= 1.80 p75= 5.22
+      normal 15-30deg off-axis : n=  37 median= 2.86px p25= 1.80 p75= 7.50
+      normal 30-46deg off-axis : n=  34 median= 1.80px p25= 1.51 p75= 4.74
+
+### s1-vista
+== s1-vista-nohud2
+   albedo-check: shade cut L=55.5, 175273px in blobs>=500px; 91.5% of them were ALREADY the dark half before the light changed (base rate 67.5%)
+                 -> PAINTED IN THE ALBEDO, not a new cast shadow
+   CONTROL sky silhouette (geometry, zero penumbra) : n=  94 median= 2.24px p25= 2.06 p75= 2.35
+      normal  0-15deg off-axis : n=  81 median= 2.24px p25= 2.08 p75= 2.34
+      normal 15-30deg off-axis : n=   8 median= 2.08px p25= 1.86 p75= 3.42
+      normal 30-46deg off-axis : n=   5 median= 2.21px p25= 2.15 p75= 2.27
+   ALL in-scene edges (shadow AND geometry mixed)   : n= 152 median= 2.41px p25= 1.84 p75= 5.17
+      normal  0-15deg off-axis : n=  75 median= 2.48px p25= 1.78 p75= 5.58
+      normal 15-30deg off-axis : n=  39 median= 2.33px p25= 1.87 p75= 4.59
+      normal 30-46deg off-axis : n=  38 median= 2.35px p25= 2.01 p75= 5.73
+
+### hero
+== hero-nohud2
+   albedo-check: grass reads ONE hump -- no shade population to test
+   CONTROL sky silhouette (geometry, zero penumbra) : n=  35 median= 1.90px p25= 1.75 p75= 2.15
+      normal  0-15deg off-axis : n=  32 median= 1.86px p25= 1.74 p75= 2.14
+      normal 15-30deg off-axis : n=   1 median= 4.50px p25= 4.50 p75= 4.50
+      normal 30-46deg off-axis : n=   2 median= 2.28px p25= 2.24 p75= 2.32
+   ALL in-scene edges (shadow AND geometry mixed)   : n=  90 median= 2.08px p25= 1.69 p75= 4.36
+      normal  0-15deg off-axis : n=  57 median= 1.88px p25= 1.57 p75= 4.09
+      normal 15-30deg off-axis : n=  18 median= 2.23px p25= 1.89 p75= 6.27
+      normal 30-46deg off-axis : n=  15 median= 2.42px p25= 2.05 p75= 5.04
+
+### s4-raking
+== s4-raking-nohud2
+   albedo-check: grass reads ONE hump -- no shade population to test
+   CONTROL sky silhouette (geometry, zero penumbra) : n= 385 median= 2.05px p25= 1.96 p75= 2.13
+      normal  0-15deg off-axis : n= 351 median= 2.04px p25= 1.95 p75= 2.12
+      normal 15-30deg off-axis : n=  17 median= 2.08px p25= 2.03 p75= 2.38
+      normal 30-46deg off-axis : n=  17 median= 2.10px p25= 2.02 p75= 2.22
+   ALL in-scene edges (shadow AND geometry mixed)   : n=  66 median= 2.21px p25= 1.80 p75= 6.26
+      normal  0-15deg off-axis : n=  37 median= 2.15px p25= 1.76 p75= 4.14
+      normal 15-30deg off-axis : n=  18 median= 3.56px p25= 2.09 p75= 8.99
+      normal 30-46deg off-axis : n=  11 median= 2.21px p25= 1.90 p75= 6.76
+
+### s3-clash
+== s3-clash-nohud2
+   albedo-check: grass reads ONE hump -- no shade population to test
+   CONTROL sky silhouette (geometry, zero penumbra) :      n=0
+      normal  0-15deg off-axis :      n=0
+      normal 15-30deg off-axis :      n=0
+      normal 30-46deg off-axis :      n=0
+   ALL in-scene edges (shadow AND geometry mixed)   : n= 160 median= 2.05px p25= 1.73 p75= 3.57
+      normal  0-15deg off-axis : n=  98 median= 1.89px p25= 1.71 p75= 2.57
+      normal 15-30deg off-axis : n=  41 median= 2.43px p25= 1.97 p75= 3.86
+      normal 30-46deg off-axis : n=  21 median= 2.93px p25= 1.53 p75= 8.66
+
