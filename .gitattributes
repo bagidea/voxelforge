@@ -13,3 +13,12 @@
 # `git ls-files --eol -- '*.sh'` -- 0 CRLF entries). This only pins the checkout
 # so autocrlf cannot undo it.
 *.sh text eol=lf
+
+# Patches must land on disk with LF too, for a near-identical reason found the
+# near-identical way (2026-08-09): a handoff patch generated on this box came out
+# CRLF and `git apply` rejected every hunk against an LF worktree --
+#     error: while searching for: ... DistanceFog,?  );?
+# -- the `?` being the CR git prints when the context line does not match. A patch
+# checked out with autocrlf=true would fail the same way for whoever applies it,
+# which is a broken handoff that looks like a stale patch.
+*.patch text eol=lf
