@@ -309,6 +309,15 @@ def shape_complexity(blob):
     Scale-free. A filled square measures ~16, a disc ~4pi = 12.6, and the three
     approved character concepts measure 53.5 / 136.7 / 298.1 — which is what makes
     the order's ">= 40" a reachable bar rather than a wish.
+
+    DO NOT CROSS-QUOTE THIS NUMBER WITH `scripts/grade_character.py` C10. Both are
+    "isoperimetric P^2/A", but C10 first smooths the mask (gaussian 2.0 > 0.5) to
+    drop antialias jaggies and takes an outer-dilation ring. On analytic shapes the
+    two agree to 1% (square 15.8 vs 15.7); on a real antialiased matte they diverge
+    by ~2x (auren concept: 53.5 here, 27.4 under C10). The ratio to a reference
+    measured by the SAME code is stable; the absolute is not. A6's bar of 40 is
+    calibrated in this pipeline, where it sits at 0.75x the approved hero concept —
+    which is the same place C10's own relative bar (ref x 0.70) sits in its pipeline.
     """
     area = int(blob.sum())
     if area < 200:
