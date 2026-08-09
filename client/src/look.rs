@@ -1920,10 +1920,10 @@ fn sky_dome(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    cam: Query<&Transform, (With<crate::OrbitCam>, With<Camera3d>)>,
+    cam: Query<&Transform, With<crate::OrbitCam>>,
     mut dome: Query<&mut Transform, With<SkyDome>>,
 ) {
-    let Ok(cam_tf) = cam.single() else {
+    let Some(cam_tf) = cam.iter().next() else {
         return;
     };
     if let Ok(mut tf) = dome.single_mut() {
@@ -2007,14 +2007,14 @@ fn play_fog_density() -> Option<f32> {
 /// stays around the viewpoint wherever the player roams.
 fn play_fog_volume(
     mut commands: Commands,
-    cam: Query<&Transform, (With<crate::OrbitCam>, With<Camera3d>)>,
+    cam: Query<&Transform, With<crate::OrbitCam>>,
     mut fog: Query<&mut Transform, With<PlayFogVolume>>,
     mut spawned: Local<bool>,
 ) {
     let Some(density) = play_fog_density() else {
         return; // `off`: never spawn — the no-medium baseline
     };
-    let Ok(cam_tf) = cam.single() else {
+    let Some(cam_tf) = cam.iter().next() else {
         return;
     };
     if !*spawned {

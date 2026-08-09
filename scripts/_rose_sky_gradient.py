@@ -34,6 +34,15 @@ def _lum(rgb: np.ndarray) -> np.ndarray:
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
 
 
+def _pearson(x: np.ndarray, y: np.ndarray) -> float:
+    """Pearson correlation — the ramp-monotonicity score (no scipy dep)."""
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    xm, ym = x - x.mean(), y - y.mean()
+    denom = np.sqrt(float((xm * xm).sum()) * float((ym * ym).sum()))
+    return float(xm.dot(ym) / denom) if denom else 0.0
+
+
 def report(path: Path) -> dict:
     rgb = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32)
     H, W, _ = rgb.shape
@@ -59,18 +68,31 @@ def report(path: Path) -> dict:
     grad = l_top - l_hor  # signed: <0 means horizon brighter than zenith (golden hour)
     seam = float(drop[hk]) if drop.size else float("nan")
 
+    # Sky share of the frame (the owner's "sky% (row 0..N)" diagnostic): if this
+    # is tiny the gradient is noise, not signal — a camera-preset problem, not a
+    # dome problem.
+    sky_pct = 100.0 * horizon_row / H
+    # Ramp monotonicity = Pearson(row, L) over the sky band. A clean zenith->horizon
+    # ramp is monotonic (the haze brightens toward the horizon), so |r| is near 1.
+    sky_profile = row_l[:sky_bot + 1]
+    ramp_mono = _pearson(np.arange(sky_profile.size), sky_profile) if sky_profile.size > 2 else 0.0
+
     print(
         f"=== {path.name} ({W}x{H}) ===\n"
-        f"  sky region rows 0..{sky_bot} (horizon ~{100.0*horizon_row/H:.0f}% down)\n"
-        f"  sky L  zenith={l_top:6.2f}  just-above-horizon={l_hor:6.2f}  "
-        f"-> gradient = {grad:+6.2f} L   (|grad| = {abs(grad):5.2f})\n"
-        f"  horizon seam step = {seam:5.2f} L   "
-        f"({'seamless melt' if seam < 25 else 'HARD EDGE'})"
+        f"  sky region rows 0..{sky_bot}  (sky% = {sky_pct:4.1f}, horizon ~{100.0*horizon_row/H:.0f}% down)\n"
+        f"  A1 zenith-hz      : |zenith-horizon| = {abs(grad):5.2f} L   "
+        f"(>=25 PASS / <25 FAIL)\n"
+        f"  A1 ramp-monotonic : r = {abs(ramp_mono):4.2f}   "
+        f"(>=0.85 PASS / <0.85 FAIL)\n"
+        f"  A1 horizon-seam   : step = {seam:5.2f} L   "
+        f"({'seamless melt' if seam < 12 else ('soft' if seam < 25 else 'HARD EDGE')} | <=12 PASS)\n"
+        f"  raw  zenith={l_top:6.2f}  horizon={l_hor:6.2f}  signed_grad={grad:+6.2f}"
     )
     return {
         "file": path.name,
-        "gradient_L": grad,
-        "abs_gradient_L": abs(grad),
+        "sky_pct": sky_pct,
+        "zenith_hz_L": abs(grad),
+        "ramp_monotonic": abs(ramp_mono),
         "horizon_seam_L": seam,
     }
 
