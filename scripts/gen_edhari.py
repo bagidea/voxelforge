@@ -17,9 +17,11 @@ reads as a world people once lived in:
 - The previously-empty southern half is filled with fields, a pond, fences and
   a travellers' rest stop so the village no longer ends at z=44.
 
-Block palette is restricted to what client/src/mapfile.rs actually loads:
-air, grass, dirt, stone, sand.  Wood/leaves are NOT emitted (see maps/FORMAT.md
-and the first-five-minutes punch list).
+Block palette uses the full set that client/src/mapfile.rs loads:
+air, grass, dirt, stone, sand, wood, leaves, snow, red_sand, clay, gravel,
+cobblestone, obsidian, brick, moss, limestone, lamp.  The A3 pass adds material
+bands, wood framing, ground cover, and lamps so the world no longer reads as
+flat two-colour grass + stone.
 
 Coordinate convention matches client/src/scene.rs:
 - -Z is "north"; the player wakes at (32,32) facing -Z.
@@ -29,6 +31,7 @@ Coordinate convention matches client/src/scene.rs:
 import json
 import math
 import random
+from collections import defaultdict
 from pathlib import Path
 
 WIDTH = 64
@@ -181,10 +184,15 @@ def stone_bridge(x0, x1, z0, z1, y_deck, pillar_depth=4):
 
 
 def lantern_post(x, z, y_base=0, height=3):
-    """Stone marker along a path; doubles as a subtle sight-line guide."""
+    """Stone post with an emissive lamp cap — a warm point of rest for the eye."""
     for y in range(y_base + 1, y_base + height + 1):
         add(x, y, z, "stone")
-    add(x, y_base + height + 1, z, "stone")
+    add(x, y_base + height + 1, z, "lamp")
+
+
+def lamp_post(x, z, y_base=0, height=3):
+    """Freestanding lamp post."""
+    lantern_post(x, z, y_base=y_base, height=height)
 
 
 def low_wall(x0, x1, z0, z1, y_base=0, height=2, gaps=()):
@@ -211,17 +219,24 @@ def broken_pillar(cx, cz, y_base=0, height=4):
 # Buildings
 # ---------------------------------------------------------------------------
 def intact_house(x0, z0, w, d, door_x, door_z, height=4, y_base=0, furnished=False):
-    """Hollow perimeter house with one door gap."""
+    """Hollow perimeter house with stone walls, wood roof beams and corner posts."""
     x1, z1 = x0 + w - 1, z0 + d - 1
     for y in range(y_base + 1, y_base + height + 1):
-        block = "dirt" if y == y_base + height else "stone"
+        block = "wood" if y == y_base + height else "stone"
         for x in range(x0, x1 + 1):
             for z in range(z0, z1 + 1):
                 if not (x == x0 or x == x1 or z == z0 or z == z1):
                     continue
                 if y <= y_base + 2 and x == door_x and z == door_z:
                     continue
-                add(x, y, z, block)
+                # Corner posts are wood all the way up.
+                if (x, z) in {(x0, z0), (x1, z0), (x0, z1), (x1, z1)}:
+                    add(x, y, z, "wood")
+                else:
+                    add(x, y, z, block)
+    # Wood lintel above the door (one block higher than the gap).
+    if y_base + 3 <= y_base + height:
+        add(door_x, y_base + 3, door_z, "wood")
     # compact floor at y_base inside
     for x in range(x0 + 1, x1):
         for z in range(z0 + 1, z1):
@@ -249,7 +264,12 @@ def ruin_house(x0, z0, w, d, y_base=0, scattered=False, burned=False):
                 continue
             stub = rng.choices([0, 1, 2, 3], weights=[35, 30, 25, 10])[0]
             for y in range(y_base + 1, y_base + stub + 1):
-                wall_block = "dirt" if y == y_base + stub else "stone"
+                if y == y_base + stub and stub >= 2 and rng.random() < 0.35:
+                    wall_block = "wood"  # charred beam stub
+                elif y == y_base + stub:
+                    wall_block = "dirt"
+                else:
+                    wall_block = "stone"
                 add(x, y, z, wall_block)
     # rubble inside / around
     for _ in range((w * d) // 4):
@@ -259,14 +279,14 @@ def ruin_house(x0, z0, w, d, y_base=0, scattered=False, burned=False):
         if burned and rng.random() < 0.5:
             add(rx, rubble_y, rz, "dirt")  # ash / char
         else:
-            add(rx, rubble_y, rz, rng.choice(["stone", "dirt"]))
-    # scattered belongings: use stone, not sand — sand is reserved for the sigil.
+            add(rx, rubble_y, rz, rng.choice(["stone", "dirt", "wood"]))
+    # scattered belongings: stone / wood debris; sand is reserved for the sigil.
     if scattered:
         for _ in range(rng.randint(3, 6)):
             rx = rng.randint(x0 - 1, x1 + 1)
             rz = rng.randint(z0 - 1, z1 + 1)
             if in_bounds(rx, rz):
-                add(rx, y_base + 1, rz, "stone")
+                add(rx, y_base + 1, rz, rng.choice(["stone", "wood"]))
 
 
 def spawn_shelter(cx, cz, r=3):
@@ -495,10 +515,13 @@ def skeleton(cx, cz, y_base=0):
 
 
 def fire_pit(cx, cz, r=2, y_base=0, lit=False):
-    """A rest-fire ring: stone curb with dirt/ash centre.
-    lit=False means extinguished; the engine still gets a readable fire ring."""
-    ring(cx, cz, r - 1, r, y_base + 1, "stone")
-    disc(cx, cz, r - 1, y_base + 1, "dirt")
+    """A rest-fire ring: a 3x3 stone ring around a dirt/ash centre at y=1."""
+    for dx in (-1, 0, 1):
+        for dz in (-1, 0, 1):
+            if dx == 0 and dz == 0:
+                continue
+            add(cx + dx, y_base + 1, cz + dz, "stone")
+    add(cx, y_base + 1, cz, "dirt")
     if lit:
         add(cx, y_base + 1, cz, "stone")  # central fuel marker
 
@@ -615,6 +638,57 @@ def fallen_cart(cx, cz):
 
 
 # ---------------------------------------------------------------------------
+# Scene dressing — density without blocking gameplay
+# ---------------------------------------------------------------------------
+def ground_clutter(cx, cz, count=3, radius=2, y_base=0):
+    """Small stones/dirt debris scattered on the ground.  Keeps y<=1 so it
+    never blocks headroom or camera sight-lines."""
+    for _ in range(count):
+        dx = rng.randint(-radius, radius)
+        dz = rng.randint(-radius, radius)
+        x, z = cx + dx, cz + dz
+        if in_bounds(x, z):
+            add(x, y_base + 1, z, rng.choice(["stone", "dirt"]))
+
+
+def grass_tuft(cx, cz, y_base=0):
+    """Low ground-cover clump: grass/dirt nibs that read as weeds or ash."""
+    for dx, dz in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)]:
+        x, z = cx + dx, cz + dz
+        if in_bounds(x, z) and rng.random() < 0.65:
+            add(x, y_base + 1, z, rng.choice(["grass", "dirt"]))
+
+
+def rubble_pile(cx, cz, r=2, y_base=0):
+    """A foot-height pile of broken stone.  Stays low and irregular."""
+    for dz in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx * dx + dz * dz <= r * r + rng.random():
+                x, z = cx + dx, cz + dz
+                if in_bounds(x, z):
+                    add(x, y_base + 1, z, "stone")
+                    if rng.random() < 0.25:
+                        add(x, y_base + 2, z, "stone")
+
+
+def edge_unevenness(x0, x1, z0, z1, density=0.12, y_base=0):
+    """Break up a flat paved or grass edge with stray dirt/stone/grass nibs.
+    Never raises anything above y_base+1."""
+    for z in range(z0, z1 + 1):
+        for x in range(x0, x1 + 1):
+            if rng.random() < density and (x, y_base + 1, z) not in blocks:
+                add(x, y_base + 1, z, rng.choice(["dirt", "stone", "grass"]))
+
+
+def cracked_curb(x0, x1, z0, z1, y_base=0):
+    """A ragged stone curb along the edge of a path or terrace."""
+    for z in range(z0, z1 + 1):
+        for x in (x0, x1):
+            if in_bounds(x, z) and rng.random() < 0.85:
+                add(x, y_base + 1, z, rng.choice(["stone", "dirt"]))
+
+
+# ---------------------------------------------------------------------------
 # Combat arena
 # ---------------------------------------------------------------------------
 def husk_arena_cover():
@@ -647,6 +721,18 @@ for z in (29, 30, 31, 32):
         add(x, 3, z, "stone")
         add(x, 4, z, "stone")
 
+# Dress the fire plaza and shelter threshold so the first frame is not a
+# flat carpet.  Everything stays at ankle height (y=1) to keep the camera
+# line from the pulled-back boom clear.
+edge_unevenness(29, 35, 28, 32, density=0.25, y_base=0)
+grass_tuft(30, 35)
+grass_tuft(34, 35)
+grass_tuft(29, 31)
+grass_tuft(35, 31)
+grass_tuft(31, 33)
+grass_tuft(33, 33)
+ground_clutter(32, 30, count=6, radius=3)  # around the procedural campfire
+
 # ---- 2. Main street: the readable spine -----------------------------------
 # Keep x=30..34, z=6..29 at y=0 so spawn(32,32), fire(32,29) and husk(32,25)
 # all stand on real ground at the expected height.
@@ -662,6 +748,14 @@ stone_arch(SPAWN_X, 26, y_base=0, height=5, span=4, width=2, axis="x")
 for fx, fz in [(23, 26), (23, 27), (41, 26), (41, 27)]:
     for y in range(1, 8):
         add(fx, y, fz, "stone")
+
+# Rubble and weeds at the entry frame so the arch does not read as floating.
+rubble_pile(29, 26, r=1, y_base=0)
+rubble_pile(35, 26, r=1, y_base=0)
+ground_clutter(23, 26, count=4, radius=2)
+ground_clutter(41, 26, count=4, radius=2)
+grass_tuft(26, 27)
+grass_tuft(38, 27)
 
 # ---- 4. Village square around the well -------------------------------------
 village_well(SPAWN_X, 17, r=3)
@@ -696,11 +790,67 @@ paved_rect(32, 34, 19, 22, "stone", y=1)
 # Path from well toward the west ruin area
 paved_rect(20, 29, 17, 17, "stone", y=1)
 
+# Dress the village square so it reads as a lived-in plaza, not a flat pad.
+# All props stay at y=1 or below to keep main-street headroom clear.
+ground_clutter(32, 17, count=8, radius=3)   # around the well
+ground_clutter(26, 17, count=6, radius=2)   # west market stall
+ground_clutter(40, 19, count=6, radius=2)   # east market stall
+ground_clutter(24, 20, count=5, radius=2)   # west terrace
+ground_clutter(40, 20, count=5, radius=2)   # east terrace
+ground_clutter(22, 18, count=4, radius=2)
+ground_clutter(44, 18, count=4, radius=2)
+ground_clutter(26, 22, count=4, radius=2)
+ground_clutter(38, 22, count=4, radius=2)
+rubble_pile(28, 15, r=2, y_base=0)          # south-west of the well
+rubble_pile(36, 15, r=2, y_base=0)          # south-east of the well
+rubble_pile(22, 16, r=2, y_base=0)          # north-west terrace corner
+rubble_pile(42, 16, r=2, y_base=0)          # north-east terrace corner
+rubble_pile(24, 24, r=2, y_base=0)          # south-west terrace edge
+rubble_pile(40, 24, r=2, y_base=0)          # south-east terrace edge
+grass_tuft(24, 16)
+grass_tuft(40, 16)
+grass_tuft(20, 18)
+grass_tuft(44, 18)
+grass_tuft(22, 20)
+grass_tuft(42, 20)
+grass_tuft(24, 24)
+grass_tuft(40, 24)
+grass_tuft(26, 16)
+grass_tuft(38, 16)
+grass_tuft(20, 22)
+grass_tuft(44, 22)
+# Ragged curbs where the raised terrace meets the lower village floor.
+cracked_curb(10, 19, 16, 25, y_base=0)
+cracked_curb(45, 54, 16, 25, y_base=0)
+# Weeds and stones scattered across the raised grass terrace.
+edge_unevenness(10, 22, 16, 25, density=0.12, y_base=1)
+edge_unevenness(42, 54, 16, 25, density=0.12, y_base=1)
+
+# Keep the exact spawn and campfire columns clear of ankle-high props so the
+# player and procedural campfire stand on real ground, not on a clump.
+for sz in (29, 32):
+    blocks.pop((32, 1, sz), None)
+    blocks.pop((32, 2, sz), None)
+
 # ---- 5. Burned / collapsed houses with story props -------------------------
 ruin_house(8, 10, 7, 7, y_base=0, scattered=True, burned=True)
 ruin_house(48, 10, 7, 7, y_base=0, scattered=True, burned=True)
 ruin_house(10, 36, 7, 7, y_base=0, scattered=True, burned=True)
 ruin_house(46, 36, 7, 7, y_base=0, scattered=True, burned=True)
+
+# Overgrown rubble and weeds around the collapsed houses so they sit in the world.
+ground_clutter(12, 12, count=5, radius=3)
+ground_clutter(52, 12, count=5, radius=3)
+ground_clutter(14, 40, count=5, radius=3)
+ground_clutter(50, 40, count=5, radius=3)
+grass_tuft(8, 14)
+grass_tuft(54, 14)
+grass_tuft(12, 38)
+grass_tuft(50, 38)
+rubble_pile(10, 8, r=2, y_base=0)
+rubble_pile(52, 8, r=2, y_base=0)
+rubble_pile(12, 44, r=2, y_base=0)
+rubble_pile(50, 44, r=2, y_base=0)
 
 # Scattered belongings near the path
 scattered_belongings(28, 21, count=5)
@@ -739,8 +889,11 @@ for z in (12, 13, 14):
     for x in (MAIN_X0, MAIN_X1):       # x=30, 34
         blocks.pop((x, 1, z), None)    # remove deck edge
         blocks.pop((x, 2, z), None)    # remove railing
-    # Rubble in the middle of the remaining deck
-    add(32, 1, z, rng.choice(["dirt", "stone"]))
+    # Rubble and cracked planks across the remaining deck strip (x=31-33).
+    for x in (31, 32, 33):
+        add(x, 1, z, rng.choice(["dirt", "stone"]))
+        if rng.random() < 0.25:
+            add(x, 2, z, rng.choice(["dirt", "stone"]))
 # Cracked ground visible through the broken edges, then restore the ground
 # blocks so the main street remains majority stone-paved.  The deck itself
 # is still missing, so the bridge reads as damaged while staying walkable.
@@ -754,10 +907,54 @@ for z in (12, 13, 14):
     for x in (MAIN_X0 - 1, MAIN_X1 + 1):  # x=29, 35
         add(x, 3, z, "stone")
         add(x, 4, z, "stone")
+
+# Low rubble and weeds at the bridge foot so the approach does not read clean.
+rubble_pile(28, 11, r=2, y_base=0)
+rubble_pile(36, 11, r=2, y_base=0)
+rubble_pile(26, 10, r=2, y_base=0)
+rubble_pile(38, 10, r=2, y_base=0)
+ground_clutter(28, 10, count=5, radius=2)
+ground_clutter(36, 10, count=5, radius=2)
+ground_clutter(26, 12, count=4, radius=2)
+ground_clutter(38, 12, count=4, radius=2)
+grass_tuft(26, 12)
+grass_tuft(38, 12)
+grass_tuft(24, 10)
+grass_tuft(40, 10)
+
 # Steps from the bridge deck up to the gate plateau at y=2
 stairs(MAIN_X0, MAIN_X1, 11, 8, y_start=1, rise=1)
 # Gate plateau surface
 paved_rect(24, 40, 3, 11, "stone", y=2)
+
+# Dress the gate plateau edges so the final approach is not a clean slab.
+# Props sit at y=2 (on the plateau surface), never rising into head height.
+ground_clutter(24, 8, count=5, radius=2, y_base=1)
+ground_clutter(40, 8, count=5, radius=2, y_base=1)
+ground_clutter(26, 10, count=5, radius=2, y_base=1)
+ground_clutter(38, 10, count=5, radius=2, y_base=1)
+ground_clutter(22, 6, count=4, radius=2, y_base=1)
+ground_clutter(42, 6, count=4, radius=2, y_base=1)
+rubble_pile(24, 6, r=2, y_base=1)
+rubble_pile(40, 6, r=2, y_base=1)
+rubble_pile(22, 4, r=2, y_base=1)
+rubble_pile(42, 4, r=2, y_base=1)
+grass_tuft(22, 8)
+grass_tuft(42, 8)
+grass_tuft(24, 10)
+grass_tuft(40, 10)
+grass_tuft(22, 6)
+grass_tuft(42, 6)
+# Cracked and stained stones across the plateau surface itself.
+for z in range(3, 12):
+    for x in range(24, 41):
+        if rng.random() < 0.12 and blocks.get((x, 2, z)) == "stone":
+            blocks[(x, 2, z)] = "dirt"
+# Safety: keep the main-street ascent (x=30-34, z=6-11) clear at head height.
+for z in range(6, 12):
+    for x in range(30, 35):
+        for y in (3, 4):
+            blocks.pop((x, y, z), None)
 
 # ---- 6b. Vista terrace: the open moment before the sealed gate -------------
 # A raised stone balcony east of the gate.  The player walks out, the dungeon
@@ -869,9 +1066,215 @@ fence(43, 52, 51, 52, y_base=0)
 ruin_house(52, 54, 6, 6, y_base=0, scattered=True, burned=False)
 ruin_house(8, 56, 6, 6, y_base=0, scattered=True, burned=True)
 
-# A low southern boundary wall/cliff to stop the world feeling infinite.
-low_wall(0, 63, 60, 63, y_base=0, height=3)
-low_wall(0, 0, 0, 63, y_base=0, height=2)
+# Dress the southern fields so the back half reads as overgrown farmland.
+ground_clutter(14, 50, count=5, radius=3)
+ground_clutter(46, 48, count=5, radius=3)
+ground_clutter(26, 50, count=4, radius=3)
+ground_clutter(34, 58, count=4, radius=3)
+ground_clutter(18, 58, count=4, radius=2)
+ground_clutter(50, 56, count=4, radius=2)
+grass_tuft(12, 48)
+grass_tuft(22, 48)
+grass_tuft(32, 48)
+grass_tuft(42, 48)
+grass_tuft(16, 56)
+grass_tuft(28, 54)
+grass_tuft(38, 54)
+grass_tuft(48, 58)
+grass_tuft(56, 54)
+rubble_pile(20, 46, r=2, y_base=0)
+rubble_pile(44, 46, r=2, y_base=0)
+
+# A3 material pass: break up long stone runs and add ground cover / lamps.
+# ----------------------------------------------------------------------------
+
+def band_stone_walls():
+    """Replace contiguous bands inside long stone runs with cobblestone, brick,
+    or limestone so grey walls read as built masonry rather than one flat colour."""
+    stone_blocks = [(x, y, z) for (x, y, z), b in blocks.items()
+                    if b == "stone" and y >= 1]
+    variants = ["cobblestone", "brick", "limestone"]
+
+    # Horizontal runs along X at fixed (z, y).
+    by_zy = defaultdict(list)
+    for x, y, z in stone_blocks:
+        by_zy[(z, y)].append(x)
+    for (z, y), xs in by_zy.items():
+        xs.sort()
+        runs = []
+        start = prev = xs[0]
+        for x in xs[1:]:
+            if x == prev + 1:
+                prev = x
+            else:
+                runs.append((start, prev))
+                start = prev = x
+        runs.append((start, prev))
+        for s, e in runs:
+            length = e - s + 1
+            if length >= 8:
+                band_w = min(rng.randint(2, 4), length)
+                bs = s + (length - band_w) // 2
+                var = rng.choice(variants)
+                for x in range(bs, bs + band_w):
+                    blocks[(x, y, z)] = var
+
+    # Horizontal runs along Z at fixed (x, y).
+    by_xy = defaultdict(list)
+    for x, y, z in stone_blocks:
+        by_xy[(x, y)].append(z)
+    for (x, y), zs in by_xy.items():
+        zs.sort()
+        runs = []
+        start = prev = zs[0]
+        for z in zs[1:]:
+            if z == prev + 1:
+                prev = z
+            else:
+                runs.append((start, prev))
+                start = prev = z
+        runs.append((start, prev))
+        for s, e in runs:
+            length = e - s + 1
+            if length >= 8:
+                band_w = min(rng.randint(2, 4), length)
+                bs = s + (length - band_w) // 2
+                var = rng.choice(variants)
+                for z in range(bs, bs + band_w):
+                    blocks[(x, y, z)] = var
+
+    # Vertical runs at fixed (x, z).
+    by_xz = defaultdict(list)
+    for x, y, z in stone_blocks:
+        by_xz[(x, z)].append(y)
+    for (x, z), ys in by_xz.items():
+        ys.sort()
+        runs = []
+        start = prev = ys[0]
+        for y in ys[1:]:
+            if y == prev + 1:
+                prev = y
+            else:
+                runs.append((start, prev))
+                start = prev = y
+        runs.append((start, prev))
+        for s, e in runs:
+            length = e - s + 1
+            if length >= 8:
+                band_h = min(rng.randint(1, 2), length)
+                bs = s + (length - band_h) // 2
+                var = rng.choice(variants)
+                for y in range(bs, bs + band_h):
+                    blocks[(x, y, z)] = var
+
+
+# Columns where low ground cover must not be sprinkled (paths, plazas, wells).
+GROUND_PROTECTED = [
+    (30, 34, 6, 29),   # main street
+    (29, 35, 29, 35),  # spawn shelter
+    (27, 37, 14, 21),  # well plaza
+    (20, 24, 22, 26),  # west fire-pit
+    (40, 44, 22, 26),  # east fire-pit
+    (30, 34, 46, 50),  # south travellers' fire
+    (9, 18, 45, 56),   # south-west garden
+    (41, 52, 43, 52),  # south-east garden
+    (21, 30, 55, 62),  # far garden
+    (15, 21, 51, 57),  # pond
+]
+
+
+def _is_protected_ground(x, z):
+    return any(x0 <= x <= x1 and z0 <= z <= z1 for x0, x1, z0, z1 in GROUND_PROTECTED)
+
+
+def convert_surface(rects, target, predicate=None):
+    """Deterministically replace top-layer grass/stone inside rects with target.
+
+    Used for the final A3 material pass: it turns broad grass/stone flats into
+    deliberate courtyards, paths, and ground-cover patches without touching
+    gameplay-critical surfaces (spawn, campfire, main street, wells, etc.).
+    Returns the number of blocks changed.
+    """
+    top = {}
+    for (x, y, z), b in blocks.items():
+        cur_y, cur_b = top.get((x, z), (-1, "air"))
+        if y > cur_y:
+            top[(x, z)] = (y, b)
+
+    count = 0
+    for x0, x1, z0, z1 in rects:
+        for z in range(z0, z1 + 1):
+            for x in range(x0, x1 + 1):
+                if not in_bounds(x, z):
+                    continue
+                if _is_protected_ground(x, z):
+                    continue
+                if predicate and not predicate(x, z):
+                    continue
+                ty, tb = top.get((x, z), (-1, "air"))
+                if tb in ("grass", "stone"):
+                    blocks[(x, ty, z)] = target
+                    count += 1
+    return count
+
+
+def scatter_ground_cover(density=0.16):
+    """Sprinkle moss / dirt / gravel / leaves over flat grass so the footprint
+    no longer reads as a single green carpet."""
+    top = {}
+    for (x, y, z), b in blocks.items():
+        cur_y, cur_b = top.get((x, z), (-1, "air"))
+        if y > cur_y:
+            top[(x, z)] = (y, b)
+
+    for (x, z), (ty, tb) in top.items():
+        if tb != "grass":
+            continue
+        if _is_protected_ground(x, z):
+            continue
+        if rng.random() >= density:
+            continue
+        mat = rng.choice(["moss", "dirt", "gravel", "leaves", "moss", "dirt"])
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                if rng.random() < 0.5:
+                    continue
+                nx, nz = x + dx, z + dz
+                if not in_bounds(nx, nz):
+                    continue
+                nty, ntb = top.get((nx, nz), (-1, "air"))
+                if ntb != "grass":
+                    continue
+                if mat == "leaves" and (dx, dz) == (0, 0):
+                    # small bush: a leaves cluster 1-2 voxels tall
+                    add(nx, ty + 1, nz, "leaves")
+                    if rng.random() < 0.25 and ty + 2 < 32:
+                        add(nx, ty + 2, nz, "leaves")
+                else:
+                    add(nx, ty + 1, nz, mat)
+
+
+# Run the A3 passes.
+band_stone_walls()
+scatter_ground_cover(density=0.16)
+
+# Intentional surface conversions to push grass+stone below the 75% A3 cap.
+# Each patch is chosen to read as authored ground detail (courtyards, paths,
+# ground cover under landmarks), not random noise.  Deterministic predicates
+# keep the change measurable and reproducible.
+a3_conversions = 0
+a3_conversions += convert_surface([(6, 14, 6, 14)], "dirt")  # under petrified tree
+a3_conversions += convert_surface([(48, 56, 46, 54)], "gravel", lambda x, z: (x + z) % 2 == 0)  # watchtower base
+a3_conversions += convert_surface([(5, 14, 35, 44)], "cobblestone", lambda x, z: x % 2 == 0)  # west ruin courtyard
+a3_conversions += convert_surface([(45, 54, 35, 44)], "cobblestone", lambda x, z: x % 2 == 0)  # east ruin courtyard
+a3_conversions += convert_surface([(10, 20, 55, 62)], "dirt", lambda x, z: (x + z) % 2 == 0)  # south-west field
+a3_conversions += convert_surface([(42, 52, 55, 62)], "dirt", lambda x, z: (x + z) % 2 == 0)  # south-east field
+print(f"A3 surface conversions: {a3_conversions}")
+
+# A few extra warm lamp accents beyond the street lanterns.
+lamp_post(27, 19, y_base=1, height=2)
+lamp_post(40, 19, y_base=1, height=2)
+lamp_post(44, 8, y_base=2, height=2)
 
 # ---- 13. Export ------------------------------------------------------------
 out = {
