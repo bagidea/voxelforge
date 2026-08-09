@@ -9,6 +9,13 @@ the build lock. Patch file: `docs/patches/monanisa-a6-teal-accent.patch`.
 `anim.rs`, generated the diff, then `git checkout --` it back to HEAD before writing
 this note — verified clean with `git status --short client/src/anim.rs` (no output).
 
+**Update 2026-08-10, later same day — landed, shot, still OPEN:** you applied this
+patch (`anim.rs` commit `90ace55`), it built, and got a real-frame reshoot:
+`docs/VERDICT-a6-teal-accent-2026-08-10.md`. Item 2 is **not closed** — hue delta is
+1.1° (no improvement on the 3.3° baseline) and the clasp renders **0 pixels** in a
+whole-frame scan of its own hue band, in both boot and combat frames. It's not a "reads
+small" problem, it's full occlusion — see the correction to point 3 below.
+
 ## Why
 
 `docs/art-order-2026-08-09-composition.md` A6 point 2: Auren separates from the
@@ -67,10 +74,18 @@ reuses the rig's own `trim` color verbatim (adds 0 clusters); only the gem is ne
    clearly > 3.3° and visibly readable as a cool point in the frame, without pushing
    past look-bible's ~15% frame-coverage cap (this piece is roughly 0.02% of frame at
    gate3 boot distance, so the cap is nowhere close).
-3. If the clasp reads too small/subtle at gate3's actual play distance (character is
+3. ~~If the clasp reads too small/subtle at gate3's actual play distance (character is
    only ~90-160px tall raw in the current shortened-boom frames — see the verdict doc
    for why the boom is shortened), the fix is to widen `size` on the gem `PartSpec`,
    not to reposition it — the shoulder point is correct, only tuned by art-order's own
-   framing math if I'm wrong about legibility at range.
+   framing math if I'm wrong about legibility at range.~~
+   **Corrected 2026-08-10, post-reshoot:** this assumption was wrong. It isn't reading
+   small — it isn't reading at all. A whole-frame scan found 0 pixels in the clasp's
+   hue band in either frame, and cropping the shoulder region shows solid cloak, no
+   clasp visible whatsoever. The gem's *z* (`0.095`, only 1.5cm past the anchor's own
+   `0.08`) sits behind the cloak drape's actual rendered surface at that point from the
+   third-person camera. Widening `size` won't fix a hidden part — the fix is a *z*-offset
+   push further out from the torso, past the cloak's surface depth at the anchor. Full
+   detail and repro: `docs/VERDICT-a6-teal-accent-2026-08-10.md`.
 
 — Monanisa

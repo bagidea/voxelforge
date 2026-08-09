@@ -105,12 +105,23 @@ cap. `anim.rs` is Yamamoto's lane and I don't hold the build lock, so the patch 
 written, diffed clean against HEAD, and handed off — **not applied, not built, not
 shot**. Item 2 stays open until that lands and gets its own real-frame confirmation.
 
+**Update 2026-08-10, later same day:** the patch landed (`anim.rs` commit `90ace55`),
+built, and got its real-frame confirmation — Yamamoto's
+`docs/VERDICT-a6-teal-accent-2026-08-10.md`. Result: **still OPEN**, and worse than the
+risk flagged above — hue delta measures 1.1° (not an improvement on the 3.3° here), and
+a whole-frame pixel scan for the clasp's own hue band finds **0 matching pixels** in
+either boot or combat frames. The clasp compiles into the rig but is fully occluded
+behind the cloak's own drape from the third-person camera angle. Root cause is a *z*-depth
+problem (the gem sits ~1.5cm out from the anchor while the cloak's rendered surface
+extends further than that at the shoulder line), not a sizing problem — see that doc for
+the full method and the suggested z-offset fix.
+
 ## Summary
 
 | | status | evidence |
 |---|---|---|
 | A6.1 shape reads as character, not box | **CLOSED** | real frame, iso 66.2 ≥ 40, today |
-| A6.2 hue-separated from background | **OPEN** | real frame confirms 3.3° gap; patch ready for Yamamoto |
+| A6.2 hue-separated from background | **STILL OPEN** | patch built + shot: `docs/VERDICT-a6-teal-accent-2026-08-10.md` — hue delta 1.1° (no improvement), clasp renders 0 px, fully occluded behind the cloak; needs a z-offset fix, not a size change |
 | A6.3 don't grow the character | **N/A — untouched** | no size change proposed or made |
 
 — Monanisa
