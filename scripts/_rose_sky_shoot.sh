@@ -16,7 +16,9 @@
 #   BIN=./target-rose/debug/voxelforge.exe bash scripts/_rose_sky_shoot.sh
 set -uo pipefail
 
-BIN="${BIN:-./target-rose/debug/voxelforge.exe}"
+# Default matches gate3_shoot.sh convention (./target/release/voxelforge.exe);
+# override BIN for a shot binary or a per-lane target dir.
+BIN="${BIN:-./target/release/voxelforge.exe}"
 OUT="${OUT:-docs/assets/gate3}"
 LOGS="${LOGS:-_rose_sky_logs}"
 QUALITY="${QUALITY:-high}"
