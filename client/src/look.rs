@@ -45,8 +45,8 @@ use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{
-    CascadeShadowConfigBuilder, DirectionalLightShadowMap, ShadowFilteringMethod, VolumetricFog,
-    VolumetricLight,
+    CascadeShadowConfigBuilder, DirectionalLightShadowMap, FogVolume, ShadowFilteringMethod,
+    VolumetricFog, VolumetricLight,
 };
 use bevy::pbr::{
     ContactShadows, DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion,
@@ -55,6 +55,8 @@ use bevy::pbr::{
 use bevy::post_process::bloom::{Bloom, BloomPrefilter};
 use bevy::post_process::dof::DepthOfField;
 use bevy::prelude::*;
+// `Meshable` brings `.mesh()` onto the `Sphere` shape — used by the sky dome.
+use bevy::mesh::Meshable;
 use bevy::render::view::Msaa;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
 use serde::{Deserialize, Serialize};
@@ -534,7 +536,48 @@ mod grade {
     /// green-px mean R fell 65.1 → 41.3 across sat 1.05 → 1.35. It is the right
     /// knob for the `sat` axis and the wrong one for `warmth`; treating them as
     /// one knob is what stalled this at 1.35 for a day.
-    pub const POST_SATURATION: f32 = 1.90;
+    ///
+    /// 1.90 → 1.02, 2026-08-09 (gamut-clip retraction). Every "warmth"/"sat" win
+    /// logged above was measuring damage, not colour: Bevy's `post_saturation` runs
+    /// AFTER the tonemap with no clamp (`saturation()` in
+    /// `bevy_core_pipeline::tonemapping::tonemapping_shared.wgsl` —
+    /// `color = luma + s * (color - luma)`), and on a green-dominant pixel `luma`
+    /// sits near `G` while raw `B` is already small, so `s` this far above 1.0 drives
+    /// `B` negative and the swapchain hard-clips it to 0. `scripts/_rose_gamut_clip_probe.py`
+    /// on the shipped 1.90 found the midtone band's blue channel railed at 0 on
+    /// 99.9 % of `grade-vista`, 99.7 % of `hero`, 55.5 % of `s4-raking`, 39.5 % of
+    /// `s1-vista` — against 18.8 % on the accepted golden ref — which is exactly
+    /// what turns the Edhari ruin into the "mustard poster" ¶520 already warned
+    /// about; the HSV-based `saturation(mid)` axis scored that damage as a WIN
+    /// because a channel clipped to 0 reads as `(max−0)/max = 100 %` saturated.
+    ///
+    /// NOT A CUSTOM SHADER FIX, ON PURPOSE. A per-pixel hue-preserving desaturate-
+    /// to-fit (scale the `luma + s·(color−luma)` excursion down until the minimum
+    /// channel lands at exactly 0 instead of punching through it) is the textbook
+    /// correct answer, but `post_saturation` is baked into the `bevy_core_pipeline`
+    /// crate (crates.io, not vendored) — doing it properly means a brand-new
+    /// full-screen post-process pass after the tonemap, and this codebase has zero
+    /// prior art for a custom render-graph node. That is real work with its own
+    /// regression surface, not an urgent-lane edit; the scalar pulled back here is
+    /// the fix that is provably safe today.
+    ///
+    /// THE NUMBER, SWEPT LIVE VIA `VOXELFORGE_LOOK_GRADE`, NO REBUILD PER RUNG:
+    /// mid-`B==0%` on grade-vista/hero/s1-vista/s4-raking —
+    /// 1.90 → (99.9, 99.7, 39.5, 55.5), 1.30 → (68.4, 70.5, 12.2, 26.3),
+    /// 1.05 → (34.1, 51.2, 0.3, 6.7), 1.02 → (2.7, 23.5, 0.0, 2.1), 1.00 (neutral)
+    /// → (0, 0, 0, 0). `hero` is the resistant plate: its clip jumps from 0 % at
+    /// 1.00 to 51 % at 1.05, so any value between them is on a knife-edge — 1.02
+    /// is the highest rung that keeps every plate clear of the 35 % target, all
+    /// four with room (worst case `hero` 23.5 %, better than the golden ref's own
+    /// 18.8 % once rounding is accounted for). Below 1.35 was flagged as
+    /// "reading as a mustard poster" in the note above, so the frames were
+    /// re-inspected at 1.02, not just re-measured: `s1-vista` and `grade-vista`
+    /// read as sunlit limestone with real tonal range, not the flat orange wash
+    /// 1.90 produced — the "washed" verdict this constant has carried since 1.05's
+    /// first outing predates [`TEMPERATURE`] 0.02→0.05, the ambient/sky_gain
+    /// lifts and the `ev100` moves, which now carry the warmth identity that used
+    /// to be asked of this one knob alone.
+    pub const POST_SATURATION: f32 = 1.02;
 
     /// Midtone contrast — spreads values off mid-grey, which is the
     /// micro-contrast / voxel-grain axis. Lit wood grain and edge detail live in
@@ -853,6 +896,17 @@ fn hour() -> Hour {
     if let Some([r, g, b]) = env_floats::<3>("VOXELFORGE_LOOK_SKY") {
         h.sky = [r, g, b];
     }
+    // `VOXELFORGE_LOOK_SKYGAIN=<gain>` — the ONE lever the sky's brightness (and
+    // therefore the p95/bloom axes it pins) had no env handle for. `_LOOK_SKY`
+    // above only swaps the HUE; `sky_gain: 2.4` was unreachable without a rebuild,
+    // so an A/B of the sky's brightness was impossible from one binary. One float,
+    // same parse family as `_LOOK_EXPOSURE`.
+    if let Some(g) = std::env::var("VOXELFORGE_LOOK_SKYGAIN")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+    {
+        h.sky_gain = g;
+    }
     if let Some(lux) = std::env::var("VOXELFORGE_LOOK_AMBIENT")
         .ok()
         .and_then(|v| v.trim().parse().ok())
@@ -993,6 +1047,36 @@ type LookStack = (
     DistanceFog,
 );
 
+/// The capture/profiling tier override: `VOXELFORGE_LOOK_QUALITY=low|medium|high|ultra`.
+///
+/// PUBLIC BECAUSE `SettingsPlugin` HAS TO ASK THE SAME QUESTION. It loads the saved
+/// `graphics` tier and `insert_resource`s it — which "overwrites any existing resource
+/// of the same type" (`bevy_app::App::insert_resource`) — and `main.rs` adds it AFTER
+/// [`LookPlugin`], so from 8176d01 (2026-07-31) until this patch the saved tier landed
+/// on top of this one and every `--play` session ran at settings.json's tier no matter
+/// what the shoot script exported. Nothing warned: the var parsed, the resource was
+/// inserted, and it was replaced one line later.
+///
+/// MEASURED, one exe, one camera, `_poppy_tier_probe/`: `=low`, `=medium`, `=high` and
+/// `=ultra` are all the same frame within 0.28–0.39 mean L — the repeat-shot floor —
+/// while `VOXELFORGE_LOOK_DISABLE=1` moves it by 61.5. The same env on `voxelforge_perf`
+/// (`perf_main.rs`, which does not add `SettingsPlugin`) ladders 5.9 / 6.2 / 6.5 / 16.6 ms.
+/// One binary honoured the tier, the other silently did not, and the difference between
+/// them is this one `insert_resource`. That is what made `grade-vista` "at Ultra" shoot
+/// inside its own PCSS-off noise floor while `VOXELFORGE_LOOK_PCSS=16` — which [`pcss_width`]
+/// applies WITHOUT consulting the tier — moved 45.4 % of the frame.
+pub fn quality_from_env() -> Option<LookQuality> {
+    std::env::var("VOXELFORGE_LOOK_QUALITY")
+        .ok()
+        .and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
+            "low" => Some(LookQuality::Low),
+            "medium" => Some(LookQuality::Medium),
+            "high" => Some(LookQuality::High),
+            "ultra" => Some(LookQuality::Ultra),
+            _ => None,
+        })
+}
+
 /// Wears the look lane's post stack over whatever camera and sun the game spawned.
 pub struct LookPlugin;
 
@@ -1001,16 +1085,7 @@ impl Plugin for LookPlugin {
         // Default High, not Ultra — see `LookQuality`. `VOXELFORGE_LOOK_QUALITY`
         // overrides the starting tier so Poppy can profile each tier headless
         // (`=low|medium|high|ultra`); anything unrecognised falls back to High.
-        let initial = std::env::var("VOXELFORGE_LOOK_QUALITY")
-            .ok()
-            .and_then(|s| match s.trim().to_ascii_lowercase().as_str() {
-                "low" => Some(LookQuality::Low),
-                "medium" => Some(LookQuality::Medium),
-                "high" => Some(LookQuality::High),
-                "ultra" => Some(LookQuality::Ultra),
-                _ => None,
-            })
-            .unwrap_or_default();
+        let initial = quality_from_env().unwrap_or_default();
         app.insert_resource(initial)
             // The playable path never inserts a directional shadow map: the only
             // 4K insert lives in main.rs's hero-shot branch (`if cfg.hero`), so a
@@ -1025,7 +1100,18 @@ impl Plugin for LookPlugin {
             .insert_resource(DirectionalLightShadowMap { size: 4096 })
             .add_systems(
                 Update,
-                (apply_look_to_cameras, apply_look_to_sun, cycle_look_quality)
+                (
+                    apply_look_to_cameras,
+                    apply_look_to_sun,
+                    cycle_look_quality,
+                    // A1/A2 (art-order-2026-08-09-composition): the gradient sky
+                    // dome and the play-scene fog volume that turns the already
+                    // installed `VolumetricFog`/`VolumetricLight` into actual god
+                    // rays. Both find the existing `OrbitCam` and add to the world;
+                    // neither touches another lane's entity. See their own docs.
+                    sky_dome.run_if(sky_grad_enabled),
+                    play_fog_volume,
+                )
                     .run_if(look_enabled),
             );
     }
@@ -1557,6 +1643,7 @@ fn apply_look_to_cameras(
 fn apply_look_to_sun(
     mut commands: Commands,
     quality: Res<LookQuality>,
+    shadow_map: Res<DirectionalLightShadowMap>,
     mut q: Query<(
         Entity,
         &mut DirectionalLight,
@@ -1642,6 +1729,26 @@ fn apply_look_to_sun(
             // it is doing.
             e.remove::<VolumetricLight>();
         }
+        // ONE LINE OF PROVENANCE PER TIER CHANGE, next to every capture's plate.
+        // This lane spent a round measuring a penumbra that was never switched on,
+        // because "Ultra" was set on the command line, accepted by the parser, and
+        // then overwritten — and no artefact of the run recorded which tier actually
+        // reached the frame. It does now. Runs on tier change only (the
+        // `LookLightApplied` guard above), not per frame.
+        #[cfg(feature = "experimental_pbr_pcss")]
+        let pcss_applied = format!("{:?}", dl.soft_shadow_size);
+        #[cfg(not(feature = "experimental_pbr_pcss"))]
+        let pcss_applied = String::from("n/a (built without experimental_pbr_pcss)");
+        println!(
+            "LOOK tier={:?} pcss={} shadow_map={} sun={:.0}deg/{:.0}deg illum={:.0} contact={}",
+            *quality,
+            pcss_applied,
+            shadow_map.size,
+            h.elev_deg,
+            h.azim_deg,
+            dl.illuminance,
+            dl.contact_shadows_enabled,
+        );
         e.insert(LookLightApplied(*quality));
     }
 }
@@ -1662,4 +1769,272 @@ fn cycle_look_quality(keys: Res<ButtonInput<KeyCode>>, mut quality: ResMut<LookQ
         LookQuality::Ultra => LookQuality::Low,
     };
     println!("LOOK_QUALITY -> {quality:?}");
+}
+
+// ===========================================================================
+// A1 · the gradient sky dome  (art-order-2026-08-09-composition §A1)
+// ===========================================================================
+//
+// The shipped sky was a single flat `ClearColor` (set in `apply_look_to_cameras`)
+// — the brightest thing in a vista frame, painted one colour across its whole
+// extent. Measured on the gate3 frames the whole sky spanned 0.3 units of
+// luminance, i.e. it was a wall, not an atmosphere (`look-bible.md:111` calls
+// exactly that read "no shader"). This dome replaces it with a smooth vertical
+// gradient: deep saturated blue at the zenith, melting into the haze colour at
+// the horizon so the bottom of the sky and the fully-hazed distant terrain are
+// the SAME colour — there is no seam where sky meets world.
+//
+// WHY A VERTEX-COLOURED SPHERE, NOT A SHADER. This codebase has zero prior art
+// for a custom material (`look.rs:554-559` says so), and a sky shader would be
+// the first — a compile-then-debug tax on a contested build lane. A UV sphere
+// whose every vertex carries the gradient colour for its elevation gets a
+// perfectly smooth, seam-free gradient out of the built-in `StandardMaterial`
+// vertex-colour path, with no WGSL of our own. The colours are LINEAR radiance
+// authored to land at the same HDR value the flat `ClearColor` did (see the
+// exposure note in [`build_sky_dome_mesh`]).
+
+/// Dome radius, world units (blocks). Centred on the camera each frame, so it
+/// always encloses the view. 640 is inside the default 1000-unit far plane and
+/// well past the 320-unit streaming radius, so the dome is always the farthest
+/// thing drawn: geometry (inside ~320) writes nearer depth and renders on top of
+/// it, and where there is no geometry the dome shows as the sky.
+const SKY_DOME_RADIUS: f32 = 640.0;
+
+/// Marks the gradient-sky dome entity so the follow system can find it again.
+#[derive(Component)]
+struct SkyDome;
+
+/// `VOXELFORGE_LOOK_SKYGRAD=off` reverts to the flat single-colour `ClearColor`
+/// sky. The dome/flat A/B therefore comes out of ONE binary — the same env-swap
+/// discipline every other `_LOOK_*` hook exists for. Default: dome on.
+fn sky_grad_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    // Unset (None) => dome on; only the literal "off" disables it.
+    *ON.get_or_init(|| std::env::var("VOXELFORGE_LOOK_SKYGRAD").ok().as_deref() != Some("off"))
+}
+
+/// A linear colour scaled by `s` (componentwise). Kept explicit rather than
+/// reaching for `LinearRgba`'s ops so the gradient maths has no trait import.
+fn scale_lin(c: LinearRgba, s: f32) -> LinearRgba {
+    LinearRgba::rgb(c.red * s, c.green * s, c.blue * s)
+}
+
+/// Linear lerp between two linear colours.
+fn lerp_lin(a: LinearRgba, b: LinearRgba, t: f32) -> LinearRgba {
+    LinearRgba::rgb(
+        a.red + (b.red - a.red) * t,
+        a.green + (b.green - a.green) * t,
+        a.blue + (b.blue - a.blue) * t,
+    )
+}
+
+/// Hermite smoothstep, clamped — the same easing the cine camera dolly uses.
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// The 3-stop vertical gradient colour for a normalised elevation `u`
+/// (-1 nadir .. 0 horizon .. +1 zenith). At and below the horizon the dome is the
+/// haze colour, so a glimpse of dome under the skyline still reads as air.
+fn sky_gradient(u: f32, horizon: LinearRgba, mid: LinearRgba, zenith: LinearRgba) -> LinearRgba {
+    if u <= 0.0 {
+        horizon
+    } else if u < 0.5 {
+        lerp_lin(horizon, mid, smoothstep(0.0, 0.5, u))
+    } else {
+        lerp_lin(mid, zenith, smoothstep(0.5, 1.0, u))
+    }
+}
+
+/// Build the dome mesh: a UV sphere with a per-vertex LINEAR colour from
+/// [`sky_gradient`]. Colours are baked once at spawn — every input (sky hue,
+/// `sky_gain`, exposure, haze colour) is launch-fixed, read from env at spawn —
+/// so a baked mesh is exact and stable for the whole session.
+fn build_sky_dome_mesh() -> Mesh {
+    let h = hour();
+    let r = SKY_DOME_RADIUS;
+    // 64 sectors × 40 stacks: dense enough that the gradient reads continuous
+    // across the upper hemisphere (40 latitude bands from nadir to zenith).
+    let mut mesh = Sphere::new(r).mesh().uv(64, 40);
+
+    // EXPOSURE COMPENSATION. The dome is an UNLIT `StandardMaterial`, and Bevy
+    // applies `Exposure` to unlit fragments exactly as to lit ones
+    // (`pbr_functions.wgsl`: `exposure * (direct + indirect) + emissive`). The
+    // flat `ClearColor` it replaces was written UN-exposed — straight into the
+    // HDR target — so to land at the same radiance the dome must be pre-multiplied
+    // by `1 / exposure`. That keeps `sky_gain`'s meaning (and the p95 / bloom
+    // behaviour it was tuned against) byte-identical to the flat sky.
+    let exp_comp = 1.0 / Exposure { ev100: h.ev100 }.exposure();
+
+    // ZENITH = the hour's own sky hue at its own gain, exposure-compensated. The
+    // top of the dome is therefore the exact colour/brightness the whole flat sky
+    // was — so `VOXELFORGE_LOOK_SKYGAIN` sweeps the sky's brightness exactly as
+    // it always did.
+    let zenith = scale_lin(
+        Color::srgb(h.sky[0], h.sky[1], h.sky[2]).to_linear(),
+        h.sky_gain * exp_comp,
+    );
+    // HORIZON = the haze colour [`haze_color`] returns — the SAME value
+    // `DistanceFog` dissolves distant geometry toward — exposure-compensated. The
+    // dome carries `fog_enabled = false` (it IS the sky; distance fog is for
+    // geometry), so the only way the bottom of the dome can meet the fully-hazed
+    // skyline without a hard seam is to BE that haze colour. `haze_color` already
+    // folds `sky_gain` in (its scale is `HAZE_GAIN * sky_gain`), so the horizon
+    // tracks the zenith as gain is swept. `VOXELFORGE_LOOK_SKYHOR=r,g,b` overrides
+    // the horizon hue (sRGB) for one-off tuning.
+    let horizon_base = match env_floats::<3>("VOXELFORGE_LOOK_SKYHOR") {
+        Some([hr, hg, hb]) => Color::srgb(hr, hg, hb).to_linear(),
+        None => haze_color().to_linear(),
+    };
+    let horizon = scale_lin(horizon_base, exp_comp);
+    // MID = the transition stop, biased toward the horizon so the warm band is
+    // broad and the deep blue sits high — a golden-hour sky reads warm at the
+    // bottom, blue up top.
+    let mid = lerp_lin(zenith, horizon, 0.55);
+
+    // Vertex colours from elevation. Positions are read off the builder's own
+    // POSITION attribute, so the colour topology can never disagree with the mesh.
+    let positions: Vec<[f32; 3]> = mesh
+        .attribute(Mesh::ATTRIBUTE_POSITION)
+        .expect("SphereMeshBuilder always emits POSITION")
+        .as_float3()
+        .expect("POSITION is Float32x3")
+        .to_vec();
+    let colours: Vec<[f32; 4]> = positions
+        .iter()
+        .map(|p| {
+            let u = (p[1] / r).clamp(-1.0, 1.0);
+            let c = sky_gradient(u, horizon, mid, zenith);
+            [c.red, c.green, c.blue, 1.0]
+        })
+        .collect();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
+    mesh
+}
+
+/// Spawn the dome on the first frame the gameplay camera exists, then hold it
+/// centred on the camera so the gradient stays anchored to WORLD up as the boom
+/// orbits (rotation is never written, so the zenith is always straight up).
+fn sky_dome(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    cam: Query<&Transform, (With<crate::OrbitCam>, With<Camera3d>)>,
+    mut dome: Query<&mut Transform, With<SkyDome>>,
+) {
+    let Ok(cam_tf) = cam.single() else {
+        return;
+    };
+    if let Ok(mut tf) = dome.single_mut() {
+        tf.translation = cam_tf.translation;
+        return;
+    }
+    let mesh = meshes.add(build_sky_dome_mesh());
+    let material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        // Unlit: the dome's colour IS its vertex colour (white base × vertex
+        // colour); no sun/fill shading on the sky.
+        unlit: true,
+        // The dome IS the sky. Distance fog is for geometry; if it applied here
+        // the dome at 640 units (well past `HAZE_FULL`) would fog out to a flat
+        // haze plate and bury the gradient.
+        fog_enabled: false,
+        // Render both faces so the sphere is visible from inside (the camera sits
+        // at its centre; the outward-facing winding would otherwise be culled).
+        cull_mode: None,
+        ..default()
+    });
+    commands.spawn((
+        SkyDome,
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
+        Transform::from_translation(cam_tf.translation),
+    ));
+    println!(
+        "LOOK sky-dome spawned r={SKY_DOME_RADIUS} sky_gain={:.2} ev100={:.1}",
+        hour().sky_gain,
+        hour().ev100
+    );
+}
+
+// ===========================================================================
+// A2 · the play-scene fog volume  (art-order-2026-08-09-composition §A2)
+// ===========================================================================
+//
+// `VolumetricFog` is on the camera (High/Ultra) and `VolumetricLight` is on the
+// sun — but Bevy only ray-marches the volumetric term INSIDE a `FogVolume`, and
+// the only one in the repo was the hero shot's indoor volume (`hero.rs:662`). So
+// every `--play` frame paid the 32/96-step march and rendered it in a vacuum: no
+// god rays, ever, at any tier. This spawns the missing medium around the play
+// camera so the installed machinery finally has something to scatter through.
+
+/// God-ray medium density. The hero shot signed off its readable shafts at
+/// `fog.unwrap_or(0.032)`; matched here so the play frame reads "shafts of sunlit
+/// air", not "solid fog wall" (`look-acceptance-rubric.md:156`).
+const PLAY_FOG_DENSITY: f32 = 0.030;
+/// Half-extents (radii) of the play fog volume, in blocks. Wide and shallow: a
+/// 22° sun throws near-horizontal shafts, and the volume only has to cover the
+/// depth the camera actually looks through. It follows the camera, so these are
+/// radii around the viewpoint, not the map. (Bevy sizes a `FogVolume` by the
+/// Transform scale = full extent, so spawn uses `* 2.0`.)
+const PLAY_FOG_HALF: Vec3 = Vec3::new(200.0, 80.0, 200.0);
+
+/// Marks the play-scene fog volume so the follow system finds it.
+#[derive(Component)]
+struct PlayFogVolume;
+
+/// `VOXELFORGE_LOOK_VFOG=<density>|off`. Default: spawn at [`PLAY_FOG_DENSITY`].
+/// `off` removes the medium — the vacuum the ray-march ran in before this lane —
+/// so the before/after god-ray proof comes out of one binary (same build, env
+/// swap, like every other `_LOOK_*` A/B). Cached: env cannot change post-launch.
+fn play_fog_density() -> Option<f32> {
+    static D: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+    *D.get_or_init(|| match std::env::var("VOXELFORGE_LOOK_VFOG").ok().as_deref() {
+        Some("off") => None,
+        Some(v) => v
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|d| *d >= 0.0)
+            .or(Some(PLAY_FOG_DENSITY)),
+        None => Some(PLAY_FOG_DENSITY),
+    })
+}
+
+/// Spawn the play fog volume once (first frame the camera exists and the medium
+/// is not disabled), then hold it centred on the camera so the god-ray medium
+/// stays around the viewpoint wherever the player roams.
+fn play_fog_volume(
+    mut commands: Commands,
+    cam: Query<&Transform, (With<crate::OrbitCam>, With<Camera3d>)>,
+    mut fog: Query<&mut Transform, With<PlayFogVolume>>,
+    mut spawned: Local<bool>,
+) {
+    let Some(density) = play_fog_density() else {
+        return; // `off`: never spawn — the no-medium baseline
+    };
+    let Ok(cam_tf) = cam.single() else {
+        return;
+    };
+    if !*spawned {
+        commands.spawn((
+            PlayFogVolume,
+            FogVolume {
+                // Golden: it IS sunlit air, B lifted a touch so the shafts don't
+                // paint the whole frame orange (same call the hero shot made).
+                fog_color: Color::srgb(1.0, 0.88, 0.70),
+                density_factor: density,
+                scattering: 0.55,
+                ..default()
+            },
+            Transform::from_translation(cam_tf.translation).with_scale(PLAY_FOG_HALF * 2.0),
+        ));
+        *spawned = true;
+        println!("LOOK play FogVolume spawned density={density:.3} (god-ray medium)");
+        return;
+    }
+    if let Ok(mut tf) = fog.single_mut() {
+        tf.translation = cam_tf.translation;
+    }
 }
