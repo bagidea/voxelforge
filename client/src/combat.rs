@@ -1110,6 +1110,17 @@ pub struct PlayerDied;
 
 impl Message for PlayerDied {}
 
+/// Fired exactly once when a husk (enemy) dies. Sun wires this to quest
+/// progression so q2 can complete — without it the game has no ending
+/// (`docs/art-order-2026-08-09-composition.md` § combat loop unlock).
+#[derive(Debug, Clone, Copy)]
+pub struct EnemyDied {
+    pub entity: Entity,
+    pub position: Vec3,
+}
+
+impl Message for EnemyDied {}
+
 // ===========================================================================
 // The weight layer — hit-stop, knockback, camera kick, and the public messages
 // the animation (anim.rs) and VFX (vfx.rs) lanes hang off.
@@ -1718,6 +1729,7 @@ pub fn husk_ai(
     mut commands: Commands,
     mut shake: ResMut<Shake>,
     mut sfx: MessageWriter<SfxEvent>,
+    mut died: MessageWriter<EnemyDied>,
     mut impacts: MessageWriter<ImpactEvent>,
     mut staggers: MessageWriter<StaggerEvent>,
     feel: Res<FeelLog>,
@@ -1763,6 +1775,11 @@ pub fn husk_ai(
             if e.state != HuskState::Dead {
                 e.state = HuskState::Dead;
                 sfx.write(SfxEvent::EnemyDeath { position: etf.translation });
+                died.write(EnemyDied {
+                    entity,
+                    position: etf.translation,
+                });
+                info!("COMBAT enemy died — EnemyDied fired at {:?}", etf.translation);
             }
             if !shoved {
                 commands.entity(entity).despawn();
@@ -2564,6 +2581,7 @@ impl Plugin for CombatFeelPlugin {
         app.add_message::<ImpactEvent>()
             .add_message::<StaggerEvent>()
             .add_message::<DodgeEvent>()
+            .add_message::<EnemyDied>()
             .insert_resource(FeelLog { enabled: log })
             .insert_resource(FeelProbe { enabled: probe, ..default() })
             .insert_resource(RKeyRoute { log: r_log, ..default() })
