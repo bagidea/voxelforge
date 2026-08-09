@@ -1,0 +1,44 @@
+diff --git a/client/src/anim.rs b/client/src/anim.rs
+index 30b374f..9506e2f 100644
+--- a/client/src/anim.rs
++++ b/client/src/anim.rs
+@@ -622,6 +622,39 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
+                 metallic: 0.0,
+                 secondary: None,
+             },
++            // --- Cloak clasp (art-order-2026-08-09 A6 fix #2 — docs/note-to-yamamoto-
++            // teal-accent-2026-08-10.md). Everything on this rig so far is one hue
++            // family (warm gold/brown, character-bible §1's palette) — measured on a
++            // real gate3 boot frame, hero hue 30.2 deg vs background 33.4 deg, only
++            // 3.3 deg apart, so the silhouette separates by VALUE only, not HUE. This
++            // is the look-bible.md:132 "Accent 2 (cool)" `#4FC9D6` teal, the one point
++            // the bible allows to cut against the warm 85%. Placed at the SAME torso-
++            // local point `cloak_anchor`'s `base_pos` computes (sh_x*0.7, sh_y*0.95,
++            // 0.08)) — where the cloak fastens over the shoulder — because that is the
++            // one spot on Auren's body actually facing the third-person camera; a
++            // front chest placement would sit on the player's back-to-camera side and
++            // never render. Housing reuses the rig's own `trim` leather-brown so this
++            // does not add a 7th distinct material; only the gem inset is new.
++            PartSpec {
++                bone: BoneName::Torso,
++                size: Vec3::new(0.09, 0.08, 0.035),  // bezel housing
++                offset: Vec3::new(0.1785, 0.475, 0.08),
++                mesh_offset: Vec3::ZERO,
++                color: Color::srgb(0.34, 0.20, 0.13),  // matches `trim`
++                roughness: 0.5,
++                metallic: 0.15,
++                secondary: None,
++            },
++            PartSpec {
++                bone: BoneName::Torso,
++                size: Vec3::new(0.045, 0.05, 0.02),   // teal gem face
++                offset: Vec3::new(0.1785, 0.475, 0.095),
++                mesh_offset: Vec3::ZERO,
++                color: Color::srgb(0.310, 0.788, 0.839),  // #4FC9D6, look-bible §Accent 2
++                roughness: 0.15,
++                metallic: 0.0,
++                secondary: None,
++            },
+         ],
+         Actor::Husk => Vec::new(),
+     }
