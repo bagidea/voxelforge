@@ -1455,10 +1455,21 @@ pub(crate) fn fly_camera(
     let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
     let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
     let want = orbit.want_dist;
-    let dist = match world.as_deref() {
+    let mut dist = match world.as_deref() {
         Some(world) => camera_boom(world, pivot, back, want),
         None => want,
     };
+    // Post-collision safety: `camera_boom` only sweeps along the boom axis, so a
+    // block flush against the lens from the side (avatar past a wall, boom swung
+    // out) is invisible to it and can fill a third of the frame with one face.
+    // Walk back toward the pivot until the lens centre is clear in all six
+    // cardinal directions (A5).
+    if let Some(world) = world.as_deref() {
+        let clear = camera_lens_clear(world, pivot, back, dist);
+        if clear < dist {
+            dist = clear; // hard snap on side-collision — never trail into a block
+        }
+    }
     // Asymmetric spring-arm smoothing. `camera_boom` marches the lens along the
     // boom in fixed 0.1 steps against the voxel grid, so as the avatar drifts the
     // raw distance flickers between adjacent grid steps and the camera jitters.
@@ -1531,8 +1542,8 @@ const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before st
 
 // ---- Third-person orbit camera (spring-arm / boom) ------------------------
 pub(crate) const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
-const BOOM_MARGIN: f32 = 0.35; // keep the camera this far off a wall it pulls up to
-const BOOM_RADIUS: f32 = 0.4; // treat the lens as a disc this wide so walls beside the boom (corners, parallel faces) pull it in too — not just a wall dead on the boom axis
+const BOOM_MARGIN: f32 = 0.9; // keep the camera this far off a wall it pulls up to (was 0.35 — a wall at 0.35 fills >30% of the frame)
+const BOOM_RADIUS: f32 = 0.7; // treat the lens as a disc this wide so walls beside the boom (corners, parallel faces) pull it in too — not just a wall dead on the boom axis (was 0.4 — missed blocks beside a wall-hugging camera)
 pub(crate) const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
 const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
 const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
@@ -1728,6 +1739,36 @@ fn camera_boom(world: &World, pivot: Vec3, dir: Vec3, want: f32) -> f32 {
         d += STEP;
     }
     want
+}
+
+/// After `camera_boom` settles on a distance along the boom axis, verify the
+/// lens position itself isn't clipping into a block from the side or behind.
+/// The boom check sweeps ahead of the lens; a block flush against the lens's
+/// side (common when the avatar walks past a wall with the boom swung out) is
+/// invisible to that axis and can fill a third of the frame with a single
+/// brown face (A5). Walk the camera back toward the pivot until the lens
+/// centre is clear in all six cardinal directions.
+fn camera_lens_clear(world: &World, pivot: Vec3, dir: Vec3, mut dist: f32) -> f32 {
+    const STEP: f32 = 0.1;
+    const LENS_PAD: f32 = 0.25; // near-clip safety margin around the lens centre
+    let solid = |p: Vec3| {
+        solid_at(world, p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32)
+    };
+    while dist > 0.2 {
+        let pos = pivot + dir * dist;
+        let clear = !solid(pos)
+            && !solid(pos + Vec3::X * LENS_PAD)
+            && !solid(pos - Vec3::X * LENS_PAD)
+            && !solid(pos + Vec3::Y * LENS_PAD)
+            && !solid(pos - Vec3::Y * LENS_PAD)
+            && !solid(pos + Vec3::Z * LENS_PAD)
+            && !solid(pos - Vec3::Z * LENS_PAD);
+        if clear {
+            break;
+        }
+        dist -= STEP;
+    }
+    dist.max(0.1)
 }
 
 /// One raycast hit: the solid voxel struck and the empty cell just before it

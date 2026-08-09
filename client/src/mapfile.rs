@@ -54,6 +54,18 @@ pub fn block_id_from_name(name: &str) -> Option<BlockId> {
         "dirt" => BlockId::DIRT,
         "stone" => BlockId::STONE,
         "sand" => BlockId::SAND,
+        "wood" => BlockId::WOOD,
+        "leaves" => BlockId::LEAVES,
+        "snow" => BlockId::SNOW,
+        "red_sand" => BlockId::RED_SAND,
+        "clay" => BlockId::CLAY,
+        "gravel" => BlockId::GRAVEL,
+        "cobblestone" => BlockId::COBBLESTONE,
+        "obsidian" => BlockId::OBSIDIAN,
+        "brick" => BlockId::BRICK,
+        "moss" => BlockId::MOSS,
+        "limestone" => BlockId::LIMESTONE,
+        "lamp" => BlockId::LAMP,
         _ => return None,
     })
 }
@@ -61,11 +73,24 @@ pub fn block_id_from_name(name: &str) -> Option<BlockId> {
 /// The name written to a file for a block id (inverse of `block_id_from_name`).
 pub fn block_name(b: BlockId) -> &'static str {
     match b {
+        BlockId::AIR => "air",
         BlockId::GRASS => "grass",
         BlockId::DIRT => "dirt",
         BlockId::STONE => "stone",
         BlockId::SAND => "sand",
-        _ => "air",
+        BlockId::WOOD => "wood",
+        BlockId::LEAVES => "leaves",
+        BlockId::SNOW => "snow",
+        BlockId::RED_SAND => "red_sand",
+        BlockId::CLAY => "clay",
+        BlockId::GRAVEL => "gravel",
+        BlockId::COBBLESTONE => "cobblestone",
+        BlockId::OBSIDIAN => "obsidian",
+        BlockId::BRICK => "brick",
+        BlockId::MOSS => "moss",
+        BlockId::LIMESTONE => "limestone",
+        BlockId::LAMP => "lamp",
+        _other => "unknown",
     }
 }
 

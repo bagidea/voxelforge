@@ -14,7 +14,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::combat;
 use crate::scene::nohud_requested;
+use crate::audio::SfxEvent;
 use crate::FlyCam;
+use voxelforge_sim::block::BlockId;
+use bevy::math::IVec3;
 
 // =============================================================================
 // JSON data types — matching assets/story/act1.json (Rose's schema v1.0.0)
@@ -476,6 +479,12 @@ impl Plugin for QuestPlugin {
                     // Proves flag survived the full pipeline to end-of-frame.
                     input_trace_after_handler.after(check_block_place_triggers),
                     check_act_end,
+                    // H4+H1: When any enemy dies, complete q2 → door open + sigil glow.
+                    // Runs after husk_ai so the EnemyDied message was already written.
+                    on_enemy_died
+                        .after(combat::husk_ai),
+                    // H3: Feedback when q1 (campfire) completes — text + sound.
+                    on_campfire_quest_feedback,
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),
             );
@@ -483,6 +492,164 @@ impl Plugin for QuestPlugin {
 }
 
 fn playing(cfg: Res<crate::Cfg>) -> bool { cfg.play }
+
+// =============================================================================
+// H4+H1 — EnemyDied → q2 complete → door open + sigil glow + Maren voice
+// =============================================================================
+
+/// The village gate door region: clear these blocks to let the player walk through.
+/// Gate arch is at z=3, x=27–37. The passage is the centre 5-wide × 3-tall opening.
+const GATE_DOOR_X0: i32 = 30;
+const GATE_DOOR_X1: i32 = 34;
+const GATE_DOOR_Z: i32 = 3;
+const GATE_DOOR_Y0: i32 = 1;
+const GATE_DOOR_Y1: i32 = 3;
+
+/// The sigil block above the gate — a single sand block at (32,12,5).
+const SIGIL_POS: (i32, i32, i32) = (32, 12, 5);
+
+/// Clear the gate door blocks so the player can walk through.
+fn open_gate_door(
+    world: &mut crate::World,
+    meshes: &mut Assets<Mesh>,
+    commands: &mut Commands,
+) {
+    for x in GATE_DOOR_X0..=GATE_DOOR_X1 {
+        for y in GATE_DOOR_Y0..=GATE_DOOR_Y1 {
+            crate::set_world_voxel(
+                world,
+                IVec3::new(x, y, GATE_DOOR_Z),
+                BlockId::AIR,
+                meshes,
+                commands,
+            );
+        }
+    }
+    println!("QUEST_DOOR gate opened x={GATE_DOOR_X0}..{GATE_DOOR_X1} z={GATE_DOOR_Z} y={GATE_DOOR_Y0}..{GATE_DOOR_Y1}");
+}
+
+/// Replace the sand sigil with a glowing LAMP block.
+fn glow_sigil(
+    world: &mut crate::World,
+    meshes: &mut Assets<Mesh>,
+    commands: &mut Commands,
+) {
+    crate::set_world_voxel(
+        world,
+        IVec3::new(SIGIL_POS.0, SIGIL_POS.1, SIGIL_POS.2),
+        BlockId::LAMP,
+        meshes,
+        commands,
+    );
+    println!("QUEST_SIGIL glow at ({},{},{})", SIGIL_POS.0, SIGIL_POS.1, SIGIL_POS.2);
+}
+
+/// H4+H1: When ANY enemy dies and q2 is still Active, complete the quest instantly,
+/// open the village gate, glow the sigil, and show Maren's victory voice line.
+#[allow(clippy::too_many_arguments)]
+fn on_enemy_died(
+    mut reader: MessageReader<combat::EnemyDied>,
+    mut journal: ResMut<QuestJournal>,
+    story: Res<StoryDataRes>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut world: ResMut<crate::World>,
+    mut dialogue: ResMut<DialogueState>,
+    mut fired: Local<bool>,
+) {
+    if reader.read().count() == 0 { return; }
+    if *fired { return; }
+
+    let data = story_data(&story);
+
+    let q2_active = journal.quests.get("q2_voice_in_stone")
+        .map(|p| p.status == QuestStatus::Active)
+        .unwrap_or(false);
+
+    if q2_active {
+        // Mark q2 objectives complete (reach_zone o1_gate + listen o2_listen)
+        // so that complete_quest sees all non-optional objectives done.
+        if let Some(prog) = journal.quests.get_mut("q2_voice_in_stone") {
+            let need_gate = !prog.completed_objectives.contains(&"o1_gate".to_string());
+            let need_listen = !prog.completed_objectives.contains(&"o2_listen".to_string());
+            if need_gate {
+                prog.completed_objectives.push("o1_gate".to_string());
+                prog.current_objective += 1;
+                println!("QUEST_STAGE_COMPLETE qid=q2_voice_in_stone oid=o1_gate => PASS (enemy_died)");
+            }
+            if need_listen {
+                prog.completed_objectives.push("o2_listen".to_string());
+                prog.current_objective += 1;
+                println!("QUEST_STAGE_COMPLETE qid=q2_voice_in_stone oid=o2_listen => PASS (enemy_died)");
+            }
+        }
+        complete_quest(&mut journal, "q2_voice_in_stone", data);
+
+        // Apply the quest rewards: open door → sigil glow → Maren voice.
+        open_gate_door(&mut *world, &mut *meshes, &mut commands);
+        glow_sigil(&mut *world, &mut *meshes, &mut commands);
+
+        // Show Maren's after-husk dialogue on screen.
+        let maren_line = data.dialogue.iter()
+            .find(|d| d.id == "dlg_maren_after_husk");
+        if let Some(dlg) = maren_line {
+            dialogue.speaker = dlg.speaker.clone();
+            dialogue.speaker_display = dlg.speaker_display.clone();
+            dialogue.lines = dlg.lines.clone();
+            dialogue.choices = dlg.choices.clone().unwrap_or_default();
+            dialogue.current_line = 0;
+            dialogue.open = true;
+            dialogue.dialogue_id = dlg.id.clone();
+            dialogue.quest_id = dlg.quest.clone();
+            dialogue.choosing = dlg.lines.is_empty() && dlg.choices.is_some();
+            println!("QUEST_DIALOGUE fire id={} (enemy_died → Maren voice)", dlg.id);
+        }
+
+        *fired = true;
+        println!("QUEST_ENEMY_DIED q2 completed → door open + sigil glow + Maren voice");
+    }
+}
+
+// =============================================================================
+// H3 — Campfire quest-complete feedback: on-screen text + sound
+// =============================================================================
+
+/// How long the "quest complete" text stays on screen (seconds).
+const FEEDBACK_DURATION: f32 = 4.0;
+
+/// When q1 (campfire) first completes, show a text notification and play a chime.
+fn on_campfire_quest_feedback(
+    journal: Res<QuestJournal>,
+    mut sfx: MessageWriter<SfxEvent>,
+    mut obj_text: ResMut<ObjectiveText>,
+    mut fired: Local<bool>,
+    mut timer: Local<f32>,
+    time: Res<Time>,
+) {
+    let q1_done = journal.quests.get("q1_embers")
+        .map(|p| p.status == QuestStatus::Completed)
+        .unwrap_or(false);
+
+    if q1_done && !*fired {
+        *fired = true;
+        *timer = FEEDBACK_DURATION;
+
+        // Show feedback text in the objective tracker HUD.
+        obj_text.lines.insert(0, "◆ The embers still glow warm.".into());
+        println!("QUEST_FEEDBACK q1_embers complete → text + sound");
+
+        // Play a chime — reuse PlayerRespawn as a positive-event chime.
+        sfx.write(SfxEvent::PlayerRespawn);
+    }
+
+    // Fade the feedback line after FEEDBACK_DURATION.
+    if *fired && *timer > 0.0 {
+        *timer -= time.delta_secs();
+        if *timer <= 0.0 {
+            obj_text.lines.retain(|l| l != "◆ The embers still glow warm.");
+        }
+    }
+}
 
 // =============================================================================
 // Story data cache — loaded ONCE at Startup; all systems read this instead of

@@ -29,6 +29,7 @@ impl BlockId {
     pub const BRICK:       Self = Self(13);
     pub const MOSS:        Self = Self(14);
     pub const LIMESTONE:   Self = Self(15);
+    pub const LAMP:        Self = Self(16);
 
     /// All placeable (non-air) blocks in palette order — used by the client HUD
     /// cycle and the editor's pick row.
@@ -48,6 +49,7 @@ impl BlockId {
         Self::BRICK,
         Self::MOSS,
         Self::LIMESTONE,
+        Self::LAMP,
     ];
 
     #[inline]
@@ -74,6 +76,7 @@ impl BlockId {
             Self::BRICK       => "brick",
             Self::MOSS        => "moss",
             Self::LIMESTONE   => "limestone",
+            Self::LAMP        => "lamp",
             _                 => "unknown",
         }
     }
@@ -98,6 +101,7 @@ impl BlockId {
             Self::BRICK       => [150, 90, 60],
             Self::MOSS        => [75, 110, 55],     // #4b6e37
             Self::LIMESTONE   => [222, 204, 168],   // #decca8
+            Self::LAMP        => [240, 180, 80],
             _                 => [255, 0, 255], // error magenta
         }
     }

@@ -122,7 +122,23 @@ impl Plugin for SettingsPlugin {
             app.add_plugins(EguiPlugin::default());
         }
 
-        let settings = load_settings();
+        let mut settings = load_settings();
+        // `VOXELFORGE_LOOK_QUALITY` OUTRANKS THE SAVED FILE — 2026-08-09.
+        //
+        // It is the capture/profiling override every shoot script exports, and the
+        // line below used to stomp it: `insert_resource` "overwrites any existing
+        // resource of the same type", and main.rs adds this plugin AFTER LookPlugin,
+        // so the saved tier always won. Every `--play` plate — the whole canonical
+        // shotset — rendered at settings.json's "High" whatever the script asked for,
+        // which is why `grade-vista` "at Ultra" is a PCSS-off frame. See
+        // `look::quality_from_env` for the two measurements that pin it.
+        //
+        // Assigned into `settings` rather than inserted separately so the menu shows
+        // the tier that is RUNNING; a player who then edits any setting persists it,
+        // which is correct — at that point they are on that tier.
+        if let Some(tier) = crate::look::quality_from_env() {
+            settings.graphics = tier;
+        }
         // Push loaded settings into the live resources the game already reads.
         // AudioPlugin and LookPlugin may have inserted their own defaults first;
         // these calls override them with the player's saved preferences.  The
