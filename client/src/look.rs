@@ -1920,7 +1920,12 @@ fn sky_dome(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    cam: Query<&Transform, With<crate::OrbitCam>>,
+    // `Without<SkyDome>` proves this read query is disjoint from `dome`'s
+    // `&mut Transform` below — without it Bevy cannot prove the two Transform
+    // accesses never alias the same entity and panics with error[B0001] the
+    // first frame `dome.single_mut()` is reached (which only happens once
+    // `cam.iter().next()` started succeeding — see commit history).
+    cam: Query<&Transform, (With<crate::OrbitCam>, Without<SkyDome>)>,
     mut dome: Query<&mut Transform, With<SkyDome>>,
 ) {
     let Some(cam_tf) = cam.iter().next() else {
@@ -2007,7 +2012,10 @@ fn play_fog_density() -> Option<f32> {
 /// stays around the viewpoint wherever the player roams.
 fn play_fog_volume(
     mut commands: Commands,
-    cam: Query<&Transform, With<crate::OrbitCam>>,
+    // Same B0001 guard as `sky_dome`: `Without<PlayFogVolume>` proves this read
+    // query is disjoint from `fog`'s `&mut Transform` so Bevy never flags a
+    // conflicting-Transform access when `fog.single_mut()` is reached.
+    cam: Query<&Transform, (With<crate::OrbitCam>, Without<PlayFogVolume>)>,
     mut fog: Query<&mut Transform, With<PlayFogVolume>>,
     mut spawned: Local<bool>,
 ) {
