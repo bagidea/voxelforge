@@ -1,0 +1,142 @@
+{
+  "label": "gate3-after-boot-satmatch-nohud2.png",
+  "image": "docs/assets/gate3-a6-teal-2026-08-10/gate3-after-boot-satmatch-nohud2.png",
+  "ref": false,
+  "actor": "player",
+  "cam": "0,-14.32,5.289",
+  "ref_json": "_fl_char/ref-auren-hero.json",
+  "metrics": {
+    "warmth": 78.97230529785156,
+    "blue": 19.93739891052246,
+    "sat": 78.63594055175781,
+    "micro": 7.1540303230285645,
+    "p95": 168.14559936523438,
+    "p05L": 18.241254806518555,
+    "darkRB": 53.72727108001709,
+    "edge": 26.224023818969727,
+    "form": 95.633056640625,
+    "iso": 52.243739457251934,
+    "mats": 5.0,
+    "pen": 278.0
+  },
+  "ref_metrics": {
+    "warmth": 87.0364990234375,
+    "blue": 9.07746410369873,
+    "sat": 90.2412109375,
+    "micro": 8.97893238067627,
+    "p95": 145.5281982421875,
+    "p05L": 7.295450687408447,
+    "darkRB": 21.18181711435318,
+    "edge": 30.37562370300293,
+    "form": 105.09480285644531,
+    "iso": 74.49743754545608,
+    "mats": 6.0,
+    "pen": null
+  },
+  "mask_px_frame": 143880,
+  "rows": [
+    {
+      "key": "warmth",
+      "label": "C1 warmth R-B (mid)",
+      "render": 78.97230529785156,
+      "concept": 87.0364990234375,
+      "bound": 73.98102416992187,
+      "pass": true
+    },
+    {
+      "key": "blue",
+      "label": "C2 blue B (mid)",
+      "render": 19.93739891052246,
+      "concept": 9.07746410369873,
+      "bound": 13.616196155548096,
+      "pass": false
+    },
+    {
+      "key": "sat",
+      "label": "C3 saturation (mid)",
+      "render": 78.63594055175781,
+      "concept": 90.2412109375,
+      "bound": 76.705029296875,
+      "pass": true
+    },
+    {
+      "key": "micro",
+      "label": "C4 micro-contrast",
+      "render": 7.1540303230285645,
+      "concept": 8.97893238067627,
+      "bound": 6.285252666473388,
+      "pass": true
+    },
+    {
+      "key": "p95",
+      "label": "C5 highlight p95",
+      "render": 168.14559936523438,
+      "concept": 145.5281982421875,
+      "bound": [
+        125.5281982421875,
+        165.5281982421875
+      ],
+      "pass": false
+    },
+    {
+      "key": "p05L",
+      "label": "C6a shade p05 L%",
+      "render": 18.241254806518555,
+      "concept": 7.295450687408447,
+      "bound": 5.1068154811859126,
+      "pass": true
+    },
+    {
+      "key": "darkRB",
+      "label": "C6b darkest R-B",
+      "render": 53.72727108001709,
+      "concept": 21.18181711435318,
+      "bound": 0.0,
+      "pass": true
+    },
+    {
+      "key": "pen",
+      "label": "C7 contact penumbra px",
+      "render": 278.0,
+      "concept": null,
+      "bound": 5.0,
+      "pass": true
+    },
+    {
+      "key": "edge",
+      "label": "C8 silhouette pop",
+      "render": 26.224023818969727,
+      "concept": 30.37562370300293,
+      "bound": 21.26293659210205,
+      "pass": true
+    },
+    {
+      "key": "form",
+      "label": "C9 form range p90-p10",
+      "render": 95.633056640625,
+      "concept": 105.09480285644531,
+      "bound": 73.56636199951171,
+      "pass": true
+    },
+    {
+      "key": "iso",
+      "label": "C10 silhouette complexity",
+      "render": 52.243739457251934,
+      "concept": 74.49743754545608,
+      "bound": 52.148206281819256,
+      "pass": true
+    },
+    {
+      "key": "mats",
+      "label": "C11 material clusters",
+      "render": 5.0,
+      "concept": 6.0,
+      "bound": 4.199999999999999,
+      "pass": true
+    }
+  ],
+  "fails": [
+    "C2 blue B (mid)",
+    "C5 highlight p95"
+  ]
+}
