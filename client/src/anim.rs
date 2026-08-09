@@ -635,10 +635,22 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
             // front chest placement would sit on the player's back-to-camera side and
             // never render. Housing reuses the rig's own `trim` leather-brown so this
             // does not add a 7th distinct material; only the gem inset is new.
+            // z re-derived 2026-08-10 (docs/VERDICT-...A6...-2026-08-10.md: "clasp
+            // fully occluded"). The old z=0.08/0.095 put both parts INSIDE the cloak
+            // slab: cloak (line ~764) is `Cuboid(0.30, 0.62, 0.05)` skinned with no
+            // z-offset onto `cloak_anchor`, whose `base_pos.z` is 0.08 (line ~915) —
+            // same torso-local space these offsets are in. So the cloak's own front
+            // (camera-facing) face sits at 0.08 + 0.05/2 = 0.105, and the old gem
+            // front face (0.095 + 0.02/2 = 0.105) only reached flush with that
+            // surface — zero clearance, fully hidden by the slab in front of it.
+            // Fix: seat the housing's REAR face flush on the cloak's front face
+            // (0.105 + housing_half_z 0.0175 = 0.1225) so the clasp sits on top of
+            // the drape instead of inside it, then keep the gem's original 0.015
+            // proud-of-housing gap on top of that (0.1225 + 0.015 = 0.1375).
             PartSpec {
                 bone: BoneName::Torso,
                 size: Vec3::new(0.09, 0.08, 0.035),  // bezel housing
-                offset: Vec3::new(0.1785, 0.475, 0.08),
+                offset: Vec3::new(0.1785, 0.475, 0.1225),
                 mesh_offset: Vec3::ZERO,
                 color: Color::srgb(0.34, 0.20, 0.13),  // matches `trim`
                 roughness: 0.5,
@@ -648,7 +660,7 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
             PartSpec {
                 bone: BoneName::Torso,
                 size: Vec3::new(0.045, 0.05, 0.02),   // teal gem face
-                offset: Vec3::new(0.1785, 0.475, 0.095),
+                offset: Vec3::new(0.1785, 0.475, 0.1375),
                 mesh_offset: Vec3::ZERO,
                 color: Color::srgb(0.310, 0.788, 0.839),  // #4FC9D6, look-bible §Accent 2
                 roughness: 0.15,
