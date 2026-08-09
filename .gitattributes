@@ -22,3 +22,15 @@
 # checked out with autocrlf=true would fail the same way for whoever applies it,
 # which is a broken handoff that looks like a stale patch.
 *.patch text eol=lf
+
+# .bat is the mirror image of the .sh rule above, and it bit exactly as hard
+# (2026-08-10). PLAY.bat was first written LF-only; cmd.exe does not read a
+# batch file line-at-a-time, it seeks byte offsets, so LF-only lines get split
+# mid-token --
+#     'm' is not recognized as an internal or external command
+# -- that is `rem` torn into `re` + `m`, and `@echo off` never took effect, so
+# the launcher printed its own comment block as errors. It only worked here
+# because core.autocrlf=true happened to restore CRLF on checkout; on a box with
+# autocrlf=false the same commit ships a launcher that cannot run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
