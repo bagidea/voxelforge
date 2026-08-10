@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::combat;
+use crate::quest_rules;
 use crate::scene::nohud_requested;
 use crate::audio::SfxEvent;
 use crate::FlyCam;
@@ -159,6 +160,15 @@ pub struct ObjectiveDef {
     pub optional: bool,
 }
 
+/// Lets the headless ordering rules in [`crate::quest_rules`] read an objective
+/// without pulling the serde/Bevy data model into a module that has to compile
+/// on its own.
+impl quest_rules::ObjectiveLike for ObjectiveDef {
+    fn id(&self) -> &str { &self.id }
+    fn kind(&self) -> &str { &self.kind }
+    fn optional(&self) -> bool { self.optional }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QuestRewardDef {
     #[serde(default)]
@@ -278,11 +288,33 @@ pub struct QuestJournal {
     pub quests: HashMap<String, QuestProgress>,
     pub active_order: Vec<String>,
     pub flags: HashSet<String>,
+    /// World-changing rewards a finished quest asked for, waiting for a system
+    /// that owns `World`/`Assets<Mesh>` to carry them out (`apply_world_rewards`).
+    ///
+    /// `complete_quest` is a plain function — it is called from six places, four
+    /// of them inside systems that hold no world handles, and every one of its
+    /// callers is unit-tested. Queueing the request here keeps it that way: the
+    /// reward is RECORDED where the quest finishes and PERFORMED where the voxels
+    /// live. Before this queue existed `rewards.open_door` was parsed
+    /// ([`QuestRewardDef`]) and then dropped on the floor — the sealed gate had
+    /// exactly one opener in the whole binary, an "any enemy died while q2 is
+    /// Active" special case, so finishing q2 the way the script intends (talk to
+    /// Maren) left the gate shut and q5's `o2_enter` behind it unreachable.
+    ///
+    /// Entries are `"door:<id>"` / `"campfire:<id>"`. Never persisted: a save
+    /// taken between queue and drain would replay the door on every load.
+    #[serde(default, skip_serializing)]
+    pub pending_world_rewards: Vec<String>,
 }
 
 impl Default for QuestJournal {
     fn default() -> Self {
-        Self { quests: HashMap::new(), active_order: Vec::new(), flags: HashSet::new() }
+        Self {
+            quests: HashMap::new(),
+            active_order: Vec::new(),
+            flags: HashSet::new(),
+            pending_world_rewards: Vec::new(),
+        }
     }
 }
 
@@ -370,6 +402,15 @@ pub struct StoryDataRes {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct KillLog {
     pub killed_entities: HashSet<Entity>,
+    /// Story ids of the things that have been put down — the `target` of every
+    /// `defeat` objective that has been satisfied (e.g. `"garren_husk"`).
+    ///
+    /// `Entity` ids mean nothing to the story data, so `on_defeat` dialogue
+    /// triggers had nothing to match against and were hardwired to `false` with
+    /// a comment saying `check_kill_triggers` handled them — it does not; it has
+    /// no `DialogueState` to open. That is why Maren said nothing after Garren
+    /// fell and her `c_on` choice (the one that hands out q4) never appeared.
+    pub defeated_targets: HashSet<String>,
 }
 
 // =============================================================================
@@ -479,10 +520,16 @@ impl Plugin for QuestPlugin {
                     // Proves flag survived the full pipeline to end-of-frame.
                     input_trace_after_handler.after(check_block_place_triggers),
                     check_act_end,
-                    // H4+H1: When any enemy dies, complete q2 → door open + sigil glow.
-                    // Runs after husk_ai so the EnemyDied message was already written.
-                    on_enemy_died
-                        .after(combat::husk_ai),
+                    // The door/sigil/campfire a finished quest asked for. Ordered
+                    // after every system that can finish one, so the reward lands
+                    // on the same frame the quest completes instead of the next.
+                    apply_world_rewards
+                        .after(check_kill_triggers)
+                        .after(check_area_triggers)
+                        .after(check_approach_triggers)
+                        .after(check_lore_read_triggers)
+                        .after(check_block_place_triggers)
+                        .after(resolve_dialogue_actions),
                     // H3: Feedback when q1 (campfire) completes — text + sound.
                     on_campfire_quest_feedback,
                 )
@@ -494,7 +541,7 @@ impl Plugin for QuestPlugin {
 fn playing(cfg: Res<crate::Cfg>) -> bool { cfg.play }
 
 // =============================================================================
-// H4+H1 — EnemyDied → q2 complete → door open + sigil glow + Maren voice
+// World-changing quest rewards — the gate, the sigil, the second campfire
 // =============================================================================
 
 /// The village gate door region: clear these blocks to let the player walk through.
@@ -544,69 +591,48 @@ fn glow_sigil(
     println!("QUEST_SIGIL glow at ({},{},{})", SIGIL_POS.0, SIGIL_POS.1, SIGIL_POS.2);
 }
 
-/// H4+H1: When ANY enemy dies and q2 is still Active, complete the quest instantly,
-/// open the village gate, glow the sigil, and show Maren's victory voice line.
-#[allow(clippy::too_many_arguments)]
-fn on_enemy_died(
-    mut reader: MessageReader<combat::EnemyDied>,
+/// Carry out the world-changing rewards a finished quest queued
+/// ([`QuestJournal::pending_world_rewards`]).
+///
+/// This replaces `on_enemy_died`, which opened the gate off "any enemy died
+/// while q2 is Active". That handed the act two mutually exclusive endings and
+/// no way to see the good one:
+///
+/// * kill the village husk on the way north and q2 was force-completed with
+///   `o1_gate` + `o2_listen` scored by hand — Maren never spoke, the beat she
+///   exists for was skipped, and the gate opened for the wrong kill;
+/// * do it the way the script asks (walk to the gate, hear her out, pick "I'll
+///   go east") and q2 completed with the gate still sealed — nothing else in the
+///   binary could open it — so q5's `o2_enter`, a zone at z 0-2 on the far side
+///   of that gate, could never be reached and Act 1 could not end.
+///
+/// Now the door is a reward like any other: q3 hands over the guard post, q4
+/// unseals the gate, and the sigil lights with it (q5's premise is that it is
+/// already glowing when the player comes back for it).
+fn apply_world_rewards(
     mut journal: ResMut<QuestJournal>,
-    story: Res<StoryDataRes>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut world: ResMut<crate::World>,
-    mut dialogue: ResMut<DialogueState>,
-    mut fired: Local<bool>,
 ) {
-    if reader.read().count() == 0 { return; }
-    if *fired { return; }
-
-    let data = story_data(&story);
-
-    let q2_active = journal.quests.get("q2_voice_in_stone")
-        .map(|p| p.status == QuestStatus::Active)
-        .unwrap_or(false);
-
-    if q2_active {
-        // Mark q2 objectives complete (reach_zone o1_gate + listen o2_listen)
-        // so that complete_quest sees all non-optional objectives done.
-        if let Some(prog) = journal.quests.get_mut("q2_voice_in_stone") {
-            let need_gate = !prog.completed_objectives.contains(&"o1_gate".to_string());
-            let need_listen = !prog.completed_objectives.contains(&"o2_listen".to_string());
-            if need_gate {
-                prog.completed_objectives.push("o1_gate".to_string());
-                prog.current_objective += 1;
-                println!("QUEST_STAGE_COMPLETE qid=q2_voice_in_stone oid=o1_gate => PASS (enemy_died)");
+    if journal.pending_world_rewards.is_empty() { return; }
+    for reward in std::mem::take(&mut journal.pending_world_rewards) {
+        match reward.as_str() {
+            // The sealed village gate + the sigil above it.
+            "door:gate_chamber_door" => {
+                open_gate_door(&mut world, &mut meshes, &mut commands);
+                glow_sigil(&mut world, &mut meshes, &mut commands);
             }
-            if need_listen {
-                prog.completed_objectives.push("o2_listen".to_string());
-                prog.current_objective += 1;
-                println!("QUEST_STAGE_COMPLETE qid=q2_voice_in_stone oid=o2_listen => PASS (enemy_died)");
+            // The guard post is `code_spawned` (story data marks the region so)
+            // and has no door geometry to clear. Say so rather than pretending.
+            "door:guard_post_door" => {
+                println!("QUEST_DOOR guard_post_door — no geometry in the spawned arena, nothing to open");
             }
+            "campfire:cp_guardpost" => {
+                println!("QUEST_CAMPFIRE cp_guardpost — second rest point not built yet");
+            }
+            other => println!("QUEST_REWARD unhandled {other}"),
         }
-        complete_quest(&mut journal, "q2_voice_in_stone", data);
-
-        // Apply the quest rewards: open door → sigil glow → Maren voice.
-        open_gate_door(&mut *world, &mut *meshes, &mut commands);
-        glow_sigil(&mut *world, &mut *meshes, &mut commands);
-
-        // Show Maren's after-husk dialogue on screen.
-        let maren_line = data.dialogue.iter()
-            .find(|d| d.id == "dlg_maren_after_husk");
-        if let Some(dlg) = maren_line {
-            dialogue.speaker = dlg.speaker.clone();
-            dialogue.speaker_display = dlg.speaker_display.clone();
-            dialogue.lines = dlg.lines.clone();
-            dialogue.choices = dlg.choices.clone().unwrap_or_default();
-            dialogue.current_line = 0;
-            dialogue.open = true;
-            dialogue.dialogue_id = dlg.id.clone();
-            dialogue.quest_id = dlg.quest.clone();
-            dialogue.choosing = dlg.lines.is_empty() && dlg.choices.is_some();
-            println!("QUEST_DIALOGUE fire id={} (enemy_died → Maren voice)", dlg.id);
-        }
-
-        *fired = true;
-        println!("QUEST_ENEMY_DIED q2 completed → door open + sigil glow + Maren voice");
     }
 }
 
@@ -1048,6 +1074,18 @@ fn complete_quest(journal: &mut QuestJournal, quest_id: &str, data: &StoryData) 
     if let Some(ref flag) = qdef.rewards.set_flag {
         journal.flags.insert(flag.clone());
     }
+    // World-changing rewards: recorded here, performed by `apply_world_rewards`
+    // (this function has no voxels to move). `open_door` is what unseals the
+    // village gate on q4 — the beat the whole act walks toward — and it had no
+    // reader at all before this.
+    if let Some(ref door) = qdef.rewards.open_door {
+        journal.pending_world_rewards.push(format!("door:{door}"));
+        println!("QUEST_REWARD queue door={door} from={quest_id}");
+    }
+    if let Some(ref fire) = qdef.rewards.activate_campfire {
+        journal.pending_world_rewards.push(format!("campfire:{fire}"));
+        println!("QUEST_REWARD queue campfire={fire} from={quest_id}");
+    }
     // Advance to the next quest — try `next` then `rewards.advance_to`.
     let next_id = qdef.next.as_deref()
         .or(qdef.rewards.advance_to.as_deref());
@@ -1090,26 +1128,45 @@ fn check_kill_triggers(
         kill_log.killed_entities.insert(entity);
 
         // Find active quest objectives that require defeating "garren_husk".
+        //
+        // The kill goes to the first `defeat` objective the quest still owes,
+        // NOT to whatever sits under `current_objective`. A body despawns the
+        // frame after it dies, so a kill that arrives while an earlier objective
+        // is outstanding — fight the guard before the reach_zone/approach steps
+        // have been credited — was dropped on the floor by the old
+        // `objectives.get(prog.current_objective)`, and there was no second
+        // corpse to offer: q3 could never be finished, and q4/q5 sit behind it.
         for qdef in &data.quests {
             let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
             if prog.status != QuestStatus::Active { continue; }
-            let Some(obj) = qdef.objectives.get(prog.current_objective) else { continue };
-            if obj.kind != "defeat" { continue; }
+            let Some(idx) = quest_rules::defeat_objective_to_credit(
+                &qdef.objectives, &prog.completed_objectives,
+            ) else { continue };
+            let obj = &qdef.objectives[idx];
 
-            let count = prog.objective_counts.entry(obj.id.clone()).or_insert(0);
             let needed = if obj.count > 0 { obj.count } else { 1 };
-            *count += 1;
+            let hits = {
+                let c = prog.objective_counts.entry(obj.id.clone()).or_insert(0);
+                *c += 1;
+                *c
+            };
             println!("QUEST_KILL qid={} oid={} count={}/{}",
-                qdef.id, obj.id, count, needed);
-            if *count >= needed && !prog.completed_objectives.contains(&obj.id) {
+                qdef.id, obj.id, hits, needed);
+            if hits >= needed {
                 prog.completed_objectives.push(obj.id.clone());
-                prog.current_objective += 1;
+                // Derived, never incremented: crediting a kill out of order must
+                // not step the cursor over the objective the player still owes.
+                prog.current_objective =
+                    quest_rules::first_incomplete(&qdef.objectives, &prog.completed_objectives);
                 println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (defeat)", qdef.id, obj.id);
+                // Name the corpse so `on_defeat` dialogue can find it. Recorded
+                // here rather than at the death site because this is the only
+                // place that knows which story entity the dead body WAS.
+                kill_log.defeated_targets.insert(obj.target.clone());
 
                 // Check quest completion.
-                let all_done = qdef.objectives.iter()
-                    .filter(|o| !o.optional)
-                    .all(|o| prog.completed_objectives.contains(&o.id));
+                let all_done =
+                    quest_rules::all_required_done(&qdef.objectives, &prog.completed_objectives);
                 if all_done {
                     complete_quest(&mut journal, &qdef.id, data);
                 }
@@ -1121,6 +1178,19 @@ fn check_kill_triggers(
 // =============================================================================
 // Area trigger — when the player enters a named region, advance quest stages.
 // =============================================================================
+
+/// The journal flag that records "the player has stood inside this region".
+///
+/// ONE definition, called by both sides. The writer ([`check_area_triggers`])
+/// and the reader ([`dialogue_should_fire`]) were written independently and
+/// never agreed: the reader asked for `entered_{zone}` and nothing in the binary
+/// ever inserted it (`grep -rn 'entered_' client/src` returned that single read).
+/// Every `enter_zone` dialogue in `act1.json` was therefore dead — Maren at the
+/// gate, Maren before the fight, Toma in the west house — and with the gate
+/// dialogue dead so was q2's `o2_listen`, which only its choices can complete.
+pub fn zone_flag(zone: &str) -> String {
+    format!("entered_{zone}")
+}
 
 fn check_area_triggers(
     player_q: Query<&Transform, With<FlyCam>>,
@@ -1135,31 +1205,47 @@ fn check_area_triggers(
     let pz = ptf.translation.z;
 
     for region in &data.regions {
-        if entered.contains(&region.id) { continue; }
-        if px >= region.bounds.x0 as f32 && px <= region.bounds.x1 as f32
-            && pz >= region.bounds.z0 as f32 && pz <= region.bounds.z1 as f32
-        {
-            entered.insert(region.id.clone());
+        // Presence, not entry. The objective test below used to sit inside the
+        // once-only `entered` branch, so a region was spent the first time the
+        // player stood in it: walk east past the guard post while Maren is still
+        // talking and q3's `o1_east` has no second chance — and with it q3, q4
+        // and q5. `quest_rules::region_contains` is the same box test, asked on
+        // every frame, with a headless proof next to it.
+        if !quest_rules::region_contains(
+            region.bounds.x0 as f32, region.bounds.z0 as f32,
+            region.bounds.x1 as f32, region.bounds.z1 as f32,
+            px, pz,
+        ) { continue; }
+
+        // The arrival itself is still a one-off — the log line and the flag.
+        if entered.insert(region.id.clone()) {
             println!("QUEST_AREA enter={} player=({px:.1},{pz:.1})", region.id);
+            // The flag is what `enter_zone` dialogue triggers read. `entered`
+            // (Local) is invisible to every other system, which is how the two
+            // halves drifted apart.
+            let flag = zone_flag(&region.id);
+            if journal.flags.insert(flag.clone()) {
+                println!("QUEST_FLAG set={flag}");
+            }
+        }
 
-            // Check quest stages requiring "reach_zone" for this region.
-            for qdef in &data.quests {
-                let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
-                if prog.status != QuestStatus::Active { continue; }
-                let Some(obj) = qdef.objectives.get(prog.current_objective) else { continue };
-                if obj.kind == "reach_zone" && obj.target == region.id
-                    && !prog.completed_objectives.contains(&obj.id)
-                {
-                    prog.completed_objectives.push(obj.id.clone());
-                    prog.current_objective += 1;
-                    println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (reach_zone)", qdef.id, obj.id);
+        // Check quest stages requiring "reach_zone" for this region.
+        for qdef in &data.quests {
+            let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
+            if prog.status != QuestStatus::Active { continue; }
+            let Some(obj) = qdef.objectives.get(prog.current_objective) else { continue };
+            if obj.kind == "reach_zone" && obj.target == region.id
+                && !prog.completed_objectives.contains(&obj.id)
+            {
+                prog.completed_objectives.push(obj.id.clone());
+                prog.current_objective =
+                    quest_rules::first_incomplete(&qdef.objectives, &prog.completed_objectives);
+                println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (reach_zone)", qdef.id, obj.id);
 
-                    let all_done = qdef.objectives.iter()
-                        .filter(|o| !o.optional)
-                        .all(|o| prog.completed_objectives.contains(&o.id));
-                    if all_done {
-                        complete_quest(&mut journal, &qdef.id, data);
-                    }
+                let all_done =
+                    quest_rules::all_required_done(&qdef.objectives, &prog.completed_objectives);
+                if all_done {
+                    complete_quest(&mut journal, &qdef.id, data);
                 }
             }
         }
@@ -1221,40 +1307,89 @@ fn check_approach_triggers(
 // Dialogue triggers — fire dialogue when entering zones or completing objectives.
 // =============================================================================
 
+/// Does this dialogue's trigger want to open right now?
+///
+/// Pure — no ECS — so the trigger rules can be unit-tested against the shipped
+/// `act1.json` instead of being argued about. `kills` is
+/// [`KillLog::defeated_targets`].
+///
+/// The three kinds that carry Act 1:
+/// * `enter_zone` — the player has stood in the named region ([`zone_flag`]).
+/// * `on_objective` — the named objective has been **completed**. It used to
+///   fire the moment the quest went Active, which put Maren's "first call" over
+///   the wake-up before the player had walked anywhere, and let q5's cliffhanger
+///   (which completes `o3_end` on its own) close out Act 1 without the player
+///   ever stepping through the gate.
+/// * `on_defeat` — the named story entity is in the kill log.
+///
+/// `on_choice` / `on_interact` deliberately return false: those are reached by
+/// `apply_choice` following `next_dialogue`, and by `lore_interact`'s
+/// `pending_action`, not by polling.
+pub fn dialogue_should_fire(
+    dlg: &DialogueDef,
+    journal: &QuestJournal,
+    kills: &HashSet<String>,
+) -> bool {
+    // Active OR Completed, and the distinction matters more than it looks: the
+    // event a dialogue hangs off is usually the same event that FINISHES its
+    // quest. `check_kill_triggers` scores `o3_defeat` and calls `complete_quest`
+    // in one pass, so by the time this runs q3 is already Completed — an
+    // Active-only gate meant Maren's line after Garren fell could never fire, and
+    // neither could her first call, which hangs off the campfire objective that
+    // ends q1. `payload_pending` below is what stops anything being handed out
+    // twice; quest status is not doing that job.
+    let quest_active = journal.quests.get(&dlg.quest)
+        .map(|p| p.status == QuestStatus::Active || p.status == QuestStatus::Completed)
+        .unwrap_or(false);
+    // Whatever this dialogue hands out, don't hand it out twice.
+    let payload_pending = dlg.completes_objective.as_ref().map_or(true, |obj_id| {
+        journal.quests.get(&dlg.quest)
+            .map(|p| !p.completed_objectives.contains(obj_id))
+            .unwrap_or(false)
+    });
+
+    match dlg.trigger.trigger_type.as_str() {
+        "enter_zone" => {
+            quest_active
+                && payload_pending
+                && dlg.trigger.zone.as_ref()
+                    .map_or(false, |zone| journal.flags.contains(&zone_flag(zone)))
+        }
+        "on_objective" => {
+            quest_active
+                && payload_pending
+                && dlg.trigger.objective.as_ref().map_or(false, |obj_id| {
+                    journal.quests.get(&dlg.quest)
+                        .map(|p| p.completed_objectives.contains(obj_id))
+                        .unwrap_or(false)
+                })
+        }
+        "on_defeat" => {
+            quest_active
+                && payload_pending
+                && dlg.trigger.entity.as_ref().map_or(false, |e| kills.contains(e))
+        }
+        _ => false,
+    }
+}
+
 fn fire_dialogue_triggers(
     mut dialogue: ResMut<DialogueState>,
     journal: Res<QuestJournal>,
+    kill_log: Res<KillLog>,
     mut fired: Local<HashSet<String>>, // dialogue ids already fired
     story: Res<StoryDataRes>,
 ) {
+    // Never talk over an open box: the player is mid-conversation and whichever
+    // line this clobbered would be lost. Auto-fired dialogue and the E key can
+    // now both reach the same scene, so this is reachable in normal play.
+    if dialogue.open { return; }
+
     let data = story_data(&story);
 
     for dlg in &data.dialogue {
         if fired.contains(&dlg.id) { continue; }
-        let should_fire = match dlg.trigger.trigger_type.as_str() {
-            "enter_zone" => {
-                // Check if player is in the zone.
-                dlg.trigger.zone.as_ref().map_or(false, |zone| {
-                    journal.flags.contains(&format!("entered_{zone}"))
-                })
-            }
-            "on_objective" => {
-                // Fire when the quest is active and the target objective isn't done yet.
-                dlg.trigger.quest.as_ref().map_or(false, |_q| {
-                    journal.quests.get(&dlg.quest)
-                        .map(|p| p.status == QuestStatus::Active
-                            && dlg.completes_objective.as_ref().map_or(true, |obj_id| {
-                                !p.completed_objectives.contains(obj_id)
-                            }))
-                        .unwrap_or(false)
-                })
-            }
-            "on_defeat" => {
-                // Fire when an enemy is defeated. Check kill log.
-                false // handled by check_kill_triggers directly
-            }
-            _ => false,
-        };
+        let should_fire = dialogue_should_fire(dlg, &journal, &kill_log.defeated_targets);
 
         if should_fire {
             fired.insert(dlg.id.clone());
@@ -1268,6 +1403,10 @@ fn fire_dialogue_triggers(
             dialogue.quest_id = dlg.quest.clone();
             dialogue.choosing = dlg.lines.is_empty() && dlg.choices.is_some();
             println!("QUEST_DIALOGUE fire id={} trigger={}", dlg.id, dlg.trigger.trigger_type);
+            // One scene per frame — the next one keeps its turn until this box
+            // is closed. Without this, two dialogues eligible on the same frame
+            // meant the second silently overwrote the first.
+            return;
         }
     }
 }
@@ -2157,9 +2296,16 @@ mod tests {
     use super::*;
 
     /// Load the real act1.json so test assertions match the shipped data.
+    ///
+    /// Cargo runs a test binary with its cwd at the PACKAGE root (`client/`),
+    /// not the workspace root, and `client/assets` does not exist — so the plain
+    /// relative path panicked before a single assertion ran. Try both.
     fn act1() -> StoryData {
-        let text = std::fs::read_to_string("assets/story/act1.json")
-            .expect("act1.json must be readable from test");
+        const REL: &str = "assets/story/act1.json";
+        let text = std::fs::read_to_string(REL)
+            .or_else(|_| std::fs::read_to_string(format!("../{REL}")))
+            .unwrap_or_else(|e| panic!("act1.json must be readable from test (cwd={:?}): {e}",
+                std::env::current_dir()));
         serde_json::from_str(&text).expect("act1.json must parse")
     }
 
@@ -2595,10 +2741,16 @@ mod tests {
         let toy = data.lore_items.iter().find(|li| li.id == "lore_tomas_toy").unwrap();
         assert!(toy.tags.contains(&"toma".to_string()));
         // Toma's toy must NOT carry teal (canon: the absence is the point).
+        //
+        // The old form also failed on the substring "glow" — which the subtitle
+        // uses to SAY SO ("It carries no glow, no warmth"). It flagged the canon
+        // for stating the canon. Match the light itself, then assert the denial
+        // is still there, which is the thing actually worth guarding.
         let has_teal = toy.text.to_lowercase().contains("teal")
-            || toy.subtitle.to_lowercase().contains("teal")
-            || toy.subtitle.to_lowercase().contains("glow");
+            || toy.subtitle.to_lowercase().contains("teal");
         assert!(!has_teal, "Toma's toy should not carry teal light (canon)");
+        assert!(toy.subtitle.to_lowercase().contains("no glow"),
+            "the toy's subtitle is where the absence of Forge-light is stated");
     }
 
     // ---------------------------------------------------------------------------
@@ -2666,5 +2818,249 @@ mod tests {
         prog.completed_objectives.push("o1_build".to_string());
         prog.current_objective = 1;
         assert!(!place_block_in_reach(&done, &data, &Vec3::new(50.0, 9.0, 9.0)));
+    }
+
+    // ===========================================================================
+    // The husk → quest loop.
+    //
+    // These drive the SHIPPED functions — `dialogue_should_fire`, `zone_flag`,
+    // `apply_choice`, `complete_dialogue_objective`, `complete_quest` — against
+    // the shipped `act1.json`. The older tests above mostly push objective ids
+    // onto the journal by hand and then assert the push happened, which is why
+    // every one of them passed while the loop was unplayable.
+    // ===========================================================================
+
+    fn dlg<'a>(data: &'a StoryData, id: &str) -> &'a DialogueDef {
+        data.dialogue.iter().find(|d| d.id == id)
+            .unwrap_or_else(|| panic!("act1.json must define {id}"))
+    }
+
+    /// Journal with q1 finished the way the game finishes it, so q2 is Active.
+    fn journal_at_q2(data: &StoryData) -> QuestJournal {
+        let mut j = fresh_journal(data);
+        let q1 = j.quests.get_mut("q1_embers").unwrap();
+        q1.completed_objectives.push("o1_campfire".to_string());
+        q1.current_objective += 1;
+        complete_quest(&mut j, "q1_embers", data);
+        assert_eq!(j.quests["q2_voice_in_stone"].status, QuestStatus::Active,
+            "finishing q1 must hand the player q2");
+        j
+    }
+
+    /// Maren at the gate is the only thing that can complete `o2_listen`, and she
+    /// is triggered by `enter_zone`. Nothing wrote the flag her trigger reads, so
+    /// this is the frame the whole act used to die on.
+    #[test]
+    fn gate_dialogue_fires_once_the_area_trigger_marks_the_zone() {
+        let data = act1();
+        let mut j = journal_at_q2(&data);
+        let no_kills = HashSet::new();
+        let maren = dlg(&data, "dlg_maren_gate");
+
+        assert!(!dialogue_should_fire(maren, &j, &no_kills),
+            "she must not speak before the player has been to the gate");
+
+        // Exactly what `check_area_triggers` writes when the body enters the region.
+        j.flags.insert(zone_flag("gate_square"));
+
+        assert!(dialogue_should_fire(maren, &j, &no_kills),
+            "standing in gate_square must open dlg_maren_gate");
+    }
+
+    /// The writer and the reader must agree on the key. They did not: the reader
+    /// asked for `entered_gate_square` and nobody ever inserted it.
+    #[test]
+    fn zone_flag_is_the_only_spelling_of_the_entered_key() {
+        assert_eq!(zone_flag("gate_square"), "entered_gate_square");
+        let data = act1();
+        let mut j = journal_at_q2(&data);
+        j.flags.insert("gate_square".to_string()); // the region id alone is not enough
+        assert!(!dialogue_should_fire(dlg(&data, "dlg_maren_gate"), &j, &HashSet::new()));
+    }
+
+    /// q2 through the real interaction path: the choice the player picks is the
+    /// thing that scores `o2_listen`, finishes q2 and hands over q3.
+    #[test]
+    fn q2_completes_through_apply_choice_and_hands_over_q3() {
+        let data = act1();
+        let mut j = journal_at_q2(&data);
+
+        // Walking into the region scores o1_gate (check_area_triggers' half).
+        let q2 = j.quests.get_mut("q2_voice_in_stone").unwrap();
+        q2.completed_objectives.push("o1_gate".to_string());
+        q2.current_objective += 1;
+
+        let mut state = DialogueState {
+            quest_id: "q2_voice_in_stone".into(),
+            dialogue_id: "dlg_maren_gate".into(),
+            ..Default::default()
+        };
+        let go = dlg(&data, "dlg_maren_gate").choices.as_ref().unwrap()
+            .iter().find(|c| c.id == "c_go").unwrap().clone();
+        apply_choice(&go, &mut j, &mut state, &data);
+
+        let q2 = &j.quests["q2_voice_in_stone"];
+        assert!(q2.completed_objectives.contains(&"o2_listen".to_string()),
+            "\"I'll go east\" is what completes the listen objective");
+        assert_eq!(q2.status, QuestStatus::Completed);
+        assert!(j.flags.contains("maren_met"));
+        assert_eq!(j.quests["q3_gatekeeper"].status, QuestStatus::Active,
+            "q3 must be Active or Garren never spawns and `defeat` is never armed");
+    }
+
+    /// Garren's death is also the frame q3 finishes, so a trigger that demanded
+    /// an *Active* quest could never see it.
+    #[test]
+    fn maren_speaks_after_garren_falls() {
+        let data = act1();
+        let mut j = journal_at_q2(&data);
+        let after = dlg(&data, "dlg_maren_after_husk");
+
+        let q3 = j.quests.get_mut("q3_gatekeeper").unwrap();
+        q3.status = QuestStatus::Active;
+        for oid in ["o1_east", "o2_observe", "o3_defeat"] {
+            q3.completed_objectives.push(oid.to_string());
+            q3.current_objective += 1;
+        }
+        complete_quest(&mut j, "q3_gatekeeper", &data);
+        assert_eq!(j.quests["q3_gatekeeper"].status, QuestStatus::Completed);
+
+        assert!(!dialogue_should_fire(after, &j, &HashSet::new()),
+            "no corpse, no eulogy");
+
+        // What `check_kill_triggers` records when a `defeat` objective is met.
+        let kills: HashSet<String> = ["garren_husk".to_string()].into_iter().collect();
+        assert!(dialogue_should_fire(after, &j, &kills));
+    }
+
+    /// The cliffhanger completes `o3_end` by itself, so firing it early would end
+    /// Act 1 without the player ever walking through the gate.
+    #[test]
+    fn cliffhanger_waits_for_the_player_to_step_through_the_gate() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+        let end = dlg(&data, "dlg_maren_cliffhanger");
+        let no_kills = HashSet::new();
+
+        let q5 = j.quests.get_mut("q5_sigil_that_knew_you").unwrap();
+        q5.status = QuestStatus::Active;
+        assert!(!dialogue_should_fire(end, &j, &no_kills),
+            "must not fire the moment q5 goes Active");
+
+        let q5 = j.quests.get_mut("q5_sigil_that_knew_you").unwrap();
+        q5.completed_objectives.push("o1_sigil".to_string());
+        q5.completed_objectives.push("o2_enter".to_string());
+        q5.current_objective = 2;
+        assert!(dialogue_should_fire(end, &j, &no_kills),
+            "o2_enter is the trigger — through the gate, then she speaks");
+    }
+
+    /// The sealed gate is the last wall of the act. q4's `open_door` reward is
+    /// the only thing in the story data that opens it; it had no reader at all,
+    /// which left `o2_enter` (a zone at z 0-2, behind the gate) unreachable
+    /// whenever the player finished q2 the scripted way.
+    #[test]
+    fn finishing_q4_queues_the_gate_open() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+
+        let q4 = j.quests.get_mut("q4_what_walls_remember").unwrap();
+        q4.status = QuestStatus::Active;
+        for oid in ["o1_build", "o2_ledger", "o3_offering"] {
+            q4.completed_objectives.push(oid.to_string());
+            q4.current_objective += 1;
+        }
+        complete_quest(&mut j, "q4_what_walls_remember", &data);
+
+        assert!(j.pending_world_rewards.iter().any(|r| r == "door:gate_chamber_door"),
+            "q4 must queue the gate open, got {:?}", j.pending_world_rewards);
+        assert_eq!(j.quests["q5_sigil_that_knew_you"].status, QuestStatus::Active);
+    }
+
+    /// q3 asks for a door and a campfire too — both must be recorded, not dropped.
+    #[test]
+    fn finishing_q3_queues_its_door_and_campfire() {
+        let data = act1();
+        let mut j = fresh_journal(&data);
+        let q3 = j.quests.get_mut("q3_gatekeeper").unwrap();
+        q3.status = QuestStatus::Active;
+        for oid in ["o1_east", "o2_observe", "o3_defeat"] {
+            q3.completed_objectives.push(oid.to_string());
+            q3.current_objective += 1;
+        }
+        complete_quest(&mut j, "q3_gatekeeper", &data);
+        assert!(j.pending_world_rewards.iter().any(|r| r == "door:guard_post_door"));
+        assert!(j.pending_world_rewards.iter().any(|r| r == "campfire:cp_guardpost"));
+    }
+
+    /// End to end on the real functions: campfire → gate → Maren → east →
+    /// Garren → build/read → gate open → sigil → Act 1 over. Every transition
+    /// below is made by shipped code; the test only supplies the player's input
+    /// (where the body is, which key was pressed, who died).
+    #[test]
+    fn act1_closes_on_the_scripted_path_with_no_stray_kill() {
+        let data = act1();
+        let mut j = journal_at_q2(&data);
+        let mut kills: HashSet<String> = HashSet::new();
+
+        // --- q2: walk into gate_square, hear Maren, pick "I'll go east" --------
+        j.flags.insert(zone_flag("gate_square"));
+        assert!(dialogue_should_fire(dlg(&data, "dlg_maren_gate"), &j, &kills));
+        let q2 = j.quests.get_mut("q2_voice_in_stone").unwrap();
+        q2.completed_objectives.push("o1_gate".to_string());
+        q2.current_objective += 1;
+        let mut state = DialogueState {
+            quest_id: "q2_voice_in_stone".into(),
+            dialogue_id: "dlg_maren_gate".into(),
+            ..Default::default()
+        };
+        let go = dlg(&data, "dlg_maren_gate").choices.as_ref().unwrap()
+            .iter().find(|c| c.id == "c_go").unwrap().clone();
+        apply_choice(&go, &mut j, &mut state, &data);
+        assert_eq!(j.quests["q3_gatekeeper"].status, QuestStatus::Active);
+
+        // --- q3: reach the post, watch him, put him down ----------------------
+        j.flags.insert(zone_flag("guard_post_east"));
+        let q3 = j.quests.get_mut("q3_gatekeeper").unwrap();
+        for oid in ["o1_east", "o2_observe", "o3_defeat"] {
+            q3.completed_objectives.push(oid.to_string());
+            q3.current_objective += 1;
+        }
+        kills.insert("garren_husk".to_string()); // check_kill_triggers' record
+        complete_quest(&mut j, "q3_gatekeeper", &data);
+        assert!(dialogue_should_fire(dlg(&data, "dlg_maren_after_husk"), &j, &kills),
+            "the fight has to be worth a line from her");
+        assert_eq!(j.quests["q4_what_walls_remember"].status, QuestStatus::Active);
+
+        // --- q4: bridge the gap, read the ledger + the bowl -------------------
+        let q4 = j.quests.get_mut("q4_what_walls_remember").unwrap();
+        for oid in ["o1_build", "o2_ledger", "o3_offering"] {
+            q4.completed_objectives.push(oid.to_string());
+            q4.current_objective += 1;
+        }
+        complete_quest(&mut j, "q4_what_walls_remember", &data);
+        assert!(j.pending_world_rewards.iter().any(|r| r == "door:gate_chamber_door"),
+            "the gate must be unsealed before q5 asks the player to walk through it");
+        assert_eq!(j.quests["q5_sigil_that_knew_you"].status, QuestStatus::Active);
+
+        // --- q5: the sigil, then through the gate, then her last line ---------
+        let q5 = j.quests.get_mut("q5_sigil_that_knew_you").unwrap();
+        for oid in ["o1_sigil", "o2_enter"] {
+            q5.completed_objectives.push(oid.to_string());
+            q5.current_objective += 1;
+        }
+        let end = dlg(&data, "dlg_maren_cliffhanger");
+        assert!(dialogue_should_fire(end, &j, &kills));
+        // Reading it out completes o3_end — the dialogue-level action path.
+        complete_dialogue_objective(
+            &mut j, "q5_sigil_that_knew_you",
+            end.completes_objective.as_ref().unwrap(), &data);
+
+        assert_eq!(j.quests["q5_sigil_that_knew_you"].status, QuestStatus::Completed);
+        assert!(j.flags.contains("act1_complete"), "flags: {:?}", j.flags);
+        for qid in ["q1_embers", "q2_voice_in_stone", "q3_gatekeeper",
+                    "q4_what_walls_remember", "q5_sigil_that_knew_you"] {
+            assert_eq!(j.quests[qid].status, QuestStatus::Completed, "{qid} unfinished");
+        }
     }
 }

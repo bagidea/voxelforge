@@ -25,6 +25,7 @@ mod import;
 mod look;
 mod mapfile;
 mod quest;
+mod quest_rules;
 mod scene;
 mod settings_menu;
 mod streaming;
