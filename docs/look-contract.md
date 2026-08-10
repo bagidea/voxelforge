@@ -26,7 +26,7 @@ use crate::look::{FOG_START, FOG_END, RENDER_RADIUS};
 
 | อะไร | ค่า | const ใน look.rs |
 |---|---|---|
-| สีหมอก | `Color::srgb(0.60, 0.72, 0.88)` (ฟ้าเทาขอบฟ้า) | `FOG_COLOR_DAY` |
+| สีหมอก | `Color::srgb(0.94, 0.66, 0.26)` (ส้มทองขอบฟ้า) | `FOG_COLOR_DAY` |
 | falloff | **`FogFalloff::Linear`** | — |
 | start (ใสสนิท) | **112.0 บล็อก** | `FOG_START` |
 | end (ทึบเต็ม) | **320.0 บล็อก** | `FOG_END` |
@@ -81,12 +81,13 @@ FOG_START = 0.35 × R
 | ชั้น | ค่า | เหตุผลสั้นๆ |
 |---|---|---|
 | Tonemapping | **`TonyMcMapface`** | ดูข้อ 4 |
-| ColorGrading | temp 0.02 · sat 1.05 · midtone contrast 1.12 · highlight gain 0.86 · shadows neutral | ความอุ่นมาจาก "ไฟ" ไม่ใช่ white-balance matrix (บทเรียน magenta 2026-08-01) |
+| ColorGrading | temp 0.05 · sat 1.90 · midtone contrast 1.12 · highlight gain 0.86 · shadows neutral | ความอุ่นมาจาก "ไฟ" ไม่ใช่ white-balance matrix (บทเรียน magenta 2026-08-01) |
 | Exposure | **ev100 = 10.8** | แดด 11,000 lux golden-hour. 11.0 เดิมมืดไป 1.3 stop จาก `Exposure::BLENDER` (9.7) — วัดบนเฟรม vista: patch แดดสว่างสุด L=53.9 ต่ำกว่า floor G6 ที่ 55. 9.7 ดันขึ้น L=69.9 ก็จริงแต่ซีด (R−B 133 จาก 155, G5 spread 56.7→35.8); **10.8** ผ่าน floor ที่ L=57.1 โดยยังเหลือความอุ่น (R−B 151, spread 53.6) |
 | Bloom | intensity 0.18 · **prefilter threshold 1.0 / softness 0.4** | ฟุ้งเฉพาะสิ่งที่สว่างเกิน 1.0 ใน HDR = โคมไฟ/ไฟ/emissive/แดดในกระจก เท่านั้น |
 | MSAA | **Off** | SSAO บังคับ + ขอบ voxel เป็น 90° ไม่มี jaggy ให้ลบ |
 | TAA | on ตั้งแต่ Medium ขึ้นไป | SSAO/เงา temporal เป็น stochastic ต้องมีตัวสะสม |
 | ShadowFilteringMethod | Temporal (Gaussian ที่ tier Low) | ขอบเงานุ่ม ≥3px ตาม gate G4 |
+| Soft-shadow penumbra (`PCSS`) | **4.0** (`PCSS_WIDTH`) | ขนาดเงาเหลวที่ hero shot เซ็นรับ; `VOXELFORGE_LOOK_PCSS` sweep ได้โดยไม่ recompile |
 | SSAO | Low→Ultra ตาม tier · thickness 1.45 | ของสัมผัสพื้น ไม่ลอย |
 | VolumetricFog | High/Ultra (step 32 / 96) | ลำแสงลอดหน้าต่าง/ยอดไม้ |
 | **DepthOfField** | **ไม่มี — ถูกถอดออกถาวร** | ดูข้อ 5 |
@@ -143,8 +144,8 @@ DOF โฟกัสใกล้เป็นภาษาของ "ภาพน�
 | illuminance | 11,000 lux | 260 lux (แสงจันทร์) |
 | สีแดด | `srgb(1.00, 0.84, 0.62)` | `srgb(0.55, 0.66, 0.95)` |
 | ClearColor (ฟ้า) | hue `srgb(0.36, 0.60, 0.90)` × **sky_gain 2.4** (linear) | hue `srgb(0.03, 0.05, 0.12)` × **sky_gain 1.0** |
-| AmbientLight สี | `srgb(0.96, 0.84, 0.66)` | `srgb(0.42, 0.52, 0.78)` |
-| AmbientLight brightness | 1100 lux | 90 lux |
+| AmbientLight สี | `srgb(0.96, 0.90, 0.48)` | `srgb(0.42, 0.52, 0.78)` |
+| AmbientLight brightness | 2200 lux | 90 lux |
 | Exposure ev100 | 10.8 | 7.5 |
 
 `illuminance` / มุมแดด / ClearColor เดิมเป็นของ `main.rs` (9000 lux, ดวงอาทิตย์สูง 59°,
@@ -171,6 +172,34 @@ exposure) ไม่งั้นได้ภาพที่ขัดกันเ�
 | `VOXELFORGE_LOOK_CAM=yaw_deg,pitch_deg,dist` | จัดมุมกล้องตอน spawn (ถ่ายรูปพิสูจน์งาน) |
 
 ทุกตัว "ไม่ตั้ง = ค่าที่ชิป byte-for-byte" — ไม่มี env ตัวไหนจำเป็นต่อการเล่นปกติ.
+
+---
+
+## 8. Sync log — สำเนาที่ตรงกับ `look.rs` อย่างไร
+
+ทุกค่าในหน้านี้ต้องเป็นสำเนาของ `pub const` ใน `client/src/look.rs` (กฎ §0).
+รอบ sync นี้ (Rose, 2026-08-06) แก้ค่าที่ drift หลัง grade/fog retune ของวันที่ 05–06 ส.ค. —
+อ้าง commit ที่ตั้งค่าจริงใน `look.rs` (จาก `git blame`) ทุกแถว:
+
+| § | param | contract เดิม | `look.rs` จริง | commit | วันที่ |
+|---|---|---|---|---|---|
+| §1 | `FOG_COLOR_DAY` | `srgb(0.60, 0.72, 0.88)` ฟ้าเทา | `srgb(0.94, 0.66, 0.26)` ส้มทอง | `bd3cde5` | 2026-08-05 |
+| §3 | grade `TEMPERATURE` | `0.02` | `0.05` | `bd3cde5` | 2026-08-05 |
+| §3 | grade `POST_SATURATION` | `1.05` | `1.90` | `bd3cde5` | 2026-08-05 |
+| §3 | `PCSS_WIDTH` | (ไม่ระบุตัวเลข) | `4.0` | `bb5c21e` | 2026-08-06 |
+| §6 | `ambient` สี (Golden) | `srgb(0.96, 0.84, 0.66)` | `srgb(0.96, 0.90, 0.48)` | `bb5c21e` | 2026-08-06 |
+| §6 | `ambient_lux` (Golden) | `1100` | `2200` | `bb5c21e` | 2026-08-06 |
+
+ค่าที่ verify ผ่านแล้ว (ตรง `look.rs` อยู่แล้ว, ไม่แก้): `FOG_START 112` / `FOG_END 320` /
+`FOG_SUN_GLOW srgb(1.00,0.85,0.60)` / `FOG_SUN_EXPONENT 30` / `MIDTONE_CONTRAST 1.12` /
+`HIGHLIGHT_GAIN 0.86` / Bloom `intensity 0.18 · prefilter 1.0 · softness 0.4` / `ev100 10.8` /
+tonemap `TonyMcMapface` / DoF stripped / shadows neutral. ambient ฝั่ง Night `srgb(0.42,0.52,0.78)`
++ `ambient_lux 90` ยังเท่าเดิม.
+
+> หมายเหตุ: recap ฉบับแรก (`docs/rose-lane-recap-2026-08-06.md`) นับ drift ได้แค่ 4 แถวและ
+> ระบุผิดว่า `TEMPERATURE`/`POST_SATURATION` "verify ผ่าน" — จริงๆ ทั้งสองค่า drift มาตั้งแต่
+> `bd3cde5` (08-05). รอบ sync นี้แก้ครบ 6 แถว. (Flamingo เจ้าของเลน Look session error,
+> Director มอบให้ Rose sync เอง — owner ยังเป็น Flamingo ตามเดิม.)
 
 ---
 

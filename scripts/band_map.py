@@ -15,8 +15,14 @@ Usage: python scripts/band_map.py FRAME.png [-o OUT_MASK.png]
 """
 
 import argparse
+import os
+import sys
+
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402
 
 N = 1024
 
@@ -26,6 +32,7 @@ def main() -> None:
     ap.add_argument("frame")
     ap.add_argument("-o", "--out", default=None)
     a = ap.parse_args()
+    require_nohud2([a.frame], tool="band_map.py")
 
     im = Image.open(a.frame).convert("RGB").resize((N, N), Image.LANCZOS)
     rgb = np.asarray(im).astype(np.float64)

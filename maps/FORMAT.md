@@ -47,13 +47,25 @@ build a level.
 
 ### Block names
 
-| Name    | Id | Notes                        |
-| ------- | -- | ---------------------------- |
-| `air`   | 0  | Empty. **Never written** — see below. |
-| `grass` | 1  | Green top surface.           |
-| `dirt`  | 2  | Brown.                       |
-| `stone` | 3  | Grey.                        |
-| `sand`  | 4  | Pale.                        |
+| Name           | Id  | Notes                        |
+| -------------- | --- | ---------------------------- |
+| `air`          | 0   | Empty. **Never written** — see below. |
+| `grass`        | 1   | Green top surface.           |
+| `dirt`         | 2   | Brown.                       |
+| `stone`        | 3   | Grey.                        |
+| `sand`         | 4   | Pale.                        |
+| `wood`         | 5   | Timber beams / planks.       |
+| `leaves`       | 6   | Foliage clumps.              |
+| `snow`         | 7   | Snow cover.                  |
+| `red_sand`     | 8   | Warm desert sand.            |
+| `clay`         | 9   | Pale terracotta.             |
+| `gravel`       | 10  | Loose stony ground.          |
+| `cobblestone`  | 11  | Rough-set stones.            |
+| `obsidian`     | 12  | Glassy dark volcanic rock.   |
+| `brick`        | 13  | Fired-clay masonry.          |
+| `moss`         | 14  | Creeping green ground cover. |
+| `limestone`    | 15  | Light sedimentary stone.     |
+| `lamp`         | 16  | Emissive lantern block.      |
 
 Names are case-insensitive on load.
 

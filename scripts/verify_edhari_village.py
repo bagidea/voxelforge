@@ -22,9 +22,12 @@ MAP_PATH = os.path.join(os.path.dirname(__file__), "..", "maps", "edhari.json")
 CHUNK = 32
 
 # The set client/src/mapfile.rs::block_id_from_name() actually recognises.
-# BlockId has 15 palette entries (block.rs), but the map *loader* only knows
-# these 5 — anything else is silently skipped on load (reported, not applied).
-LOADER_KNOWN_BLOCKS = {"air", "grass", "dirt", "stone", "sand"}
+# The A3 palette pass expanded the loader to the full 17-block palette.
+LOADER_KNOWN_BLOCKS = {
+    "air", "grass", "dirt", "stone", "sand", "wood", "leaves", "snow",
+    "red_sand", "clay", "gravel", "cobblestone", "obsidian", "brick",
+    "moss", "limestone", "lamp",
+}
 
 fail = []
 

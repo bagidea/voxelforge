@@ -85,6 +85,9 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402
+
 # ---- grass mask -------------------------------------------------------------
 # HUE BAND, never `g > r`. Lifted from scripts/grade_g7.py:is_veg, which
 # documents why: sunlit grass in this look is warm yellow-olive, i.e. R > G, so
@@ -469,6 +472,7 @@ def main(argv=None):
     ap.add_argument("--no-plot", action="store_true")
     ap.add_argument("--no-mask", action="store_true")
     a = ap.parse_args(argv)
+    require_nohud2(a.plates, tool="grass_bimodality.py")
 
     os.makedirs(a.out, exist_ok=True)
     print(f"# grass bimodality  expect={a.expect}  "

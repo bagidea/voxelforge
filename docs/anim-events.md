@@ -136,6 +136,10 @@ play session, so gameplay is untouched):
 VOXELFORGE_ANIM_POSE=attack   # Contact frame of a light-1 (blade mid-strike)
 VOXELFORGE_ANIM_POSE=dodge    # mid-roll tuck (beat.t = 0.5)
 VOXELFORGE_ANIM_POSE=parry    # centre of the receive window (guard up to deflect)
+VOXELFORGE_ANIM_POSE=clash    # player AND the nearest Husk, each at their own
+                               # contact frame — for two-actor shots where the
+                               # brief wants blades meeting, not two independently
+                               # posed actors (e.g. --combat-demo clash shots)
 ```
 
 Grab a frame with the **main** `voxelforge` bin (that is where `AnimPlugin` runs —

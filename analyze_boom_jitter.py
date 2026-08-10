@@ -17,7 +17,7 @@
 #   3. EASE-OUT SIGNATURE — after a release, the raw→used gap decays ~exponentially.
 import re, sys, statistics
 
-PAT = re.compile(r"BOOM_TRACE dt=([-\d.]+) raw=([-\d.]+) used=([-\d.]+)")
+PAT = re.compile(r"BOOM_TRACE dt=([+-]?\d+\.?\d*) raw=([+-]?\d+\.?\d*) used=([+-]?\d+\.?\d*)")
 
 def load(path):
     dt, raw, used = [], [], []

@@ -187,6 +187,12 @@ with tempfile.TemporaryDirectory() as td:
         # exists so the refusal is testable end to end instead of asserted by
         # reading the source, which is how a guard rots.
         "make_gate3_verdict_card.py": ["--frames", str(raw), str(raw), str(raw)],
+        # --cam is required and parsed BEFORE the guard fires; supply it so the
+        # refusal is the guard's, not argparse's missing-arg error.
+        "_flamingo_char_dist_solve.py": [str(raw), "--cam", "0,0,10"],
+        # Needs exactly two plates (azimuth A/B pair); with one it prints __doc__
+        # and exits 1 before the guard. Give two so the refusal is the guard's.
+        "sun_locked_edges.py": [str(raw), str(raw)],
     }
     for name in G.GUARDED:
         cmd = [sys.executable, str(SCRIPTS / name)] + argv_for.get(name, [str(raw)])

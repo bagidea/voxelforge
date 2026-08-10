@@ -23,10 +23,14 @@ proof: bloom appears in the after-frame's relative profile and not the before's.
 
 Usage: _poppy_halo_probe.py <after-nohud2.png> [<before-nohud2.png>]
 """
+import os
 import sys
 
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402
 
 NEAR = (1, 4)      # px under the silhouette = the halo band
 FAR = (24, 40)     # px under the silhouette = un-bloomed far field
@@ -145,6 +149,7 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(2)
+    require_nohud2(sys.argv[1:3], tool="_poppy_halo_probe.py")
     after = report(sys.argv[1])
     print()
     before = None

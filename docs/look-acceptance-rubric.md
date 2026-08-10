@@ -80,6 +80,8 @@ CEO ไฟเขียว **framing แบบ TILT-DOWN** แล้ว → เ�
 > **midtone band** = พิกเซลที่ luminance L อยู่ช่วง [p35, p75] — คือ "เนื้อไม้ที่โดนไฟ" ของเฟรม (ตัด highlight/shadow สุดขั้วออก).
 > **⚠️ target ชุดนี้ re-derive แบบ "ปิด gap เข้าหา REF" (2026-07-26).** target เดิม `≥+175 / ≤18 / ≥88` เป็น **phantom** — คนละเมตริกกับที่สคริปต์วัด และ REF เองวิ่งเข้าไม่ถึง → ถ้าใช้จะ reject spike ที่ถูกจริง. ทิ้งแล้ว. เกณฑ์ปัจจุบันพิสูจน์กับ ref: **ref เกรดตัวเอง 6/6 PASS** (ดู [P0-axes calibration log](#p0-axes-calibration-log-phantom-target-retired) ท้ายเอกสาร).
 
+> **🔁 re-derive 2026-08-09 (Rose) — warmth / blue / saturation ลดเหลือ ADVISORY.** สามแกนนี้ (B-dependent midtone stat) พิสูจน์ว่าเป็นได้สองทางว่า **เป็น gate ไม่ได้สุจริต**: (1) **clamp-inverted** — B ถูก clamp ทำให้ warmth บวม/blue ล่ม เฟรมพัง N6 เลย "ผ่าน" warmth≥110/blue≤10 ในขณะที่เฟรมดีกลับ "ตก"; (2) **scene-class spread** — เฟรมนอกที่ดี span warmth 71–121 / blue 4–141 / sat 42–95 ไม่มี threshold เดียวที่ผ่านได้พร้อม REF. ตัวตัดสินความเสียหายสีเดียวที่สะอาดคือ **`clip` ≤35%** (good @1.02 ≤22%, N6 ≥55%). ตามเลนใหม่: **clip/DOF/micro/p95 = HARD GATE; warmth/blue/sat = ADVISORY** (วัด+พิมพ์ สำหรับ tune-toward-REF แต่ไม่ตัด pass/fail). midtone band แก้เป็น **terrain band** (ตัด sky ก่อน percentile — s1-vista เคยอ่าน blue 101 เพราะ sky ปน 37.9% ใน band; REF ไม่มี sky เลขไม่ขยับ). รายละเอียด+ตารางพิสูจน์: `docs/VERDICT-rose-chroma-rederive-2026-08-09.md`; ล็อกด้วย `scripts/tests/test_grade_axes_chroma_rederive.py`.
+
 ---
 
 ## ชั้น A — GATE CHECK (6 ด่าน · binary · ตก 1 = FAIL)

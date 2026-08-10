@@ -112,19 +112,19 @@ def colour_gates_pass(m):
 def axes_pass(ax):
     """The gameplay profile of grade_axes.TARGETS — its table, not a copy of it.
 
-    sat is graded on the HONEST value via grade_axes.sat_status (N-A once the
-    clip co-gate fires); a None (N-A) verdict does not FAIL the frame here --
-    the clip axis carries that FAIL, never sat. (Pre-2026-08-09 this read
-    ax["sat"] legacy with a bare >=90 and graded B-clipped wrecks as PASS.)"""
+    Only HARD-GATE axes can FAIL the frame. warmth/blue/sat are ADVISORY
+    (grade_axes.ADVISORY): B-dependent midtone stats, clamp-inverted and
+    scene-class-ungateable, so clip is the sole chromatic-damage gate. Pre-2026-08-09
+    this judged warmth/blue/sat as gates and false-FAILED healthy outdoor frames
+    while false-PASSing B-clamped wrecks on warmth+blue. See grade_axes.py."""
     active = grade_axes.PROFILES["gameplay"]
     ok = True
     for key, _, cmp_, bound, _ in grade_axes.TARGETS:
-        if key not in active:
-            continue
-        if key == "sat":
-            sat_ok, _ = grade_axes.sat_status(ax)
-            if sat_ok is False:
-                ok = False
+        # Only HARD-GATE axes FAIL the frame. warmth/blue/sat are ADVISORY
+        # (grade_axes.ADVISORY): B-dependent midtone stats, clamp-inverted and
+        # scene-class-ungateable, so clip is the sole chromatic-damage gate.
+        # See the RE-DERIVE block in grade_axes.py (Rose, 2026-08-09).
+        if key not in active or key in grade_axes.ADVISORY:
             continue
         if not grade_axes.verdict(cmp_, bound, ax[key]):
             ok = False
@@ -257,10 +257,10 @@ def main():
     b, w_, c = frames["boot"], frames["walk"], frames["combat"]
     ab, aw, ac = axes["boot"], axes["walk"], axes["combat"]
     _sc = lambda a: grade_axes.sat_status(a)[1]   # honest sat text, or 'N-A' if clip co-gate fired
-    row(471, "P0 axes (chromatic only)",
-        f"blue B: {ab['blue']:.1f} / {aw['blue']:.1f} / {ac['blue']:.1f}  <=10"
-        f"      sat(honest): {_sc(ab)} / {_sc(aw)} / {_sc(ac)}  >=90"
-        f"      clip: {ab['clip']:.0f}% / {aw['clip']:.0f}% / {ac['clip']:.0f}%  <=35",
+    row(471, "P0 axes (clip gates; blue/sat advisory)",
+        f"blue B: {ab['blue']:.1f} / {aw['blue']:.1f} / {ac['blue']:.1f}  ~REF 4.3 (adv)"
+        f"      sat(honest): {_sc(ab)} / {_sc(aw)} / {_sc(ac)}  ~REF 95 (adv)"
+        f"      clip: {ab['clip']:.0f}% / {aw['clip']:.0f}% / {ac['clip']:.0f}%  <=35  [GATE]",
         GRN if axes_ok else RED)
     warm_ok = min(fpct(m, "warm_frac_lit") for m in frames.values()) >= 80.0
     row(492, "Warm-ordered px (R>G>B, of lit)",

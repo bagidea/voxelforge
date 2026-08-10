@@ -14,6 +14,7 @@ import colour_gate  # noqa: E402
 import grade_axes  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
+from nohud2_guard import require_nohud2  # noqa: E402
 
 HDR = (
     f"{'frame':<18} {'mag%':>6} {'sky R,G,B':>19} {'order':>9} "
@@ -22,6 +23,7 @@ HDR = (
 
 
 def main():
+    require_nohud2(sys.argv[1:], tool="_poppy_sweep_report.py")
     print(HDR)
     print("-" * len(HDR))
     for path in sys.argv[1:]:

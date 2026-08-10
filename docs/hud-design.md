@@ -158,6 +158,20 @@ None of the three have been applied, built, or committed to their target files �
 (scoped check, not a full build, per the build-lock rule), so the patches are known to compile together; they
 have not been verified individually or re-checked after the split.
 
+---
+
+## 8. Still current — cross-checked 2026-08-06
+
+Re-read against the live tree while building the title-menu/settings pass (`docs/main-menu-design.md`):
+nothing here has drifted. §0's rule ("baseline HUD spends zero teal," "fade, don't float") and §2's token
+table are still the palette source of truth I pulled from when giving the title-menu focus tick and the
+settings-panel preset cards their amber accent. This doc did not need new content for that work — the title
+menu and settings panel are two *more* surfaces reading off the same tokens, not a reason to touch this one.
+One clarification worth stating explicitly now that a third surface exists: the §0 "fade, don't float"
+translucency rule is scoped to elements sitting **over live, ungated gameplay** (bars, reticle, quest
+banner). It does not extend to the settings panel, which is a paused modal — see
+`docs/main-menu-design.md` §6 for why that panel stays near-opaque instead.
+
 *Design: Monanisa. Palette source of truth: `docs/look-bible.md` §4, `docs/character-bible.md` §0. Numeric
 combat values referenced (HP/stamina/lock-on ranges) per `docs/combat-tuning.md` — engineering source of
 truth is Yamamoto/Kevin's code, this doc only borrows the numbers to make the mockup's readouts plausible.*

@@ -162,3 +162,96 @@ double-checking the web build story before switching.
 
 Either way, §4's glass/lamp gap is a separate follow-up once a code owner
 adds the `BlockId`s.
+
+---
+
+## 6. v3 — full 16-slot pass for the golden-hour grade (2026-08-06)
+
+**Trigger:** `docs/look-bible.md` §4's "Palette · Mood · Texture" target (amber-gold
+key `#F4B860`, warm bounce `#C88A4A`, warm grey-beige stone `#B9A98C`, ~85%
+warm / ≤10–15% cool teal accent) plus the warm haze/grade `look.rs` (rose's
+lane) is currently baking. §2 above only touched the 5–6 slots the CEO's
+photo brief called out; the other 9 still carry the **original, un-audited**
+`base_color()` values — several of which actively fight a warm grade. This
+pass covers all 16 slots so the full atlas reads as one material family
+under golden-hour light, not 6 corrected tiles next to 9 untouched ones.
+
+**Same rule as §1 applies:** `base_color()` is documented **unshaded** —
+`look.rs` already adds the warmth (sun colour, warm haze, ACES-ish tone
+curve). These are *corrected albedo*, not pre-toned hero-shot pixels. Two
+failure modes were being actively designed against:
+1. **Feeding it warm-lit pixels** double-counts the grade (§1's lesson —
+   still true).
+2. **Leaving it a cold/neutral pixel** undershoots — a couple of the
+   untouched originals (`stone`, `clay`, `snow`) have `B ≥ R` (blue-leaning
+   or blue-equal), which is the one combination a warm key + warm haze
+   renders *worst*: cool greys pick up a muddy, faintly green cast under
+   warm bounce light instead of harmonizing with it. Those needed a small
+   warm-neutral correction even though nobody asked for them by name.
+
+### 6.1 Full table — old → new, one-line reasoning each
+
+| BlockId | `block.rs` line | Old hex | **New hex** | Changed? | Why |
+|---|---|---|---|---|---|
+| grass | 86 | `#46a042` | **`#5b8c46`** | carried from §2 | already corrected off neon; unchanged this pass |
+| dirt | 87 | `#7c5838` | **`#6b5540`** | **yes** | was nearly hue-identical to `wood` (124,88,56 vs 120,86,52) — under warm haze the two blocks melted into one brown; pulled dirt toward a neutral, less-saturated umber so soil reads as *soil*, not "the other wood" |
+| stone | 88 | `#80808a` | **`#8f8776`** | **yes** | old value has `B(138) > R(128)` — a cool blue-grey slab that clashes with a warm key/haze (picks up a muddy cast instead of harmonizing); warmed toward the look-bible's `#B9A98C` warm-grey-beige target while staying desaturated enough to still read as bare stone |
+| sand | 89 | `#d6ca94` | `#d6ca94` | no | already warm tan, already fits the family |
+| wood | 90 | `#785634` | **`#9c6b3a`** | carried from §2 | already corrected (photo-sampled oak); unchanged this pass |
+| leaves | 91 | `#308230` | **`#3a7436`** | carried from §2 | already corrected off saturated green; unchanged this pass |
+| snow | 92 | `#f0f5fa` | **`#f0ece0`** | **yes** | old value is icy blue-white (`B > R`) — a "cold hole" punched in every warm-lit frame it appears in; shifted to a warm off-white so it still reads bright/desaturated as snow without visually fighting warm GI/haze (mirrors the look-bible rule that in-shadow areas get warm bounce, not blue) |
+| red_sand | 93 | `#c88246` | `#c88246` | no | already warm terracotta-orange, distinct from wood/brick, fits as-is |
+| clay | 94 | `#8c96a8` | **`#7e96a0`** | **yes** | old value was the single coldest, muddiest outlier in the palette (`B(168) > R(140)`, low-chroma blue-grey — reads dirty, not intentional); rather than force it warm-neutral like stone, gave it a clean **teal-grey** identity instead — the look-bible explicitly wants a ~10–15% cool-teal accent (`#4FC9D6` family) so builders have *one* legitimate cool material instead of an accidental clash. Use sparingly, same budget rule as the bible's teal accent |
+| gravel | 95 | `#6e645e` | `#6e645e` | no | already warm neutral dark grey-brown, fits |
+| cobblestone | 96 | `#5c5c62` | **`#8c8a78`** | carried from §2 | already corrected (mossy warm stone); unchanged this pass |
+| obsidian | 97 | `#14121c` | **`#1a1620`** | **yes (subtle)** | small warm-violet nudge (was 20/18/28, now 26/22/32) so it sits in the *same* hue family as the look-bible's shadow colour `#2A2030` — deep-shadow areas and obsidian blocks now read as one consistent "warm-violet dark" instead of two unrelated blacks. Still reads near-black; not a visible repaint |
+| brick | 98 | `#965a3c` | `#965a3c` | no | already a correct warm terracotta, fits as-is |
+| moss | 99 | `#376428` | **`#4b6e37`** | carried from §2 | already corrected (richer/darker than grass); unchanged this pass |
+| limestone | 100 | `#c8bea0` | **`#decca8`** | carried from §2 | already corrected (cream plaster); unchanged this pass |
+
+**Net new changes this pass (not already covered by §2):** `dirt`, `stone`,
+`snow`, `clay`, `obsidian` — 5 slots. Combined with §2's 6, that's 11 of 15
+placeable blocks now audited against the warm grade; `sand`, `red_sand`,
+`gravel`, `brick` were checked and are genuinely fine unchanged.
+
+### 6.2 Swatch sheet (real rendered PNG, not just numbers)
+
+`docs/assets/block-palette/block-palette-v3-golden-hour-swatch.png` — all 15
+placeable tiles, old-vs-new split swatch for every changed slot (labelled
+"CHANGED"), hex + RGB under each. Rendered with Python/PIL, flat colour
+(matches what `base_color()` feeds the procedural atlas before dither) —
+open it directly to eyeball the family cohesion, not just read hex codes.
+
+### 6.3 For Poppy — where this lands in `sim/src/block.rs::base_color()`
+
+All 15 values are single `[u8; 3]` literal edits inside the existing
+`match` at lines 85–101 (`base_color()`), same shape as §5 Option A — no
+struct change, no new `BlockId`, no atlas/loading change:
+
+```
+line 86  GRASS       -> [91, 140, 70]     // #5b8c46 (unchanged from §2 if already landed)
+line 87  DIRT        -> [107, 85, 64]     // #6b5540
+line 88  STONE       -> [143, 135, 118]   // #8f8776
+line 89  SAND        -> [214, 202, 148]   // #d6ca94 (no change)
+line 90  WOOD        -> [156, 107, 58]    // #9c6b3a (unchanged from §2 if already landed)
+line 91  LEAVES      -> [58, 116, 54]     // #3a7436 (unchanged from §2 if already landed)
+line 92  SNOW        -> [240, 236, 224]   // #f0ece0
+line 93  RED_SAND    -> [200, 130, 70]    // #c88246 (no change)
+line 94  CLAY        -> [126, 150, 160]   // #7e96a0
+line 95  GRAVEL      -> [110, 100, 94]    // #6e645e (no change)
+line 96  COBBLESTONE -> [140, 138, 120]   // #8c8a78 (unchanged from §2 if already landed)
+line 97  OBSIDIAN    -> [26, 22, 32]      // #1a1620
+line 98  BRICK       -> [150, 90, 60]     // #965a3c (no change)
+line 99  MOSS        -> [75, 110, 55]     // #4b6e37 (unchanged from §2 if already landed)
+line 100 LIMESTONE   -> [222, 204, 168]   // #decca8 (unchanged from §2 if already landed)
+```
+
+Checked against current `sim/src/block.rs` on 2026-08-06: **none of §2's
+6 carried-over corrections have landed yet** (the file still reads the
+original `[70,160,66]` grass etc.), so all 11 changed lines above are live
+diffs against what's on disk today, not just the 5 new ones. `sand`,
+`red_sand`, `gravel`, `brick` (4 lines) are listed for completeness only —
+no edit needed there.
+
+I have not touched `sim/src/block.rs` or run `cargo` — this section is
+spec only, same as §5.

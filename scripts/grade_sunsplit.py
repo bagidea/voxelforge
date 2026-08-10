@@ -34,10 +34,14 @@ main.rs's own 57-degree sun over a 380-lux fill) and the shipped 2026-08-07
 Usage: grade_sunsplit.py <frame.png> [more.png ...]
 Exit code 0 = every gradeable plate shows two humps.
 """
+import os
 import sys
 
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402
 
 # --- calibrated bars (see module docstring) --------------------------------
 MIN_COVERAGE = 0.010  # grass must be >=1% of the frame, else the plate is N/A
@@ -175,6 +179,7 @@ def main(argv):
     if not argv:
         print(__doc__)
         return 2
+    require_nohud2(argv, tool="grade_sunsplit.py")
     results = [(p, grade(p)) for p in argv]
     graded = [(p, r) for p, r in results if r is not None]
     print("=" * 58)

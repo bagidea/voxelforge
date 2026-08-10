@@ -49,18 +49,15 @@ def check(cond, msg):
 
 
 def grade_all_axes(m, profile):
-    """Mirror grade_axes.main()'s verdict loop: every active axis judged, sat via
-    sat_status (a None/N-A verdict does NOT fail -- the clip axis carries it)."""
+    """Mirror grade_axes.main()'s verdict loop: only HARD-GATE axes judge. The
+    ADVISORY set (warmth/blue/sat) is printed for tuning but never fails -- clip
+    is the sole chromatic-damage gate (RE-DERIVE 2026-08-09, see grade_axes.py)."""
     active = grade_axes.PROFILES[profile]
     results = {}
     for key, _, cmp, bound, _ in grade_axes.TARGETS:
-        if key not in active:
+        if key not in active or key in grade_axes.ADVISORY:
             continue
-        if key == "sat":
-            ok, _ = grade_axes.sat_status(m)
-            results[key] = ok is not False   # None (N-A) is not a sat FAIL
-        else:
-            results[key] = grade_axes.verdict(cmp, bound, m[key])
+        results[key] = grade_axes.verdict(cmp, bound, m[key])
     return results
 
 

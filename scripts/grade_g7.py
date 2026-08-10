@@ -24,7 +24,25 @@ and shadow desaturates ground exactly the way haze does. An axis that scores a
 frame with provably no fog in it as "has aerial perspective" is not a gate. A2
 is the gate.
 
-Usage (every frame must be de-HUDded — see the guard note in main()):
+AXIS C (vegetation) already runs in `scripts/regrade.py` on every frame.
+
+A/B CAPTURE RECIPE — paired frames must be shot from the SAME binary:
+  # Haze A/B pair (proves aerial perspective is depth-dependent):
+  $env:VOXELFORGE_LOOK_HAZE=0; .\voxelforge_perf.exe -- --play   # -> haze-off-nohud2.png
+  .\voxelforge_perf.exe -- --play                                 # -> haze-on-nohud2.png
+  python scripts/regrade.py --before before/ --after after/ \
+      --g7-haze haze-off-nohud2.png haze-on-nohud2.png
+
+  # SSAO A/B pair (proves contact AO is real, not dark albedo):
+  $env:VOXELFORGE_LOOK_SSAO=off; .\voxelforge_perf.exe -- --play  # -> ssao-off-nohud2.png
+  .\voxelforge_perf.exe -- --play                                 # -> ssao-on-nohud2.png
+  python scripts/regrade.py --before before/ --after after/ \
+      --g7-ao ssao-off-nohud2.png ssao-on-nohud2.png
+
+The env-var hooks are real: see `VOXELFORGE_LOOK_HAZE` and `VOXELFORGE_LOOK_SSAO`
+in client/src/look.rs. Same binary for both shots or the diff is meaningless.
+
+Original Usage (every frame must be de-HUDded — see the guard note in main()):
   grade_g7.py --frame <on-nohud2.png>                       # axis C + A1 context
   grade_g7.py --ab-haze <off-nohud2.png> <on-nohud2.png>    # axis A2
   grade_g7.py --ab-ao   <off-nohud2.png> <on-nohud2.png>    # axis B

@@ -46,6 +46,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import grade_character as gc  # noqa: E402
+from nohud2_guard import require_nohud2  # noqa: E402
 
 CLEAR_TOL = 0.12          # |ratio - 1| within this = the boom got its length
 
@@ -83,6 +84,7 @@ def main():
     ap.add_argument("--key-tol", type=float, default=26.0)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+    require_nohud2([args.image], tool="_flamingo_char_dist_solve.py")
 
     yaw, pitch, want = [float(v) for v in args.cam.split(",")]
     pred, meas, implied, npx = measure(args.image, yaw, pitch, want, args.actor,

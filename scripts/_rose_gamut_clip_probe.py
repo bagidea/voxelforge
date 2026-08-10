@@ -26,6 +26,9 @@ import glob
 import numpy as np
 from PIL import Image
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402
+
 
 def _label(path):
     p = path.replace("\\", "/")
@@ -94,6 +97,10 @@ def analyze(path):
 
 def main():
     roots = sys.argv[1:] or ["_pixel_shotset_N6/before", "_pixel_shotset_N6/after"]
+    # de-HUD guard on any explicit FILE inputs (dirs self-glob to *-nohud2; the
+    # golden ref appended below is committed artwork, graded like grade_ref).
+    require_nohud2([r for r in roots if os.path.isfile(r)],
+                   tool="_rose_gamut_clip_probe.py")
     files = []
     for r in roots:
         if os.path.isdir(r):

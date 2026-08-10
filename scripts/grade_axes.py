@@ -18,16 +18,41 @@ from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 # (History: the old ">=+175 / <=18 / >=88" targets were a phantom — a different
 # metric that REF itself could never hit. Retired 2026-07-26.)
 #
-# Axis            channel / definition                    target      REF (golden)
-# warmth  R-B     midtone-band mean (R-B)                 >= +110     +120.9
-# blue    B       midtone-band mean B                     <=  10.0      4.3
-# clip    any     midtone % px with a channel at 0/255    <=  35.0     18.8  (co-gate)
-# sat     HSV     midtone mean sat over NON-railed px     >=  90.0     95.2  (honest; N-A if clip>35)
-# DOF fg:bg       hi-freq std ratio fg/bg                 >=   3.0      3.50
-# micro-contrast  hi-pass std (GaussianBlur r3) on 1024L  >=   5.0      5.24
-# p95             global luminance 95th pct (~170 band)   150..185    165.8
+# Axis            channel / definition                       role      REF (golden)
+# --- HARD GATES (contribute to PASS/FAIL) ---
+# clip    any     terrain-midtone % px with a chan at 0/255  GATE <=35  18.8   (chromatic damage)
+# DOF fg:bg       hi-freq std ratio fg/bg                    GATE >=3.0  3.50  (hero profile only)
+# micro-contrast  hi-pass std (GaussianBlur r3) on 1024L     GATE >=5.0  5.24
+# p95             global luminance 95th pct (~170 band)      GATE 150..185 165.8
+# --- ADVISORY (measured + printed for tuning, NEVER hard-gated) ---
+# warmth  R-B     terrain-midtone mean (R-B)                 ADV ~REF  +120.9
+# blue    B       terrain-midtone mean B                     ADV ~REF    4.3
+# sat     HSV     terrain-midtone mean sat over NON-railed   ADV ~REF   95.2  (honest; N-A if clip>35)
 #
-# midtone band = luminance L in [p35, p75] (the lit-wood body of the frame).
+# midtone band = terrain luminance L in [p35, p75] -- SKY IS DROPPED FIRST (see
+# measure()). REF is indoor with 0% sky, so its band is bit-identical to the old
+# whole-frame band and every REF-relative number below is unchanged.
+#
+# RE-DERIVE 2026-08-09 (Rose; probes _flamingo_band_probe.py / _rose_blue_ramp_probe.py):
+# warmth/blue/sat_honest used to be HARD gates (>=110 / <=10 / >=90), all calibrated
+# on the INDOOR golden ref (warm-wood midtone, near-zero blue, 95% sat). Two proven
+# defects made them dishonest as gates on outdoor content:
+#   (1) CLAMP-INVERTED. All three ride on B. When POST_SATURATION over-drives and the
+#       swapchain clamps B to 0, warmth R-B INFLATES (N6 wrecked plates read 132-175,
+#       PASSing >=110) and blue COLLAPSES (reads ~0.04, PASSing <=10) -- the damage
+#       makes the frame score BETTER, not worse. Only sat is honest, and only because
+#       the clip co-gate forces it N-A. So a wrecked frame passed warmth+blue.
+#   (2) SCENE-CLASS SPREAD. Even un-clamped, good outdoor plates span warmth 71-121,
+#       blue 4-141, sat 42-95 (grass/limestone/sky-lit ground vs indoor wood). No
+#       single threshold passes all good outdoor plates AND REF, and none can fail N6
+#       by value (N6's low blue / high warmth are the clamp artefact). Proven by sweep.
+# The ONE statistic that cleanly separates good from damaged is CLIP: shipped-good
+# @1.02 plates clip <=22% midtone; every N6 (@1.90) plate clips 55-99.8%. So clip is
+# the sole chromatic-damage gate, and warmth/blue/sat become ADVISORY (printed with
+# their REF so Yamamoto can still tune toward the indoor target, but they no longer
+# false-FAIL a healthy outdoor frame nor false-PASS a B-clamped one). A future
+# known-bad COLD/desaturated frame (none exists today) can re-earn a hard chromatic
+# gate -- but only with its own calibrated threshold, never the indoor ref's.
 #
 # PROFILE MODE (--profile hero|gameplay):
 #   hero     — all 6 axes (default; for beauty/hero-shot 1024² calibration frames)
@@ -56,17 +81,24 @@ from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 # meaningless once the band is mostly railed (mean over a tiny saturated sliver -- e.g.
 # gate3 honSat 82.6 over 877 of 419k px), so it auto-reports N-A when clip fires.
 # Calibrated on golden REF: clip 18.8%, honest sat 95.2. 35% leaves REF a ~2x margin
-# and FAILs every known-bad N6 plate. This also retro-covers warmth/blue, which inflate
-# or collapse on a B-clipped frame but are now moot -- the frame hard-FAILs on clip.
-# (POST_SATURATION itself is Yamamoto's lane; this gate only detects the symptom.)
+# and FAILs every known-bad N6 plate (55-99.8%), passing every shipped-good @1.02 plate
+# (<=22%). (POST_SATURATION itself is Yamamoto's lane; this gate only detects the symptom.)
 CLIP_THRESH = 35.0
+
+# ADVISORY axes: measured + printed for tuning context, but they NEVER contribute to
+# PASS/FAIL. warmth/blue/sat_honest are the B-dependent midtone statistics proven
+# clamp-inverted AND scene-class-ungateable (see the RE-DERIVE block in the header).
+# clip is the one honest chromatic-damage gate. Their `bound` in TARGETS is kept only
+# as the indoor-ref-calibrated reference point for display + sat_status; the verdict
+# loop (main) and axes_pass (make_gate3_verdict_card) skip anything in this set.
+ADVISORY = {"warmth", "blue", "sat"}
 
 TARGETS = [
     # key,   label,                        cmp,   bound(s),          ref
-    ("warmth", "warmth R-B (mid)",         "ge",  110.0,            120.9),
-    ("blue",   "blue B (mid)",             "le",   10.0,              4.3),
+    ("warmth", "warmth R-B (mid)",         "ge",  110.0,            120.9),   # ADVISORY
+    ("blue",   "blue B (mid)",             "le",   10.0,              4.3),   # ADVISORY
     ("clip",   "mid clip %",               "le",   CLIP_THRESH,      18.8),
-    ("sat",    "saturation (mid, honest)", "ge",   90.0,             95.2),
+    ("sat",    "saturation (mid, honest)", "ge",   90.0,             95.2),   # ADVISORY
     ("dof",    "DOF fg:bg ratio",          "ge",    3.0,             3.50),
     ("micro",  "micro-contrast",           "ge",    5.0,             5.24),
     ("p95",    "highlight p95",            "band", (150.0, 185.0),  165.8),
@@ -139,9 +171,19 @@ def measure(path):
     sat = np.where(mx > 0, (mx-mn)/np.maximum(mx, 1e-6), 0)
     # global highlight
     p95 = float(np.percentile(L, 95))
-    # midtone band L 35-75 pct
-    tlo, thi = np.percentile(L, 35), np.percentile(L, 75)
-    mm = (L >= tlo) & (L <= thi)
+    # midtone band L[p35,p75] on TERRAIN only -- sky is dropped BEFORE the percentiles.
+    # Sky (B>R and brighter than the frame median) is the one in-frame thing whose high
+    # blue is *supposed* to be there; letting it into the chromatic band made sky-bearing
+    # plates read as false FAILs (s1-vista: 37.9% sky inside the old band -> blue 101 /
+    # warmth 26 on a fine frame). The percentiles run over terrain luminance, so the band
+    # is the lit-wood/grass BODY of the frame on every plate. REF is indoor, 0% sky, so its
+    # terrain band == the old whole-frame band bit-for-bit (REF-relative targets unchanged).
+    # Proven invariant + per-plate numbers: _flamingo_band_probe.py / _rose_blue_ramp_probe.py.
+    sky = (B > R) & (L > np.median(L))
+    ter = ~sky
+    Lt = L[ter] if int(ter.sum()) > 1000 else L           # fall back to whole frame if ~no terrain
+    tlo, thi = np.percentile(Lt, 35), np.percentile(Lt, 75)
+    mm = ter & (L >= tlo) & (L <= thi)
     # DOF zones (identical to grade_beauty.region_sharpness)
     g = np.asarray(im.convert("L")).astype(np.float32)
     H, Wd = g.shape
@@ -214,6 +256,9 @@ def main():
     ax_labels = [label for key, label, _, _, _ in TARGETS if key in active_axes]
     print(f"profile: {profile}")
     print(f"  axes graded: {', '.join(active_axes)}")
+    adv_active = [k for k in active_axes if k in ADVISORY]
+    if adv_active:
+        print(f"  advisory (printed, not gated): {', '.join(adv_active)}  -- clip is the sole chromatic gate")
     if skipped_axes:
         print(f"  axes skipped: {', '.join(skipped_axes)}")
         # print the framing-dependent rationale (compact)
@@ -233,22 +278,29 @@ def main():
                 v = m[key]
                 print(f"  [SKIP] {label:<24} {v:8.2f}   target {fmt_target(cmp, bound):>10}   (REF {ref})")
                 continue
-            # saturation grades on the HONEST value, and is meaningless (auto N-A) once
-            # the midtone clip co-gate fires: the rail-excluded mean there runs over a
-            # tiny saturated sliver (gate3 = 877 of 419k px). See probe d559e13.
-            if key == "sat":
-                v = m["sat_honest"]
-                if m["clip"] > CLIP_THRESH:
-                    vstr = "nan" if v != v else f"{v:.2f}"
-                    print(f"  [N-A]  {label:<24} {vstr:>8}   midtone clipped {m['clip']:.1f}% -- honest sat over <{100.0-m['clip']:.1f}% survivors is noise")
-                    continue
-            else:
-                v = m[key]
+            # ADVISORY axes (warmth/blue/sat): printed for tuning context, NEVER gated.
+            # They are B-dependent midtone stats -- clamp-inverted (a B-clamped wreck
+            # scores BETTER) and scene-class-spread (indoor wood vs outdoor grass), so no
+            # honest single threshold exists. clip is the sole chromatic-damage gate.
+            # See the RE-DERIVE block in the header.
+            if key in ADVISORY:
+                if key == "sat":
+                    v = m["sat_honest"]
+                    if m["clip"] > CLIP_THRESH:
+                        vstr = "nan" if v != v else f"{v:.2f}"
+                        print(f"  [N-A]  {label:<24} {vstr:>8}   midtone clipped {m['clip']:.1f}% -- honest sat over <{100.0-m['clip']:.1f}% survivors is noise")
+                        continue
+                else:
+                    v = m[key]
+                print(f"  [ADV]  {label:<24} {v:8.2f}   ref {ref:>6}   (advisory -- tune toward REF, not a gate)")
+                continue
+            # HARD GATE
+            v = m[key]
             ok = verdict(cmp, bound, v)
             frame_ok = frame_ok and ok
             tag = "PASS" if ok else "FAIL"
             print(f"  [{tag}] {label:<24} {v:8.2f}   target {fmt_target(cmp, bound):>10}   (REF {ref})")
-        print(f"  => {'ALL AXES PASS' if frame_ok else 'FAIL (>=1 axis below target)'}")
+        print(f"  => {'ALL AXES PASS' if frame_ok else 'FAIL (>=1 gate below target)'}")
         any_fail = any_fail or not frame_ok
         print()
 

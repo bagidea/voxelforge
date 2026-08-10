@@ -14,10 +14,22 @@ MAP = Path(__file__).resolve().parent.parent / "maps" / "edhari.json"
 OUT = Path(__file__).resolve().parent.parent / "docs" / "assets" / "edhari-village-topdown.png"
 
 PALETTE = {
-    "grass": np.array([0x5c, 0x8f, 0x4a], dtype=np.uint8),
-    "dirt":  np.array([0x6b, 0x4c, 0x2a], dtype=np.uint8),
-    "stone": np.array([0x8a, 0x8a, 0x8a], dtype=np.uint8),
-    "sand":  np.array([0xe0, 0xd2, 0xa0], dtype=np.uint8),
+    "grass":       np.array([0x5c, 0x8f, 0x4a], dtype=np.uint8),
+    "dirt":        np.array([0x6b, 0x4c, 0x2a], dtype=np.uint8),
+    "stone":       np.array([0x8a, 0x8a, 0x8a], dtype=np.uint8),
+    "sand":        np.array([0xe0, 0xd2, 0xa0], dtype=np.uint8),
+    "wood":        np.array([0x9c, 0x6b, 0x3a], dtype=np.uint8),
+    "leaves":      np.array([0x3a, 0x74, 0x36], dtype=np.uint8),
+    "snow":        np.array([0xf0, 0xec, 0xe0], dtype=np.uint8),
+    "red_sand":    np.array([0xc8, 0x82, 0x46], dtype=np.uint8),
+    "clay":        np.array([0x7e, 0x96, 0xa0], dtype=np.uint8),
+    "gravel":      np.array([0x6e, 0x64, 0x5e], dtype=np.uint8),
+    "cobblestone": np.array([0x8c, 0x8a, 0x78], dtype=np.uint8),
+    "obsidian":    np.array([0x1a, 0x16, 0x20], dtype=np.uint8),
+    "brick":       np.array([0x96, 0x5a, 0x3c], dtype=np.uint8),
+    "moss":        np.array([0x4b, 0x6e, 0x37], dtype=np.uint8),
+    "limestone":   np.array([0xde, 0xcc, 0xa8], dtype=np.uint8),
+    "lamp":        np.array([0xf0, 0xb4, 0x50], dtype=np.uint8),
 }
 
 with open(MAP, encoding="utf-8") as f:
@@ -70,11 +82,19 @@ draw.text((10, 28), f"{block_count} blocks  |  spawn(32,32)  |  fire(32,29)  |  
 # Colour key
 key_x = 10
 key_y = 50
-for label, col in [("grass", PALETTE["grass"]), ("dirt", PALETTE["dirt"]),
-                   ("stone path/walls", PALETTE["stone"]), ("sand sigil", PALETTE["sand"])]:
+key_items = [
+    ("grass", PALETTE["grass"]),
+    ("dirt", PALETTE["dirt"]),
+    ("stone", PALETTE["stone"]),
+    ("sand", PALETTE["sand"]),
+    ("wood", PALETTE["wood"]),
+    ("moss", PALETTE["moss"]),
+    ("lamp", PALETTE["lamp"]),
+]
+for label, col in key_items:
     draw.rectangle([key_x, key_y, key_x + 14, key_y + 14], fill=tuple(int(c) for c in col))
     draw.text((key_x + 20, key_y), label, fill=(0xcc, 0xcc, 0xcc), font=small)
-    key_x += 110
+    key_x += 78
 
 # Axis labels every 8 blocks (now every 8*scale pixels in image space)
 for i in range(0, W + 1, 8):

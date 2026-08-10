@@ -1,6 +1,37 @@
 #!/usr/bin/env python3
 """WEB-vs-NATIVE look parity grader (docs/web-parity-checklist.md).
 
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ RETIRED FROM NATIVE REGRADE PIPELINE — 2026-08-06, Sun                     │
+│                                                                             │
+│ This script REQUIRES a full web build pipeline that is NOT part of the      │
+│ native-only look regrade workflow:                                          │
+│                                                                             │
+│   1. Rust wasm target (wasm32-unknown-unknown) + wasm-bindgen + trunk       │
+│   2. Chrome/Edge with WebGPU (Dawn) — NOT WebGL2 fallback                   │
+│   3. A console log with AdapterInfo `backend: BrowserWebGpu` line (W0-A)    │
+│   4. Matching native build on the same locked tilt-down recipe (W0-C/D)     │
+│   5. Paired captures via scripts/web-verify.mjs                             │
+│                                                                             │
+│ None of these prerequisites are satisfied by the native `cargo build`       │
+│ workflow that the regrade pipeline (`scripts/regrade.py`) orchestrates.     │
+│ The script itself is CORRECT and WELL-TESTED — it produced the CEO-         │
+│ approved web parity report on 2026-07-29 — but it belongs to a SEPARATE     │
+│ GATE (web store submission / cross-platform QA), not to the per-commit      │
+│ look regrade that runs on native frames only.                               │
+│                                                                             │
+│ When web parity IS needed (Steam Deck verified, web store, browser QA):     │
+│   1. Build wasm: `cargo build --release --target wasm32-unknown-unknown`   │
+│   2. Bundle: `wasm-bindgen + trunk build` with the tilt-down recipe URL     │
+│   3. Capture: `node scripts/web-verify.mjs` → web.png + web.console.txt     │
+│   4. Native control: `bash scripts/render_wide_hero.sh` → native.png        │
+│   5. Grade: `python scripts/grade_web_parity.py --web web.png \             │
+│              --native native.png --console web.console.txt`                 │
+│                                                                             │
+│ DO NOT DELETE — the script is correct and will be needed again for          │
+│ cross-platform parity gates. It just isn't part of the native regrade.      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
 Parity is a DIFFERENTIAL test, not an absolute one: the web build renders the same
 scene as native, so the question is "did the web backend change the look", not
 "does this frame hit the golden-ref numbers". Absolute rubric targets

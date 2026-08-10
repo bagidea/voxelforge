@@ -10,7 +10,7 @@
 > No new art direction invented here — every palette value below is pulled straight from look-bible §4.
 > Concept art: `docs/assets/characters/` (already rendered — see paths per character below).
 > Owner: Monanisa (Design) · Scope: docs + assets only, no `client/src/` touched.
-> Last updated: 2026-07-31.
+> Last updated: 2026-08-06 — see §7 for the CEO-requested character-art review pass.
 
 ---
 
@@ -51,6 +51,7 @@ as *built*, never *sculpted*. Every entry below assumes this without repeating i
 | Skin | `#D9B08C` warm neutral | Kept low-detail by design — face/gender is campfire-customisable (story-bible OPEN item) |
 | **Ember pouch (belt)** | `#F4B860` → `#FFD98A` glow, `#C88A4A` housing | Key light / warm bounce — the *only* pre-reveal Shaper hint. Small on purpose: reads as "a warm coal they carry," not "magic item" |
 | Sword blade | `#B9A98C` warm grey-beige | Stone/iron — deliberately no teal; this is a mundane weapon |
+| Hair | `#2A1B12` umber-black | New (2026-08-06, in-game asset pass) — sits darker than the espresso cloak so hair reads as its own material, still inside the walnut→espresso family, no new hue introduced |
 
 **Why it matches look-bible:** ~90% of the surface sits in the walnut→espresso range (over the 85%
 floor), the one warm-glow accent is the ember pouch — same amber family as the sun key light — and
@@ -60,6 +61,23 @@ teal only shows once that's confirmed. The design is holding a card in reserve o
 **Why it's memorable from a black silhouette:** the cloak is the single asymmetric shape in an
 otherwise tight, close-fitting outline — at 12–16 blocks that's the one contour the eye can lock onto
 in under a second, independent of any color read.
+
+**2026-08-06 fix (CEO character-art review, see §7):** the first-pass render didn't deliver on this
+doc's own spec — flat, symmetric standing pose (no "alert, forward-leaning" read at all) and a
+face rendered with full sculpted detail (eyebrows, defined nose bridge, shaded mouth) against the
+"kept low-detail by design, campfire-customizable" rule two paragraphs above. Re-rendered with a
+forward-leaning, weight-on-front-foot stance and a simplified low-detail face; new concept art is
+live at the path above, old version archived at
+`docs/assets/characters/archive-before-2026-08-06/auren-hero-concept-BEFORE.png`.
+
+**2026-08-06 fix #2 (CEO spot-check on the pose fix above):** that re-render's hair read as a flat
+rectangular slab (less volume than the original) and the face plate sat visibly off-centre under it.
+Re-rendered the hair as a clustered, layered voxel mass with real thickness on top/back/sides,
+hairline re-centred, face plate re-centred under it — pose, cloak asymmetry, satchel, palette and
+low-detail face rule all held from the fix above, only the head/hair region changed. New concept art
+is live at the path above; the flat-hair version is archived at
+`docs/assets/characters/archive-before-2026-08-06/auren-hero-concept-PASS1-flathair-2026-08-06.png`.
+Side-by-side: `docs/assets/characters/auren-hero-concept-before-after-2026-08-06-hairfix.png`.
 
 ---
 
@@ -94,6 +112,13 @@ detail resolves; the blank visor (a literal void cut into the silhouette, not ju
 is legible as "wrong" even in a pure black cutout, which is the point — the horror is geometric, not
 textural.
 
+**2026-08-06 fix (CEO character-art review, see §7):** the first-pass render directly contradicted
+this doc's own "no eyes, no mouth-slot cut into the helmet" line — it shipped a T-shaped visor slit,
+which reads as a generic knight helm and undoes the entire "no one home" horror beat this character
+exists for. Re-rendered with a fully smooth, blank stone slab across the whole face, zero negative
+space. New concept art is live at the path above, old version archived at
+`docs/assets/characters/archive-before-2026-08-06/guard-husk-concept-BEFORE.png`.
+
 ---
 
 ## 3. Elder Maren — Village NPC (LOCKED)
@@ -122,6 +147,13 @@ speaks a line. No teal anywhere, correctly: she is not Shaper-marked (in the Mil
 **Why it's memorable from a black silhouette:** rounded, wide-base shape plus a third ground-contact
 point (the stick) reads "elderly, stationary, safe" as a pure outline — the opposite silhouette
 grammar from every combat character in the cast, which is itself the tell.
+
+**2026-08-06 fix (CEO character-art review, see §7):** the first-pass render's walking stick was
+blended into the folds of the robe — at silhouette scale the "third contact point" this table
+promises effectively disappears, so the spec wasn't actually being delivered in the art. Re-rendered
+with a thicker cane that extends visibly past the robe hem and past the body outline, so it reads as
+its own separate shape even in a pure black cutout. New concept art is live at the path above, old
+version archived at `docs/assets/characters/archive-before-2026-08-06/elder-maren-concept-BEFORE.png`.
 
 ---
 
@@ -196,6 +228,46 @@ correctly so, since look-bible's "always warm" rule is written with this one exc
 Every character with teal on their body is Shaper-marked or Shaper-adjacent; every village-native
 character (Auren, Maren, Toma) carries zero teal. The rule from character-design.md §0.2 holds with
 no exceptions across the cast.
+
+---
+
+## 7. 2026-08-06 CEO character-art review — 3-axis pass
+
+CEO flagged the cast wasn't landing yet and handed Monanisa a character-art lane
+(`assets/` character portion + this doc, plus the existing `client/src/settings_menu.rs` lane).
+Every character above was re-scored eyes-on against three axes: **(1) does the silhouette read
+black-cutout**, **(2) do proportions/pose sell the personality**, **(3) does the material/palette
+sit inside the golden-hour look or read as flat generic blocks. Full cast (Auren, Guard Husk, Elder
+Maren, Toma, Warden, Architect) was reviewed; axis 3 was already solid across the board — the
+§6 palette audit holds — so every finding landed on axes 1–2.
+
+**The 3 fixes made (worst-first):**
+
+| Character | Axis | Problem found | Fix |
+|---|---|---|---|
+| Guard Husk | 1 (silhouette / spec) | Rendered T-shaped visor slit — a literal knight helm, not the "completely blank, no eyes, no mouth-slot" the doc itself specs. Undid the character's entire horror beat. | Fully blank stone slab, zero negative space |
+| Auren | 2 (pose/personality) | Flat, symmetric standing pose — no "alert, forward-leaning survivor" read at all; face over-detailed against the "low-detail, campfire-customizable" rule | Forward-leaning, weight-on-front-foot stance; simplified face |
+| Elder Maren | 1 (silhouette) | Walking stick blended into robe folds — the "third contact point" this doc promises doesn't actually read at silhouette scale | Thicker cane, extends past the robe hem and body outline |
+
+**Not touched (checked, passed):** Toma — strongest read in the cast, no changes needed. Warden /
+Architect — escalation ladder already reads correctly per §5/§6, no changes needed.
+
+**Before/after proof (real renders, not mockups):**
+- `docs/assets/characters/guard-husk-concept-before-after-2026-08-06.png`
+- `docs/assets/characters/auren-hero-concept-before-after-2026-08-06.png`
+- `docs/assets/characters/elder-maren-concept-before-after-2026-08-06.png`
+- `docs/assets/characters/auren-hero-concept-before-after-2026-08-06-hairfix.png` — Auren hair/face
+  fix #2 (§1), spotted on CEO re-check of the fix above
+
+Old versions archived (not deleted) at `docs/assets/characters/archive-before-2026-08-06/`.
+The three `*-concept.png` files at the top-level path (referenced per-character above) now point
+at the fixed art.
+
+**Lane note:** this pass only touches concept art + this doc, same as every prior entry in this
+file. Flamingo's `docs/character-look-contract.md` measures the *in-engine* character against a
+contract; `client/src/hero.rs`, `client/src/look.rs`, `client/src/anim.rs` were not opened or
+edited. Whoever owns those files should treat this pass as the updated art reference to build
+toward, not a code change to merge.
 
 ---
 

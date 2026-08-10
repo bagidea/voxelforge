@@ -122,9 +122,20 @@ GUARDED = (
     "grade_hero.py",
     "grade_look.py",
     "grade_midtone.py",
+    "grade_sunsplit.py",
     "grade_web_parity.py",
+    "grass_bimodality.py",
     "make_gate3_verdict_card.py",
     "measure_penumbra.py",
+    "cast_shadow_penumbra.py",
+    "sun_locked_edges.py",
+    "band_map.py",
+    # per-agent probes that print a frame-measured number (diagnostic graders):
+    "_flamingo_halo_probe.py",
+    "_flamingo_char_dist_solve.py",
+    "_poppy_halo_probe.py",
+    "_poppy_sweep_report.py",
+    "_rose_gamut_clip_probe.py",
 )
 
 # Exempt: these do NOT grade a capture, so demanding the suffix would be a
@@ -151,6 +162,50 @@ EXEMPT = {
         "kept BECAUSE they are broken); it has its own allowlist "
         "(docs/assets/.colour-gate-allow) and a suffix rule would reject the evidence "
         "it exists to measure.",
+    # --- 2026-08-09 batch (Rose) — 22 tracked entry points the behavioural
+    # detector found unclassified. GUARDED ones (grade_sunsplit, grass_bimodality,
+    # halo probes, sweep report, char-dist, gamut-clip probe, band_map, and the
+    # already-wired cast_shadow/sun_locked) now call require_nohud2(). The rest
+    # are EXEMPT for the concrete reason on each line.
+    "palette_break.py":
+        "audits COMMITTED look artwork (gate3 evidence frames + golden ref + wide "
+        "hero) against docs/look-bible.md palette; it grades curated assets, not a "
+        "live capture -- exactly the colour_gate/grade_ref case.",
+    "depth_layering.py":
+        "audits COMMITTED gate3 evidence frames + the golden ref for depth layering; "
+        "like colour_gate/grade_ref it reads curated artwork PNGs, never a live capture.",
+    "_review_steam_capsules.py":
+        "audits COMMITTED Steam capsule artwork (docs/assets/steam/*) against Valve "
+        "tone/legibility/safe-area spec; the art never had a HUD, like grade_ref.",
+    "_review_steam_confirm.py":
+        "confirms shipped Steam capsules are pure crops of the committed master "
+        "artwork (docs/assets/steam/*); it measures derivation, not capture quality.",
+    "_review_steam_safearea.py":
+        "checks the committed library-hero artwork (docs/assets/steam/*) against "
+        "Valve's safe-area spec; audits curated art, not a HUD-bearing capture.",
+    "_flamingo_sat_ladder_sheet.py":
+        "composite SHEET maker -- tiles sweep plates into one image and labels them "
+        "via the already-guarded grade_axes.measure(); it emits a picture, not a verdict.",
+    "_poppy_ba_sheet.py":
+        "before/after composite SHEET for the magenta-fix A/B; prints descriptive "
+        "mean-RGB labels for documentation, not a look-acceptance grade of a capture.",
+    "_poppy_shotset_sheet.py":
+        "composite SHEET from a manifest; its per-channel |delta| is a null-A/B tell "
+        "for the sheet, not a look-quality verdict on a capture.",
+    "grade_compare_sheet.py":
+        "composite SHEET maker -- lays frames side by side and labels them via "
+        "grade_axes.py run as a guarded subprocess; it builds a picture, not a verdict.",
+    "_flamingo_char_report.py":
+        "concept-vs-ingame comparison SHEET built from already-graded JSON + committed "
+        "concept art (docs/assets/characters/*); the capture grading happened upstream "
+        "in grade_character, not here.",
+    "_poppy_depromptify.py":
+        "a DE-HUD producer -- cv2.inpaint erases the residual [E] prompt glyph FROM a "
+        "HUD-bearing capture to output *-nohud.png; the dirty frame is its INPUT, by "
+        "definition, exactly like _flamingo_dehud2.",
+    "_poppy_showcase_dehud.py":
+        "a DE-HUD producer -- strips crosshair/prompt/text FROM a raw showcase frame "
+        "to output *-nohud.png; a dirty frame is its INPUT, like _flamingo_dehud2.",
 }
 
 

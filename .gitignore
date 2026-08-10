@@ -252,3 +252,13 @@ _*.patch
 # ── One-shot artifacts (2026-08-06 Kevin cleanup) ──
 # One-shot rebuild script with a hardcoded local path.
 /scripts/tests/step2_rebuild_audio.ps1
+
+# ── Runtime state the game/harness writes on every run (2026-08-11) ──
+# Not source: exit-code stubs from detached builds, the play-proof status file,
+# the quest autosave, and the per-machine settings/editor config the running
+# client rewrites. They churn on every launch and mean nothing to a fresh clone.
+*.exitcode
+/_shino_proof.status
+/quest_save.json
+/client/src/settings.json
+/client/src/editor_config.json
