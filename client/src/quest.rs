@@ -523,6 +523,13 @@ impl Plugin for QuestPlugin {
                     // INPUT_TRACE: snapshot just_pressed(R) AFTER the handler.
                     // Proves flag survived the full pipeline to end-of-frame.
                     input_trace_after_handler.after(check_block_place_triggers),
+                    // The same press/detect pair for the attack key. Demo-only:
+                    // in real play a human hits X constantly and the line is
+                    // noise. `.after(gather_input)` is what makes it a *detect*
+                    // reading instead of a second guess at the press.
+                    input_trace_attack
+                        .after(combat::gather_input)
+                        .run_if(demoing),
                     check_act_end,
                     // The door/sigil/campfire a finished quest asked for. Ordered
                     // after every system that can finish one, so the reward lands
@@ -543,6 +550,10 @@ impl Plugin for QuestPlugin {
 }
 
 fn playing(cfg: Res<crate::Cfg>) -> bool { cfg.play }
+
+/// Only the scripted walk-through. Guards instrumentation that would be noise
+/// under a human's hands.
+fn demoing(cfg: Res<crate::Cfg>) -> bool { cfg.quest_demo }
 
 // =============================================================================
 // World-changing quest rewards — the gate, the sigil, the second campfire
@@ -1591,6 +1602,33 @@ fn input_trace_after_handler(
         r_jp, r_held, all_jp.join(","), demo.demo_frame_id);
 }
 
+/// INSTRUMENTATION (rule-2 triage, X lane): the attack key's detect side.
+///
+/// `PRESS_X_COUNT` says how many swings `quest_demo` typed; this says how many
+/// of them `combat::gather_input` turned into a light attack. Ordered *after*
+/// `gather_input` so it reads the same `just_pressed` window plus the
+/// `CombatIntent` that window produced — the two together separate "the demo
+/// never swung" from "it swung and the intent was dropped" from "the swing
+/// landed and the fight was lost on reach/damage".
+///
+/// `CombatIntent.light` also fires on mouse-left, which the demo never touches.
+static DETECT_X_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn input_trace_attack(
+    keys: Res<ButtonInput<KeyCode>>,
+    intent: Option<Res<combat::CombatIntent>>,
+    demo: Res<QuestDemo>,
+) {
+    if !keys.just_pressed(KeyCode::KeyX) { return; }
+    let n = DETECT_X_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let light = intent.map(|i| i.light);
+    println!("QUEST_DEBUG_ATTACK X just_pressed detect_count={} press_calls={} intent_light={} demo_fid={}",
+        n + 1,
+        PRESS_X_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+        match light { Some(v) => v.to_string(), None => "no-resource".to_string() },
+        demo.demo_frame_id);
+}
+
 /// Is there an active, incomplete `place_block` objective within its radius of
 /// `pos`?
 ///
@@ -1848,8 +1886,17 @@ fn chaos() -> quest_chaos::Chaos {
 /// cross-reference "N presses emitted" vs "M presses detected" in the handler.
 static PRESS_R_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static PRESS_E_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// X is the attack key. The ambush routes (`kill_early`) live or die on it the
+/// same way phase 4 lives or dies on R, so it gets the same press/detect pair —
+/// without it a swing that never landed reads as "the demo never got there".
+static PRESS_X_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Calls to `press_key(X)`, including the ones the tap cooldown swallowed. The
+/// ambush swings every frame an enemy is in range, so logging each swallowed
+/// call would drown the log — carry it as a count on the press line instead.
+static ATTEMPT_X_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 fn press_key(demo: &mut QuestDemo, keys: &mut ButtonInput<KeyCode>, key: KeyCode, t: f32) {
+    if key == KeyCode::KeyX { ATTEMPT_X_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
     // Release the previous key so it stops being held.
     if let Some(down) = demo.tap_down.take() {
         keys.reset(down);
@@ -1872,6 +1919,12 @@ fn press_key(demo: &mut QuestDemo, keys: &mut ButtonInput<KeyCode>, key: KeyCode
             let n = PRESS_E_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             println!("QUEST_DEBUG_PRESS E pressed at t={:.3} press_count={} was_already_pressed={} just_pressed_now={}",
                 t, n + 1, was_already, keys.just_pressed(KeyCode::KeyE));
+        }
+        if key == KeyCode::KeyX {
+            let n = PRESS_X_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            println!("QUEST_DEBUG_PRESS X pressed at t={:.3} press_count={} attempts={} was_already_pressed={} just_pressed_now={}",
+                t, n + 1, ATTEMPT_X_COUNT.load(std::sync::atomic::Ordering::Relaxed),
+                was_already, keys.just_pressed(KeyCode::KeyX));
         }
     } else {
         // DEBUG: log when press_key is called but TAP_PERIOD hasn't elapsed

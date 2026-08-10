@@ -69,6 +69,10 @@ emit_q2_done() {
   echo "QUEST_NEXT_OPEN next=q3_gatekeeper => PASS"
 }
 emit_kill() {
+  # The swing that did it — press side (quest_demo) and detect side (the probe
+  # ordered after combat::gather_input). The triage grades the fight on these.
+  echo "QUEST_DEBUG_PRESS X pressed at t=12.100 press_count=1 attempts=9 was_already_pressed=false just_pressed_now=true"
+  echo "QUEST_DEBUG_ATTACK X just_pressed detect_count=1 press_calls=1 intent_light=true demo_fid=730"
   echo "QUEST_KILL qid=q3_gatekeeper oid=o3_defeat count=1/1"
   echo "QUEST_STAGE_COMPLETE qid=q3_gatekeeper oid=o3_defeat => PASS (defeat)"
 }
@@ -142,6 +146,24 @@ case "$mode:$flavour" in
     echo "QUEST_CHAOS ambush done at (49.5,8.5) - resuming the walk east"
     emit_late_zone; emit_o1_east; emit_tail ;;
 
+  # ---- NC9: the fight is lost with X pressed but never read (ordering) ---
+  kill_early:x_eaten)
+    emit_q2_done
+    echo "QUEST_CHAOS ambush pt=(46.0,8.5) near=1 hp=88 t=12.0"
+    echo "QUEST_DEBUG_PRESS X pressed at t=12.100 press_count=1 attempts=9 was_already_pressed=false just_pressed_now=true"
+    echo "QUEST_DEBUG_PRESS X pressed at t=12.400 press_count=2 attempts=27 was_already_pressed=false just_pressed_now=true"
+    echo "QUEST_CHAOS ambush timeout x=46.0 z=8.5 hp=41 => FAIL"
+    echo "QUEST_FATAL phase=99" ;;
+
+  # ---- NC10: X read, but gather_input ran first (intent never lit) -------
+  kill_early:x_late)
+    emit_q2_done
+    echo "QUEST_CHAOS ambush pt=(46.0,8.5) near=1 hp=88 t=12.0"
+    echo "QUEST_DEBUG_PRESS X pressed at t=12.100 press_count=1 attempts=9 was_already_pressed=false just_pressed_now=true"
+    echo "QUEST_DEBUG_ATTACK X just_pressed detect_count=1 press_calls=1 intent_light=false demo_fid=730"
+    echo "QUEST_CHAOS ambush timeout x=46.0 z=8.5 hp=41 => FAIL"
+    echo "QUEST_FATAL phase=99" ;;
+
   # ---- NC7: the region announced arrival twice (latch gone) -------------
   zone_early:twice)
     emit_early_zone; emit_q2_done
@@ -151,7 +173,7 @@ case "$mode:$flavour" in
 esac
 
 case "$flavour" in
-  old_kill|old_zone) exit 1 ;;
+  old_kill|old_zone|x_eaten|x_late) exit 1 ;;
   *) exit 0 ;;
 esac
 FAKE_EOF
@@ -167,7 +189,7 @@ run_case() { # run_case <name> <flavour> <scenario> <expected exit>
   make_fake_bin "$flavour" "$bin"
   if [ "$flavour" = "stripped" ]; then
     # Remove every provenance string so the exe looks pre-fix.
-    sed -i 's/QUEST_CHAOS mode=/QUEST_XXXXX mode=/g; s/(reach_zone)/(reachzone)/g; s/QUEST_REWARD queue door=/QUEST_REWARD queue dr=/g; s/QUEST_DOOR gate opened/QUEST_DOOR gate opn/g' "$bin"
+    sed -i 's/QUEST_CHAOS mode=/QUEST_XXXXX mode=/g; s/(reach_zone)/(reachzone)/g; s/QUEST_REWARD queue door=/QUEST_REWARD queue dr=/g; s/QUEST_DOOR gate opened/QUEST_DOOR gate opn/g; s/QUEST_DEBUG_PRESS X pressed at t=/QUEST_DEBUG_PRESS X hit t=/g; s/QUEST_DEBUG_ATTACK X just_pressed/QUEST_DEBUG_ATTACK X jp/g' "$bin"
   fi
   local out rc
   out=$(BIN="$bin" OUTDIR="$WORK/out-$name" bash "$DRIVER" "$scenario" 2>&1)
@@ -181,6 +203,33 @@ run_case() { # run_case <name> <flavour> <scenario> <expected exit>
     FAIL=$((FAIL + 1))
   fi
   printf '%s\n' "$out" > "$WORK/$name.driver.log"
+}
+
+# An exit code says the driver failed the run. It does not say the driver
+# blamed the right thing — a triage that names the wrong key exits 1 just as
+# confidently as one that names the right one. Grade the words too.
+assert_says() { # assert_says <case> <must contain>
+  local name="$1" pat="$2"
+  if grep -qF -- "$pat" "$WORK/$name.driver.log"; then
+    echo "  PASS  $name — triage says: $pat"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL  $name — triage never said: $pat"
+    sed -n '/INPUT ORDERING TRIAGE/,/INPUT_TRACE/p' "$WORK/$name.driver.log" | sed 's/^/          /'
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+assert_silent() { # assert_silent <case> <must NOT contain>
+  local name="$1" pat="$2"
+  if grep -qF -- "$pat" "$WORK/$name.driver.log"; then
+    echo "  FAIL  $name — triage wrongly said: $pat"
+    sed -n '/INPUT ORDERING TRIAGE/,/INPUT_TRACE/p' "$WORK/$name.driver.log" | sed 's/^/          /'
+    FAIL=$((FAIL + 1))
+  else
+    echo "  PASS  $name — triage did not say: $pat"
+    PASS=$((PASS + 1))
+  fi
 }
 
 echo "=== driver self-test: does act1_runtime_proof.sh grade? ==="
@@ -200,9 +249,38 @@ run_case nc5-env-not-honoured     env_ignored zone_early  1
 run_case nc6-ambush-inside-region inside      kill_early  1
 run_case nc7-zone-latched-twice   twice       zone_early  1
 
+run_case nc9-x-press-never-read   x_eaten     kill_early  1
+run_case nc10-x-read-intent-dark  x_late      kill_early  1
+
 echo ""
 echo "-- provenance gate (must refuse, exit 2) --"
 run_case nc8-binary-predates-fix  stripped    kill_early  2
+
+echo ""
+echo "-- triage names the key the failing stage actually used (rule 2) --"
+# NC1 dies in the ambush without ever typing an R. The old triage read R's
+# counter, found 0, and announced a phase-4 walk failure — a cause invented
+# from a key the stage never touched.
+assert_says   nc1-old-kill-semantics "failing stage: ambush fight (key X)"
+assert_silent nc1-old-kill-semantics "the demo never pressed R"
+assert_says   nc1-old-kill-semantics "the demo never swung"
+# Both ledgers print, always — the un-blamed key's counts are still evidence,
+# and printing them is what proves the triage read it before ruling it out.
+assert_says   nc1-old-kill-semantics "R (build)  emitted by quest_demo : 0"
+assert_says   nc7-zone-latched-twice "X (attack) emitted by quest_demo : 1"
+assert_silent nc1-old-kill-semantics "unbound variable"
+# NC9: X went out, nothing read it → ordering, not approach.
+assert_says   nc9-x-press-never-read "VERDICT: ORDERING — 2 X press(es) never reached the"
+assert_silent nc9-x-press-never-read "the demo never swung"
+# NC10: the counts balance, so only intent_light exposes the ordering bug.
+assert_says   nc10-x-read-intent-dark "every detected X left intent_light=false"
+# A run that got as far as the build stand is still graded on R.
+assert_says   nc7-zone-latched-twice "failing stage: phase 4 build (key R)"
+# NC2 dies in the walk before either key is typed. Neither ledger explains it,
+# so the triage has to say so and stop — inventing a cause here is the failure
+# mode rule 2 exists for.
+assert_says   nc2-old-zone-semantics "failing stage: NOT IDENTIFIABLE"
+assert_silent nc2-old-zone-semantics "VERDICT:"
 
 echo ""
 echo "=== SELFTEST: $PASS passed, $FAIL failed ==="

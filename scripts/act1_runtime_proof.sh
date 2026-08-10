@@ -53,6 +53,11 @@ PROVENANCE_STRINGS=(
   '=> PASS (reach_zone)'                    # check_area_triggers, presence-based
   'QUEST_REWARD queue door='                # complete_quest queues world rewards
   'QUEST_DOOR gate opened'                  # apply_world_rewards
+  # The attack key's press/detect pair. Load-bearing for the triage below: it
+  # reads "0 X presses" as "the demo never swung", which is only true if the
+  # binary would have printed one had it swung.
+  'QUEST_DEBUG_PRESS X pressed at t='       # press_key, quest_demo side
+  'QUEST_DEBUG_ATTACK X just_pressed'       # input_trace_attack, after gather_input
 )
 
 echo "=== BINARY PROVENANCE ==="
@@ -154,31 +159,92 @@ want_count() { # want_count <label> <fixed string> <n>
 # Rule 2 triage: when something the demo TYPED did not land, say whether the
 # flag survived the frame before anyone blames range or physics.
 #
-# quest.rs prints INPUT_TRACE before/after the handler and a press/detect
-# counter pair. If press_calls > detect_calls the flag was eaten between
-# quest_demo and check_block_place_triggers — a system-ordering bug. If they
-# match, the press arrived and the objective test (distance / quest state) is
-# what refused it.
+# TWO keys carry the run, and a verdict about the wrong one is worse than no
+# verdict at all:
+#   R — phase 4's build press. Emitted by `press_key`, read by
+#       `check_block_place_triggers` (`QUEST_DEBUG_BLOCK R just_pressed`).
+#   X — the attack. Emitted by the same `press_key`, read by
+#       `combat::gather_input` and reported by the probe ordered after it
+#       (`QUEST_DEBUG_ATTACK X just_pressed`). This is what `kill_early`'s
+#       ambush runs on; grading it against R's counter reported "never pressed
+#       R" for a fight that never typed an R in the first place.
+#
+# So: pick the key off the stage that actually failed, and when the stage is
+# not identifiable, print both ledgers and NO verdict. Both press/detect pairs
+# come from the binary gate 0 already proved carries them, so a zero here means
+# "not pressed", never "not instrumented".
+#
+# press > detect  → the flag was eaten between the two systems: an ordering bug.
+# press == detect → the press arrived; the objective/reach test refused it.
 # ---------------------------------------------------------------------------
-input_triage() {
-  echo ""
-  echo "  --- INPUT ORDERING TRIAGE (rule 2: ordering before range/physics) ---"
-  local pressed detected
-  pressed=$(grep -ac 'QUEST_DEBUG_PRESS R pressed' "$RAW")
-  detected=$(grep -ac 'QUEST_DEBUG_BLOCK R just_pressed' "$RAW")
-  echo "    R presses emitted by quest_demo   : $pressed"
-  echo "    R presses seen by the handler     : $detected"
+
+# Which key does the failed stage run on? Read it off the engine's own log, not
+# off the scenario name — kill_early still ends on an R press if the ambush
+# survives and the walk is what broke.
+failing_key() {
+  if grep -aq 'QUEST_CHAOS ambush timeout' "$RAW"; then echo X; return; fi
+  if grep -aqE 'QUEST_DEBUG_P4_WALK|QUEST_DEBUG_BLOCK' "$RAW"; then echo R; return; fi
+  echo '?'
+}
+
+# One key's ledger. Prints the counts always; the verdict only when asked.
+key_ledger() {
+  local key="$1" verdict="${2:-}" pressed detected
+  case "$key" in
+    R) pressed=$(grep -ac 'QUEST_DEBUG_PRESS R pressed' "$RAW")
+       detected=$(grep -ac 'QUEST_DEBUG_BLOCK R just_pressed' "$RAW")
+       echo "    R (build)  emitted by quest_demo : $pressed"
+       echo "    R (build)  seen by the handler   : $detected" ;;
+    X) pressed=$(grep -ac 'QUEST_DEBUG_PRESS X pressed' "$RAW")
+       detected=$(grep -ac 'QUEST_DEBUG_ATTACK X just_pressed' "$RAW")
+       echo "    X (attack) emitted by quest_demo : $pressed"
+       echo "    X (attack) seen by gather_input  : $detected" ;;
+  esac
+  [ "$verdict" = "verdict" ] || return 0
   if [ "$pressed" -eq 0 ]; then
-    echo "    VERDICT: the demo never pressed R — it never reached the build stand."
-    echo "             This is a WALK failure, not an input one. Look at the"
-    echo "             QUEST_DEBUG_P4_WALK lines below."
+    if [ "$key" = "R" ]; then
+      echo "    VERDICT: the demo never pressed R — it never reached the build stand."
+      echo "             This is a WALK failure, not an input one. Look at the"
+      echo "             QUEST_DEBUG_P4_WALK lines below."
+    else
+      echo "    VERDICT: the demo never swung — no enemy ever came inside 3.5 m."
+      echo "             This is an APPROACH failure, not an input one. Look at the"
+      echo "             QUEST_CHAOS ambush near=/hp= lines below."
+    fi
   elif [ "$detected" -lt "$pressed" ]; then
-    echo "    VERDICT: ORDERING — $((pressed - detected)) press(es) never reached the"
-    echo "             handler. Fix the schedule before touching reach/physics."
+    echo "    VERDICT: ORDERING — $((pressed - detected)) $key press(es) never reached the"
+    echo "             reader. Fix the schedule before touching reach/physics."
   else
-    echo "    VERDICT: the flag SURVIVED the frame ($detected/$pressed seen)."
+    echo "    VERDICT: the $key flag SURVIVED the frame ($detected/$pressed seen)."
     echo "             Ordering is not the cause; the objective test refused it."
   fi
+  # An X press that reached the reader but produced no light intent is the one
+  # ordering bug the counts alone cannot see.
+  if [ "$key" = "X" ] && [ "$detected" -gt 0 ] \
+     && ! grep -aq 'QUEST_DEBUG_ATTACK X just_pressed .*intent_light=true' "$RAW"; then
+    echo "    NOTE: every detected X left intent_light=false — gather_input ran"
+    echo "          BEFORE the press. That is an ordering bug regardless of counts."
+  fi
+}
+
+input_triage() {
+  local key
+  key=$(failing_key)
+  echo ""
+  echo "  --- INPUT ORDERING TRIAGE (rule 2: ordering before range/physics) ---"
+  case "$key" in
+    R) echo "    failing stage: phase 4 build (key R)"
+       key_ledger R verdict
+       key_ledger X ;;
+    X) echo "    failing stage: ambush fight (key X)"
+       key_ledger X verdict
+       key_ledger R ;;
+    *) echo "    failing stage: NOT IDENTIFIABLE from the log — no ambush timeout,"
+       echo "    no phase-4 walk/build line. Both ledgers below, no verdict: naming"
+       echo "    a cause here is exactly what rule 2 forbids."
+       key_ledger R
+       key_ledger X ;;
+  esac
   echo "    INPUT_TRACE (first 4, last 4):"
   grep -a 'INPUT_TRACE' "$RAW" | head -4 | sed 's/^/      /'
   grep -a 'INPUT_TRACE' "$RAW" | tail -4 | sed 's/^/      /'
@@ -186,6 +252,7 @@ input_triage() {
   grep -aE 'QUEST_DEBUG_BLOCK (no place_block|too far|NO place_block|R already claimed)' "$RAW" \
     | head -6 | sed 's/^/      /'
   grep -a 'QUEST_DEBUG_P4_WALK' "$RAW" | tail -4 | sed 's/^/      /'
+  grep -a 'QUEST_CHAOS ambush ' "$RAW" | tail -4 | sed 's/^/      /'
 }
 
 # ===========================================================================
