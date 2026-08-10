@@ -643,14 +643,43 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
             // (camera-facing) face sits at 0.08 + 0.05/2 = 0.105, and the old gem
             // front face (0.095 + 0.02/2 = 0.105) only reached flush with that
             // surface — zero clearance, fully hidden by the slab in front of it.
-            // Fix: seat the housing's REAR face flush on the cloak's front face
-            // (0.105 + housing_half_z 0.0175 = 0.1225) so the clasp sits on top of
-            // the drape instead of inside it, then keep the gem's original 0.015
-            // proud-of-housing gap on top of that (0.1225 + 0.015 = 0.1375).
+            //
+            // z re-derived AGAIN 2026-08-11 (docs/VERDICT-a6-teal-accent-2026-08-11.md):
+            // the first re-derive (housing 0.1225 / gem 0.1375, commit 4d24d30) shot
+            // 0/3.48M matching px in gate3 boot/walk/combat, same as before — it only
+            // cleared the CLOAK's own 0.05-thick slab and never checked the clasp's
+            // own bone. `bone: BoneName::Torso` skins both parts directly onto the
+            // TORSO joint (no `secondary`, so no cloak_anchor involved) — same joint
+            // the torso body mesh itself hangs off (line ~764: `Cuboid(0.46, 0.58,
+            // 0.28)`, skinned with `Transform::from_xyz(0.0, neck_y*0.5, 0.0)` — no
+            // z-offset), so the torso's own BACK face sits at 0.28/2 = 0.14 in this
+            // same frame — 0.035 further out than the cloak's 0.105, and past the
+            // housing's old 0.1225-0.14 span (0.1225 + housing_half_z 0.0175 = 0.14
+            // exactly: flush with the torso's own body, not clear of it) and all but
+            // 0.0075 of the gem's old 0.1275-0.1475 span. The clasp's XY (0.1785,
+            // 0.475) sits inside the torso box's own footprint (half-x 0.23, y-range
+            // 0-0.58) at every z, so this is the real occluder, not the cloak — and
+            // it was silently below the fix radar because it isn't `cloak_anchor`.
+            // Confirmed empirically, not just by the numbers: binary-diffed
+            // `target/release/voxelforge.exe` for the literal 0.1225/0.1375 f32
+            // constants (each present exactly once, so the 4d24d30 build DID ship),
+            // then projected the clasp's known torso-local point through the same
+            // camera math `grade_character.py`'s `analytic_bbox` uses and cropped
+            // the predicted screen pixel in the boot frame — flat, featureless cloak
+            // colour, no seam, no bump, at 5x zoom.
+            //
+            // Fix: seat the housing's REAR face past the real occluder — max(cloak
+            // front 0.105, torso back 0.14) = 0.14 — with an explicit 0.01 clearance
+            // margin (not flush: flush-against-a-surface is exactly how the ORIGINAL
+            // 0.095-vs-0.105 bug happened, so this deliberately doesn't repeat it).
+            // housing_z = 0.14 + 0.01 + housing_half_z 0.0175 = 0.1675. Gem keeps its
+            // original 0.015 proud-of-housing gap on top of that: 0.1675 + 0.015 =
+            // 0.1825. NOT build-verified past the pixel-projection crop above — see
+            // docs/VERDICT-a6-teal-accent-2026-08-11.md; build/reshoot is a follow-up.
             PartSpec {
                 bone: BoneName::Torso,
                 size: Vec3::new(0.09, 0.08, 0.035),  // bezel housing
-                offset: Vec3::new(0.1785, 0.475, 0.1225),
+                offset: Vec3::new(0.1785, 0.475, 0.1675),
                 mesh_offset: Vec3::ZERO,
                 color: Color::srgb(0.34, 0.20, 0.13),  // matches `trim`
                 roughness: 0.5,
@@ -660,7 +689,7 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
             PartSpec {
                 bone: BoneName::Torso,
                 size: Vec3::new(0.045, 0.05, 0.02),   // teal gem face
-                offset: Vec3::new(0.1785, 0.475, 0.1375),
+                offset: Vec3::new(0.1785, 0.475, 0.1825),
                 mesh_offset: Vec3::ZERO,
                 color: Color::srgb(0.310, 0.788, 0.839),  // #4FC9D6, look-bible §Accent 2
                 roughness: 0.15,
