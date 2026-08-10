@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::combat;
+use crate::quest_chaos;
 use crate::quest_rules;
 use crate::scene::nohud_requested;
 use crate::audio::SfxEvent;
@@ -389,6 +390,9 @@ pub struct QuestDemo {
     /// check_block_place_triggers logs this value so we can verify .after() ordering
     /// in the raw log (demo_frame_id must be > 0 when check runs).
     pub demo_frame_id: u64,
+    /// `VOXELFORGE_QUEST_CHAOS=kill_early` only: Garren has been put down at the
+    /// stand west of `guard_post_east`, so the demo may resume the ordinary walk.
+    pub ambushed: bool,
 }
 
 /// Cached story data — loaded ONCE at startup so `load_story_data()` is never
@@ -1817,12 +1821,24 @@ const POST_STOP_X: f32 = 49.5;
 /// z=8 is clear ground (top y=2) from x=40 all the way to x=52, and
 /// `guard_post_east` spans z 4-12 — so this lane still stops inside the region
 /// that fires the trigger.
-const POST_LANE_Z: f32 = 8.5; // z=8–9 are clear y=2 from x=30..52 (Shiba deleted pillar (43,7) + edge (41,3,9)); z=10 has head blocks (36,3),(36,4),(41,3)
+// z=8–9 are clear y=2 from x=30..52 (Shiba deleted pillar (43,7) + edge (41,3,9));
+// z=10 has head blocks (36,3),(36,4),(41,3). The number itself lives in
+// `quest_chaos::LANE_Z` so the chaos detour and this walk cannot drift apart.
+const POST_LANE_Z: f32 = quest_chaos::LANE_Z;
 /// Close to this before swinging: melee reach is 2.0 + half-width + 0.6.
 const MELEE_CLOSE: f32 = 2.2;
 /// Scripted taps alternate release → press on this cadence. `just_pressed` only
 /// fires on a rising edge, so a key held down forever registers exactly once.
 const TAP_PERIOD: f32 = 0.25;
+
+/// Which out-of-order walk-through this process is running
+/// ([`quest_chaos`]), read once. `quest_demo` runs every frame and
+/// `std::env::var` is a lock + an allocation; more to the point, a mode that
+/// could change mid-run would make the log ungradeable.
+fn chaos() -> quest_chaos::Chaos {
+    static MODE: std::sync::OnceLock<quest_chaos::Chaos> = std::sync::OnceLock::new();
+    *MODE.get_or_init(quest_chaos::Chaos::from_env)
+}
 
 /// One scripted keystroke: release whatever is held, then press `key` after a
 /// minimum gap.  Always presses — no alternating — so every call that is far
@@ -1915,6 +1931,13 @@ fn quest_demo(
     cfg: Res<crate::Cfg>,
 ) {
     if !cfg.quest_demo { return; }
+    // Say which walk-through this is on frame 1, from the engine, before
+    // anything else is printed. A `zone_early` log that opens with `mode=none`
+    // is an ordinary run being graded against a scenario contract — the driver
+    // greps this line for exactly that reason.
+    if demo.demo_frame_id == 0 {
+        println!("QUEST_CHAOS mode={} env={}", chaos().label(), quest_chaos::ENV_VAR);
+    }
     // INSTRUMENTATION: bump frame-id at the START so any .after() system
     // that reads it can prove quest_demo really ran first this frame.
     demo.demo_frame_id = demo.demo_frame_id.wrapping_add(1);
@@ -1941,7 +1964,15 @@ fn quest_demo(
     // reach_zone objective on the way — that is the quest doing its own work.
     if demo.phase == 0 {
         if let Ok(mut fly) = fly_q.single_mut() { fly.walking = true; }
-        if let Some(&(tx, tz)) = GATE_ROUTE.get(demo.leg) {
+        // `zone_early` walks the same five legs to the gate square and then adds
+        // a there-and-back through `guard_post_east` — stepping into q3's region
+        // while q3 is still Locked, which is the visit that used to spend it.
+        let route: &[(f32, f32)] = if chaos().zone_early() {
+            &quest_chaos::GATE_ROUTE_ZONE_EARLY
+        } else {
+            &GATE_ROUTE
+        };
+        if let Some(&(tx, tz)) = route.get(demo.leg) {
             let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
             if dx.abs() <= WAYPOINT_TOL && dz.abs() <= WAYPOINT_TOL {
                 demo.leg += 1;
@@ -2059,6 +2090,63 @@ fn quest_demo(
     // Crossing x=48 is what fires the region trigger; `o2_observe` (radius 12 of
     // (52,1,8)) falls out on the next frame, leaving `o3_defeat` current.
     if demo.phase == 2 {
+        // ---- kill_early: put Garren down BEFORE the region is credited --------
+        // The stand (`quest_chaos::AMBUSH_X`) is west of `guard_post_east`, so
+        // when the kill lands `o1_east` and `o2_observe` are both still owed and
+        // `check_kill_triggers` has to credit `o3_defeat` out of order — the case
+        // that used to drop the kill on the floor with no second corpse to offer.
+        // The demo never walks east to meet him: his patrol turns 1.5 blocks from
+        // the stand and he closes the last of it himself, so the fight cannot
+        // drift over the x=48 line and score `o1_east` first.
+        if chaos().kill_early() && !demo.ambushed {
+            let defeated = journal.quests.get("q3_gatekeeper")
+                .map(|p| p.completed_objectives.iter().any(|o| o == "o3_defeat"))
+                .unwrap_or(false);
+            if defeated {
+                demo.ambushed = true;
+                hands_off!();
+                println!("QUEST_CHAOS ambush done at ({:.1},{:.1}) — resuming the walk east",
+                    ptf.translation.x, ptf.translation.z);
+                // Restart the phase clock: the ordinary walk below allows 25 s and
+                // the fight has already spent more than that.
+                enter!(2);
+                return;
+            }
+            // Drop onto the lane first, then walk out to the stand along it.
+            let dz = quest_chaos::AMBUSH_Z - ptf.translation.z;
+            let dx = quest_chaos::AMBUSH_X - ptf.translation.x;
+            if dz.abs() > WAYPOINT_TOL {
+                steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
+            } else if dx.abs() > WAYPOINT_TOL {
+                steer(&mut key_input, cam_yaw, dx, 0.0, WAYPOINT_TOL);
+            } else {
+                // Hold the line. Steering toward him from here is what would walk
+                // the fight into the region.
+                steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
+            }
+            // Swing at whatever has closed on us — the body is still facing east,
+            // the direction he comes from, because that is the last way it walked.
+            let near = enemies.iter()
+                .filter(|(etf, h)| !h.dead() && da(etf, ptf) < 3.5)
+                .count();
+            if near > 0 {
+                press_key(&mut demo, &mut key_input, KeyCode::KeyX, t);
+            }
+            let tick = phase_t as u32;
+            if tick > 0 && tick % 3 == 0 && tick != demo.debug_tick {
+                println!("QUEST_CHAOS ambush pt=({:.1},{:.1}) near={} hp={:.0} t={:.1}",
+                    ptf.translation.x, ptf.translation.z, near, php.cur, phase_t);
+                demo.debug_tick = tick;
+            }
+            if phase_t > 75.0 {
+                hands_off!();
+                println!("QUEST_CHAOS ambush timeout x={:.1} z={:.1} hp={:.0} => FAIL",
+                    ptf.translation.x, ptf.translation.z, php.cur);
+                demo.phase = 99;
+            }
+            return;
+        }
+
         // The quest itself says when the walk is over: `o2_observe` completing means
         // the region trigger fired AND Garren is in sight. Marching on to a fixed x
         // past that point just walks into his reach with no hands on the fight keys,

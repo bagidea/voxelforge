@@ -236,6 +236,140 @@ def audit_world_rewards(data, src):
                 emit("ok  ", "%s — rewards.%s=%s has a handler" % (q["id"], key, val))
 
 
+def _consts(text):
+    """`const NAME: f32 = 12.5;` -> {"NAME": 12.5} for one source file."""
+    out = {}
+    for name, val in re.findall(
+        r"const\s+([A-Z0-9_]+)\s*:\s*f32\s*=\s*(-?\d+(?:\.\d+)?)\s*;", text
+    ):
+        out[name] = float(val)
+    return out
+
+
+def _route(text, name, consts):
+    """Pull a `const NAME: [(f32, f32); N] = [ ... ];` array out, resolving
+    any constant used as a coordinate."""
+    m = re.search(
+        r"const\s+%s\s*:\s*\[\(f32,\s*f32\);\s*\d+\]\s*=\s*\[(.*?)\n\s*\];" % name,
+        text, re.S,
+    )
+    if not m:
+        return None
+    legs = []
+    for a, b in re.findall(r"\(\s*([A-Za-z0-9_.\-]+)\s*,\s*([A-Za-z0-9_.\-]+)\s*\)", m.group(1)):
+        try:
+            legs.append((float(a) if _num(a) else consts[a], float(b) if _num(b) else consts[b]))
+        except KeyError as e:
+            return ("UNRESOLVED", str(e))
+    return legs
+
+
+def _num(tok):
+    try:
+        float(tok)
+        return True
+    except ValueError:
+        return False
+
+
+def audit_chaos_routes(data):
+    """The runtime-proof scenarios (`client/src/quest_chaos.rs`) are geometry
+    stated twice: once beside the walk it belongs to, once in the pure module
+    the headless tests read. A drifted copy is a demo that walks into a wall and
+    a log that blames the quest fix for it.
+
+    quest_chaos.rs cannot import quest.rs or combat.rs (they pull in Bevy), so
+    those numbers are mirrored with a comment pointing here. This is the check
+    that comment promises.
+    """
+    chaos_path = os.path.join(ROOT, "client", "src", "quest_chaos.rs")
+    combat_path = os.path.join(ROOT, "client", "src", "combat.rs")
+    if not os.path.exists(chaos_path):
+        emit("WARN", "quest_chaos.rs absent — runtime-proof scenarios not wired up")
+        return
+    with io.open(chaos_path, encoding="utf-8", errors="replace") as f:
+        chaos = f.read()
+    with io.open(QUEST_RS, encoding="utf-8", errors="replace") as f:
+        quest = f.read()
+    combat = ""
+    if os.path.exists(combat_path):
+        with io.open(combat_path, encoding="utf-8", errors="replace") as f:
+            combat = f.read()
+
+    cc = _consts(chaos)
+
+    # ---- the shared route prefix --------------------------------------------
+    shared = re.search(r"GATE_ROUTE_SHARED_LEGS:\s*usize\s*=\s*(\d+)", chaos)
+    n = int(shared.group(1)) if shared else 5
+    base = _route(quest, "GATE_ROUTE", _consts(quest))
+    detour = _route(chaos, "GATE_ROUTE_ZONE_EARLY", cc)
+    if not base or not detour or (isinstance(detour, tuple)):
+        emit("FAIL", "chaos routes — could not parse GATE_ROUTE / GATE_ROUTE_ZONE_EARLY (%r)"
+             % (detour,))
+    elif base[:n] != detour[:n]:
+        emit("FAIL", "chaos routes — zone_early's first %d legs drifted from GATE_ROUTE:\n"
+                     "            quest.rs      %r\n            quest_chaos.rs %r"
+             % (n, base[:n], detour[:n]))
+    else:
+        emit("ok  ", "chaos routes — zone_early shares GATE_ROUTE's first %d legs verbatim" % n)
+
+    # ---- mirrored constants -------------------------------------------------
+    if "const POST_LANE_Z: f32 = quest_chaos::LANE_Z;" in quest:
+        emit("ok  ", "chaos routes — quest.rs POST_LANE_Z is quest_chaos::LANE_Z (one number)")
+    else:
+        emit("FAIL", "chaos routes — quest.rs POST_LANE_Z is not quest_chaos::LANE_Z; the "
+                     "walk east and the chaos detour can drift apart")
+
+    gp = re.search(r"const\s+GARREN_POS:\s*\(f32,\s*f32\)\s*=\s*\(\s*(-?[\d.]+)\s*,", quest)
+    if gp and "GARREN_X" in cc:
+        if abs(float(gp.group(1)) - cc["GARREN_X"]) > 1e-6:
+            emit("FAIL", "chaos routes — GARREN_X=%s mirrors quest.rs GARREN_POS.x=%s"
+                 % (cc["GARREN_X"], gp.group(1)))
+        else:
+            emit("ok  ", "chaos routes — GARREN_X matches quest.rs GARREN_POS.x=%s" % gp.group(1))
+
+    leash = re.search(r"husk_leash:\s*(-?[\d.]+)", combat)
+    if leash and "HUSK_LEASH" in cc:
+        if abs(float(leash.group(1)) - cc["HUSK_LEASH"]) > 1e-6:
+            emit("FAIL", "chaos routes — HUSK_LEASH=%s mirrors combat.rs husk_leash=%s"
+                 % (cc["HUSK_LEASH"], leash.group(1)))
+        else:
+            emit("ok  ", "chaos routes — HUSK_LEASH matches combat.rs husk_leash=%s" % leash.group(1))
+
+    span = re.search(r"patrol_origin\.x\)\.abs\(\)\s*>\s*(-?[\d.]+)", combat)
+    if span and "HUSK_PATROL_SPAN" in cc:
+        if abs(float(span.group(1)) - cc["HUSK_PATROL_SPAN"]) > 1e-6:
+            emit("FAIL", "chaos routes — HUSK_PATROL_SPAN=%s mirrors combat.rs patrol turn=%s"
+                 % (cc["HUSK_PATROL_SPAN"], span.group(1)))
+        else:
+            emit("ok  ", "chaos routes — HUSK_PATROL_SPAN matches combat.rs patrol turn=%s"
+                 % span.group(1))
+
+    # ---- the ambush stand against the shipped region -------------------------
+    region = next((r for r in data["regions"] if r["id"] == "guard_post_east"), None)
+    if region and "AMBUSH_X" in cc:
+        x0 = float(region["bounds"]["x0"])
+        if cc["AMBUSH_X"] >= x0:
+            emit("FAIL", "chaos routes — AMBUSH_X=%s is inside guard_post_east (x0=%s); the "
+                         "kill would score o1_east first and kill_early would prove nothing"
+                 % (cc["AMBUSH_X"], x0))
+        else:
+            emit("ok  ", "chaos routes — AMBUSH_X=%s is west of guard_post_east.x0=%s"
+                 % (cc["AMBUSH_X"], x0))
+
+    # ---- the env lever the driver script types -------------------------------
+    driver = os.path.join(ROOT, "scripts", "act1_runtime_proof.sh")
+    m = re.search(r'ENV_VAR:\s*&str\s*=\s*"([A-Z_]+)"', chaos)
+    if m and os.path.exists(driver):
+        with io.open(driver, encoding="utf-8", errors="replace") as f:
+            dsrc = f.read()
+        if m.group(1) in dsrc:
+            emit("ok  ", "chaos routes — driver sets %s, the lever the engine reads" % m.group(1))
+        else:
+            emit("FAIL", "chaos routes — engine reads %s but act1_runtime_proof.sh never sets it"
+                 % m.group(1))
+
+
 data, src = load()
 TRIGGER_KINDS = handled_trigger_kinds(src)
 KINDS = handled_objective_kinds(src)
@@ -252,6 +386,7 @@ audit_chain(data)
 audit_objectives(data, src, KINDS, objective_completers(data))
 audit_dialogue_triggers(data, src)
 audit_world_rewards(data, src)
+audit_chaos_routes(data)
 
 print("AUDIT ----")
 print("AUDIT ---- %d FAIL, %d WARN" % (len(fails), len(warns)))
