@@ -2648,10 +2648,17 @@ mod tests {
         let data = act1();
         let mut j = fresh_journal(&data);
 
-        // q2 has trigger type "quest_complete" on q1.
+        // q3 is the quest whose trigger really is `quest_complete`. q2's is
+        // `enter_zone gate_square` — it is handed to the player by q1's `next`
+        // chain, not by its own trigger, which is what the rest of this test
+        // exercises. The old assertion described a schema act1.json never had.
+        let q3_trig = &data.quests.iter().find(|q| q.id == "q3_gatekeeper").unwrap().trigger;
+        assert_eq!(q3_trig.trigger_type, "quest_complete");
+        assert_eq!(q3_trig.quest.as_deref(), Some("q2_voice_in_stone"));
+
         let q2_trig = &data.quests.iter().find(|q| q.id == "q2_voice_in_stone").unwrap().trigger;
-        assert_eq!(q2_trig.trigger_type, "quest_complete");
-        assert_eq!(q2_trig.quest.as_deref(), Some("q1_embers"));
+        assert_eq!(q2_trig.trigger_type, "enter_zone");
+        assert_eq!(q2_trig.zone.as_deref(), Some("gate_square"));
 
         // Simulate q1 completing → this should unlock q2.
         let q1 = j.quests.get_mut("q1_embers").unwrap();
@@ -2763,8 +2770,19 @@ mod tests {
         let dlg = data.dialogue.iter().find(|d| d.id == "dlg_maren_gate").unwrap();
         let choices = dlg.choices.as_ref().unwrap();
         assert_eq!(choices.len(), 5, "Maren's gate dialogue is a 5-choice hub");
-        assert_eq!(choices[0].label, "Who are you?");
-        assert_eq!(choices[4].label, "I'll go east. Keep the seal.");
+        // Pinned by id, not by index. The old form asserted `choices[0].label ==
+        // "Who are you?"`, which is neither the shipped order nor the shipped
+        // wording — reordering four flavour questions is a writer's call and must
+        // not break the build. What must hold is that the four askable branches
+        // are all there and that the LAST choice is the one carrying the payload.
+        for id in ["c_creature", "c_wayin", "c_others", "c_who"] {
+            assert!(choices.iter().any(|c| c.id == id), "hub is missing {id}");
+        }
+        let go = choices.last().unwrap();
+        assert_eq!(go.id, "c_go", "the exit must be the last choice on the hub");
+        assert_eq!(go.completes_objective.as_deref(), Some("o2_listen"),
+            "picking it is the only thing that completes q2's listen objective");
+        assert_eq!(go.advances_quest.as_deref(), Some("q3_gatekeeper"));
     }
 
     // ---------------------------------------------------------------------------

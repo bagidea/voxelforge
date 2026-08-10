@@ -1262,7 +1262,10 @@ struct Beat {
     combo: u8,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+// `Debug` is what `assert_eq!(a.action, Action::Swing)` in this file's own tests
+// needs to print a mismatch. Without it `cargo test` cannot build the bin's test
+// target AT ALL (E0277 ×6), which takes every other module's tests down with it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Action {
     None,
     Swing,
