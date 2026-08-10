@@ -65,16 +65,14 @@ use voxelforge_sim::chunk::{ChunkData, CHUNK_SIZE};
 
 /// A client-side decorative block: the wall lantern.
 ///
-/// The sim palette (`sim/src/block.rs`) stops at id 15 and is kevin's lane, but
-/// its own doc says the palette is open-ended and "the client adds its colour to
-/// the atlas". Nothing in the reference art reads without a light source that is
-/// actually emitting — a lantern painted bright but not *emissive* is invisible
-/// to bloom — so the id is defined here rather than not at all.
+/// Defined here first (before `sim/src/block.rs` had id 16); now promoted to a
+/// real [`BlockId::LAMP`] const in sim (commit a3bb308), so the local is
+/// redundant.  Kept as an alias so existing match arms (`LAMP => …`) don't need a
+/// rename — the value is the same constant either way.
 ///
-/// KNOWN LIMIT while it lives here: `BlockId(16).name()` is `"unknown"`, so a
-/// lamp cannot round-trip through a JSON map file. Promoting this to a real
-/// `BlockId::LAMP` const in sim is a one-line change and is in the report.
-pub const LAMP: BlockId = BlockId(16);
+/// `BlockId(16).name()` returns `"lamp"` (not `"unknown"`) since the promotion,
+/// so the lamp CAN round-trip through a JSON map file.
+pub const LAMP: BlockId = BlockId::LAMP;
 
 /// Number of tiles in the (horizontal) atlas — the 16 sim blocks plus [`LAMP`].
 const N_TILES: usize = 17;

@@ -1495,14 +1495,13 @@ pub(crate) fn fly_camera(
 // ---------------------------------------------------------------------------
 
 /// Human label for a block id (HUD + demo log).
+///
+/// Delegates to [`BlockId::name`] so the HUD always agrees with the sim
+/// palette. The old local match covered only the 4 launch-day blocks and fell
+/// through to `"air"` for everything else — including `LAMP`, `WOOD`,
+/// `OBSIDIAN`, and the rest of the palette shipped since commit a3bb308.
 fn block_name(b: BlockId) -> &'static str {
-    match b {
-        BlockId::GRASS => "grass",
-        BlockId::DIRT => "dirt",
-        BlockId::STONE => "stone",
-        BlockId::SAND => "sand",
-        _ => "air",
-    }
+    b.name()
 }
 
 /// Is the world-space voxel (wx,wy,wz) solid? Only the y=0 chunk layer exists in
