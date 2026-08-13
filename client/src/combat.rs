@@ -144,6 +144,8 @@ pub struct CombatConfig {
     pub shake_light: (f32, f32),
     pub shake_heavy: (f32, f32),
     pub shake_enemy_hit: (f32, f32),
+    pub shake_parry: (f32, f32),
+    pub shake_stagger: (f32, f32),
 
     // -- Weight layer: knockback --------------------------------------------
     pub knockback_light: f32,
@@ -264,6 +266,13 @@ pub const COMBAT: CombatConfig = CombatConfig {
     shake_light: (0.04, 0.10),
     shake_heavy: (0.12, 0.22),
     shake_enemy_hit: (0.16, 0.28),
+    // §5.3: a parry lands harder than a light tap — its own row, not the
+    // light's, otherwise a successful deflect reads as a whiff.
+    shake_parry: (0.12, 0.18),
+    // §5.3: the stagger-break row — the loudest thing in the table, louder than
+    // any swing or enemy hit, so a poise break shakes the camera no matter what
+    // swing caused it.
+    shake_stagger: (0.20, 0.30),
 
     // -- Weight layer: knockback --------------------------------------------
     knockback_light: 0.18,
@@ -379,6 +388,8 @@ pub const HITSTOP_STAGGER: f32 = COMBAT.hitstop_stagger;
 pub const SHAKE_LIGHT: (f32, f32) = COMBAT.shake_light;
 pub const SHAKE_HEAVY: (f32, f32) = COMBAT.shake_heavy;
 pub const SHAKE_ENEMY_HIT: (f32, f32) = COMBAT.shake_enemy_hit;
+pub const SHAKE_PARRY: (f32, f32) = COMBAT.shake_parry;
+pub const SHAKE_STAGGER: (f32, f32) = COMBAT.shake_stagger;
 
 // -- Weight layer -----------------------------------------------------------
 pub const HITSTOP_HEAVY: f32 = COMBAT.hitstop_heavy;
@@ -1630,17 +1641,11 @@ pub fn player_combat(
             ehp.damage(dmg * mult);
             let broke = ep.take(poise_dmg, false);
             landed = true;
-            // Audio feedback — pick light or heavy based on the attack type.
-            if matches!(pc.state, CombatState::Heavy | CombatState::Charged) {
-                sfx.write(SfxEvent::HitHeavy { position: etf.translation });
-            } else {
-                sfx.write(SfxEvent::HitLight { position: etf.translation });
-            }
 
             // ---- the weight layer --------------------------------------------
-            // One classification drives every channel below, so a heavy can never
-            // end up with a light's freeze and a heavy's shove (which reads as a
-            // bug you can feel but not name).
+            // One classification drives every channel below — sound, shake,
+            // freeze, shove, kick — so a riposte or a poise break can never end
+            // up sounding or shaking like the light that caused it.
             let weight = match pc.state {
                 _ if riposte => ImpactWeight::Critical, // a riposte is the loudest hit there is
                 _ if broke => ImpactWeight::Critical, // a poise break outranks the swing
@@ -1648,6 +1653,10 @@ pub fn player_combat(
                 CombatState::Heavy => ImpactWeight::Heavy,
                 _ => ImpactWeight::Light,
             };
+            // Audio: the impact sound tracks the blow's *weight*, not the button
+            // that threw it — a riposte and a poise break both read Critical and
+            // must not masquerade as the light tap their swing started as.
+            sfx.write(impact_sfx(weight, etf.translation));
             // Blade direction: player → target, flattened. `normalize_or_zero`
             // guards the degenerate "standing inside the enemy" case; the facing
             // vector is the honest fallback there.
@@ -1677,11 +1686,14 @@ pub fn player_combat(
                 slid: 0.0,
                 topup: 0.0,
             });
-            // 3. Camera: the existing omni rattle (§5.3) …
-            shake.hit(if matches!(pc.state, CombatState::Heavy | CombatState::Charged) {
-                SHAKE_HEAVY
-            } else {
+            // 3. Camera: the omni rattle scales with the same weight, and a poise
+            //    break borrows the loudest row (§5.3 stagger break).
+            shake.hit(if broke {
+                SHAKE_STAGGER
+            } else if weight == ImpactWeight::Light {
                 SHAKE_LIGHT
+            } else {
+                SHAKE_HEAVY
             });
             //    … plus a kick down the blade, so the frame lurches *into* the hit.
             shake.kick(blade, weight.kick());
@@ -2015,7 +2027,8 @@ fn try_hit_player(
     if pc.state == CombatState::Parry && pc.parry_frames > 0 {
         ppoise.take(0.0, false); // no self-damage; parry succeeded
         pc.punish = PARRY_PUNISH; // +25% window opens on the enemy
-        shake.hit(SHAKE_LIGHT);
+        // §5.3: a successful parry lands harder than a light tap — its own row.
+        shake.hit(SHAKE_PARRY);
         pc.hitstop = HITSTOP_PARRY;
         return (true, EnemyHitOutcome::Parried, false);
     }
@@ -2090,6 +2103,9 @@ fn taken_feel(
         attacker: enemy,
     });
     if broke {
+        // §5.3: the player's stance broke — the stagger-break shake, louder than
+        // the plain-hit rattle already applied in `try_hit_player`.
+        shake.hit(SHAKE_STAGGER);
         staggers.write(StaggerEvent { entity: player, pos: player_pos, is_player: true });
     }
 }
@@ -2114,6 +2130,18 @@ fn emit_enemy_hit_sfx(outcome: &EnemyHitOutcome, pos: Vec3, sfx: &mut MessageWri
         _ => return, // Missed | Dodged → no sound
     };
     sfx.write(ev);
+}
+
+/// The impact sound for a blow the *player* landed, chosen by [`ImpactWeight`]
+/// rather than by which button was pressed. A riposte and a poise break both
+/// classify as Critical, and neither may sound like the light tap their swing
+/// started as — there is no `hit_critical.wav` yet, so Critical borrows the
+/// heavy impact until the audio lane ships one.
+fn impact_sfx(weight: ImpactWeight, pos: Vec3) -> SfxEvent {
+    match weight {
+        ImpactWeight::Light => SfxEvent::HitLight { position: pos },
+        ImpactWeight::Heavy | ImpactWeight::Critical => SfxEvent::HitHeavy { position: pos },
+    }
 }
 
 /// Move the enemy's telegraph arm up during wind-up so the incoming swing reads
@@ -3073,6 +3101,26 @@ mod tests {
         let mut z = Shake::default();
         z.kick(Vec3::ZERO, KICK_CRITICAL);
         assert_eq!(z.kick_amp, 0.0);
+    }
+
+    #[test]
+    fn impact_sound_scales_with_weight_not_the_button() {
+        // A riposte and a poise break both classify as Critical — the heaviest
+        // hits in the kit — and neither may sound like the light tap their swing
+        // started as. No distinct critical asset exists yet, so Critical borrows
+        // the heavy impact.
+        assert!(matches!(impact_sfx(ImpactWeight::Light, Vec3::ZERO), SfxEvent::HitLight { .. }));
+        assert!(matches!(impact_sfx(ImpactWeight::Heavy, Vec3::ZERO), SfxEvent::HitHeavy { .. }));
+        assert!(matches!(impact_sfx(ImpactWeight::Critical, Vec3::ZERO), SfxEvent::HitHeavy { .. }));
+    }
+
+    #[test]
+    fn parry_and_stagger_shake_louder_than_a_light_hit() {
+        // §5.3: parry (0.12) and stagger break (0.20) both out-shake a light
+        // (0.04); the stagger break is the loudest row in the table.
+        assert!(SHAKE_PARRY.0 > SHAKE_LIGHT.0);
+        assert!(SHAKE_STAGGER.0 > SHAKE_PARRY.0);
+        assert!(SHAKE_STAGGER.0 > SHAKE_ENEMY_HIT.0);
     }
 
     // ---- husk rhythm ------------------------------------------------------
