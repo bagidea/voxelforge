@@ -514,6 +514,13 @@ def skeleton(cx, cz, y_base=0):
     add(cx, y_base + 2, cz, "stone")  # skull-ish lump
 
 
+def hollow_reach_ramp():
+    """Gentle steps down from the gate plateau into the Hollow Reach intro zone."""
+    for x in range(28, 37):
+        add(x, 1, 2, "stone")
+        add(x, 0, 1, "stone")
+
+
 def fire_pit(cx, cz, r=2, y_base=0, lit=False):
     """A rest-fire ring: a 3x3 stone ring around a dirt/ash centre at y=1."""
     for dx in (-1, 0, 1):
@@ -706,6 +713,72 @@ def husk_arena_cover():
     broken_pillar(30, 28, y_base=0, height=2)
 
 
+def guard_post_east():
+    """Build the eastern guard post as real map geometry.
+
+    act1.json defines guard_post_east as the 9x9 region x48-56, z4-12 east of
+    the sealed gate.  The courtyard sits at y=1, with the Sentinel Spire rising
+    from its north-west corner.  It holds the collapsed gap the player bridges
+    in q4, low walls for combat cover, and an inner campfire ring.
+    """
+    # Spire base bounding box (pedestal + lower shaft).  We must not carve this.
+    SPIRE_X0, SPIRE_X1 = 46, 50
+    SPIRE_Z0, SPIRE_Z1 = 2, 7
+
+    # Courtyard floor at y=1.  Clear any terrace/pedestal blocks first.
+    for x in range(48, 57):
+        for z in range(4, 13):
+            in_spire = SPIRE_X0 <= x <= SPIRE_X1 and SPIRE_Z0 <= z <= SPIRE_Z1
+            if not in_spire:
+                for y in (1, 2, 3, 4):
+                    blocks.pop((x, y, z), None)
+            add(x, 1, z, "stone")
+
+    # Low perimeter walls at y=2 (knee-high cover, keeps headroom clear).
+    for x in range(48, 57):
+        for z in range(4, 13):
+            if not (x == 48 or x == 56 or z == 4 or z == 12):
+                continue
+            # West entrance from the gate plateau / vista terrace.
+            if x == 48 and 9 <= z <= 10:
+                continue
+            # South exit toward the east house / ledger.
+            if z == 12 and 51 <= x <= 53:
+                continue
+            add(x, 2, z, "stone")
+
+    # Collapsed floor gap the player must bridge in q4 (position 50,1,9).
+    blocks.pop((50, 1, 9), None)
+    add(50, 0, 9, "dirt")
+    add(49, 1, 9, "dirt")
+    add(51, 1, 9, "dirt")
+
+    # Inner campfire ring on the courtyard floor.
+    fire_pit(52, 11, r=1, y_base=1, lit=True)
+
+    # Combat cover inside the courtyard.
+    broken_pillar(54, 6, y_base=1, height=2)
+    broken_pillar(49, 11, y_base=1, height=2)
+    low_wall(53, 55, 7, 7, y_base=1, height=1)
+    low_wall(48, 50, 5, 5, y_base=1, height=1, gaps={(49, 5)})
+
+    # Corner towers so the post reads as a fortified courtyard from a distance.
+    for y in range(3, 6):
+        add(56, y, 4, "stone")
+        add(56, y, 12, "stone")
+    for x in (55, 56):
+        add(x, 6, 4, "stone")
+        add(x, 6, 12, "stone")
+
+    # Path from the south exit to the east house (q4 ledger detour).
+    for z in range(13, 20):
+        for x in range(51, 54):
+            blocks.pop((x, 1, z), None)
+            add(x, 1, z, "stone")
+    # Last few metres leading to the east-house north door (49,19).
+    paved_rect(49, 51, 19, 19, "stone", y=1)
+
+
 # ---------------------------------------------------------------------------
 # Build the world
 # ---------------------------------------------------------------------------
@@ -768,8 +841,8 @@ market_stall(SPAWN_X + 8, 19)
 paved_rect(SPAWN_X - 3, SPAWN_X + 3, 15, 28, "stone", y=0)
 
 # Two intact houses on raised terraces flanking the well, now furnished
-intact_house(12, 19, 7, 7, door_x=15, door_z=22, height=4, y_base=1, furnished=True)
-intact_house(46, 19, 7, 7, door_x=46, door_z=22, height=4, y_base=1, furnished=True)
+intact_house(12, 19, 7, 7, door_x=15, door_z=19, height=4, y_base=1, furnished=True)
+intact_house(46, 19, 7, 7, door_x=49, door_z=19, height=4, y_base=1, furnished=True)
 
 # Raise the terraces under those houses
 terrace_patch = []
@@ -789,6 +862,9 @@ paved_rect(35, 44, 17, 19, "stone", y=1)
 paved_rect(32, 34, 19, 22, "stone", y=1)
 # Path from well toward the west ruin area
 paved_rect(20, 29, 17, 17, "stone", y=1)
+# Walkable approach to the west-house south door (15,19) from the village square.
+paved_rect(15, 20, 18, 18, "stone", y=1)
+paved_rect(20, 20, 17, 18, "stone", y=1)
 
 # Dress the village square so it reads as a lived-in plaza, not a flat pad.
 # All props stay at y=1 or below to keep main-street headroom clear.
@@ -987,8 +1063,14 @@ for x in range(45, 51):
 # ---- 7. Sealed dungeon gate (northern anchor) -----------------------------
 dungeon_gate(SPAWN_X, z_near=3, z_far=5, y_base=2, half_span=6, height=9)
 
+# ---- 7b. Hollow Reach ramp ------------------------------------------------
+hollow_reach_ramp()
+
 # ---- 8. Combat cover around first husk encounter --------------------------
 husk_arena_cover()
+
+# ---- 8b. Eastern guard post (real map geometry) ---------------------------
+guard_post_east()
 
 # ---- 9. Rest fire spots ---------------------------------------------------
 # Main campfire is the procedural one at (32,29).  Add smaller fire rings
@@ -1084,6 +1166,27 @@ grass_tuft(48, 58)
 grass_tuft(56, 54)
 rubble_pile(20, 46, r=2, y_base=0)
 rubble_pile(44, 46, r=2, y_base=0)
+
+# ---- 12b. Lore-item props -------------------------------------------------
+def lore_props():
+    """Place small readable blocks for authored lore_items that the player
+    actually interacts with, so the coordinates in act1.json snap to real voxels."""
+    # Offering bowl on the roadside just south of the gate.
+    add(33, 1, 14, "stone")
+    # Mason's chisel dropped in the village square rubble.
+    add(40, 1, 18, "stone")
+    # Scratched warning on the sealed door, knee height.
+    add(30, 2, 6, "dirt")
+    # Maren's charcoal anchor mark by the gate crack.
+    add(34, 2, 4, "dirt")
+    # Toma's carved toy and the child's drawing inside the west house.
+    add(15, 1, 24, "wood")
+    add(16, 1, 24, "wood")
+    # Builder fresco inside the guard post at the act1.json coordinate.
+    add(52, 1, 7, "stone")
+
+
+lore_props()
 
 # A3 material pass: break up long stone runs and add ground cover / lamps.
 # ----------------------------------------------------------------------------
@@ -1275,6 +1378,13 @@ print(f"A3 surface conversions: {a3_conversions}")
 lamp_post(27, 19, y_base=1, height=2)
 lamp_post(40, 19, y_base=1, height=2)
 lamp_post(44, 8, y_base=2, height=2)
+
+# Walkability fix: a stray grass block at y=2 inside the west-house south
+# door (15,20) raised the interior floor one voxel above the threshold at
+# (15,19).  step_axis then checked headroom at the source cell, hit the
+# y=4 wood lintel, and rejected every entry attempt.  Clear it so the door
+# and the first interior cell share the same floor height.
+blocks.pop((15, 2, 20), None)
 
 # ---- 13. Export ------------------------------------------------------------
 out = {

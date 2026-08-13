@@ -294,6 +294,12 @@ def walkable_neighbours(x, z):
             continue
         if is_solid(nx, nh + 2, nz):
             continue
+        # Mirror main.rs step_axis: before stepping UP, the body is raised at
+        # the source cell, so there must be clearance at (x, h+3, z) on the
+        # voxel the feet are leaving.  Without this, a doorway lintel directly
+        # above the player would make the step fail.
+        if nh > h and is_solid(x, h + 3, z):
+            continue
         out.append((nx, nz))
     return out
 
@@ -652,6 +658,157 @@ if dominant and dom_blocks:
     check("framing: Sentinel Spire is visible from the pulled camera through the gateway",
           los_to_spire)
     print(f"    -> camera -> spire ({tx},{ty},{tz}): {los_to_spire}")
+
+# ===========================================================================
+# Act 1 region checks: gate_square, guard_post_east and the paths between them.
+# These mirror the authored regions in assets/story/act1.json.
+# ===========================================================================
+
+
+def _is_walkable_cell(x, z):
+    h = surface_at(x, z)
+    if h is None:
+        return False
+    return not is_solid(x, h + 2, z)
+
+
+def _reachable(from_cell, to_cell):
+    if not _is_walkable_cell(*to_cell):
+        return False
+    q = deque([from_cell])
+    seen = {from_cell}
+    while q:
+        cur = q.popleft()
+        if cur == to_cell:
+            return True
+        for nxt in walkable_neighbours(*cur):
+            if nxt not in seen:
+                seen.add(nxt)
+                q.append(nxt)
+    return False
+
+
+def _walk_surface(x, z):
+    """Lowest solid y that has at least two clear voxels above it.
+
+    This gives the floor the player stands on.  surface_at() returns the top
+    of a wall column, which makes house interiors look unwalkable; this
+    function instead finds the walkable floor (usually y=0 or y=1) even when
+    walls rise above head height.
+    """
+    for y in range(32):
+        if (x, y, z) in blocks_set:
+            if (x, y + 1, z) not in blocks_set and (x, y + 2, z) not in blocks_set:
+                return y
+    return None
+
+
+def _floor_neighbours(x, z):
+    h = _walk_surface(x, z)
+    if h is None:
+        return []
+    out = []
+    for dx, dz in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+        nx, nz = x + dx, z + dz
+        if not (0 <= nx < W and 0 <= nz < D):
+            continue
+        nh = _walk_surface(nx, nz)
+        if nh is None:
+            continue
+        if abs(nh - h) > 1:
+            continue
+        # step_axis source-headroom check: stepping up requires clearance at
+        # the source floor's h+3 (feet+2), otherwise the player would clip the
+        # lintel above the doorway they are leaving.
+        if nh > h and is_solid(x, h + 3, z):
+            continue
+        out.append((nx, nz))
+    return out
+
+
+def _reachable_floor(from_cell, to_cell):
+    if _walk_surface(*to_cell) is None:
+        return False
+    q = deque([from_cell])
+    seen = {from_cell}
+    while q:
+        cur = q.popleft()
+        if cur == to_cell:
+            return True
+        for nxt in _floor_neighbours(*cur):
+            if nxt not in seen:
+                seen.add(nxt)
+                q.append(nxt)
+    return False
+
+
+# gate_square bounds from act1.json
+GATE_X0, GATE_Z0, GATE_X1, GATE_Z1 = 27, 3, 37, 8
+gate_walkable = [(x, z) for x in range(GATE_X0, GATE_X1 + 1)
+                 for z in range(GATE_Z0, GATE_Z1 + 1)
+                 if _is_walkable_cell(x, z)]
+check("gate_square region (x27-37, z3-8) has walkable floor",
+      len(gate_walkable) >= 20)
+print(f"    -> gate_square walkable cells: {len(gate_walkable)}")
+
+# guard_post_east bounds from act1.json
+GP_X0, GP_Z0, GP_X1, GP_Z1 = 48, 4, 56, 12
+gp_walkable = [(x, z) for x in range(GP_X0, GP_X1 + 1)
+               for z in range(GP_Z0, GP_Z1 + 1)
+               if _is_walkable_cell(x, z)]
+check("guard_post_east region (x48-56, z4-12) has walkable floor",
+      len(gp_walkable) >= 20)
+print(f"    -> guard_post_east walkable cells: {len(gp_walkable)}")
+
+# Entrances / exits
+west_entrance_open = _is_walkable_cell(48, 9) and _is_walkable_cell(48, 10)
+check("guard_post_east has a west entrance (x48, z9-10 walkable)",
+      west_entrance_open)
+
+south_exit_open = any(_is_walkable_cell(x, 12) for x in range(51, 54))
+check("guard_post_east has a south exit (z12, x51-53 walkable)",
+      south_exit_open)
+
+# q4 collapsed floor gap the player must bridge.
+gap_ok = ((50, 1, 9) not in blocks_set
+          and (50, 0, 9) in blocks_set)
+check("q4 collapsed gap exists at (50,1,9) with solid ground beneath", gap_ok)
+
+# Connectivity: gate_square -> guard_post_east, and gate -> hollow reach intro.
+# Use (32,8) as the gate reference cell: it sits on the gate plateau but is
+# clear of the sealed door blocks that occupy z3-5.
+gate_to_gp = _reachable((32, 8), (52, 8))
+check("gate_square connects to guard_post_east on foot", gate_to_gp)
+
+gate_to_hollow = _reachable((32, 8), (32, 2))
+check("gate_square connects to hollow_reach_intro (z0-2) on foot",
+      gate_to_hollow)
+
+# Key lore props are backed by real blocks.
+check("offering bowl prop exists at (33,1,14)", (33, 1, 14) in blocks_set)
+check("village ledger prop exists at (46,1,24)", (46, 1, 24) in blocks_set)
+
+# Reachability into the two authored intact houses and their key lore props.
+# The props sit on walls/floors, so we verify the player can stand on the
+# adjacent interior cell and that the prop block itself exists.
+west_house_reachable = _reachable_floor((32, 32), (16, 24))
+check("west_house interior (16,24) reachable from spawn", west_house_reachable)
+check("Toma's toy prop exists at (15,1,24)", (15, 1, 24) in blocks_set)
+check("child's drawing prop exists at (16,1,24)", (16, 1, 24) in blocks_set)
+
+east_house_reachable = _reachable_floor((52, 12), (47, 24))
+check("east_house interior (47,24) reachable from guard_post_east south exit",
+      east_house_reachable)
+
+east_house_reachable_from_spawn = _reachable_floor((32, 32), (47, 24))
+check("east_house interior (47,24) reachable from spawn",
+      east_house_reachable_from_spawn)
+
+# Builder fresco is placed at the act1.json coordinate inside the guard post.
+check("Builder fresco prop exists at (52,1,7)", (52, 1, 7) in blocks_set)
+fresco_reachable = _reachable_floor((52, 8), (52, 7))
+check("Builder fresco (52,1,7) reachable from guard_post_east courtyard",
+      fresco_reachable)
 
 print()
 if fail:
