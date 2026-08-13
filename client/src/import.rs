@@ -446,9 +446,21 @@ mod tests {
     /// quietly red ever since — grey `(128,128,138)` resolves to `cobblestone`,
     /// not `stone`. A literal cannot notice the table moved underneath it.
     ///
-    /// This is a tight test by construction: `stone` (#8f8776) and
-    /// `cobblestone` (#8c8a78) sit 4.7 apart in sRGB, so nothing weaker than an
-    /// exact round-trip tells them apart at all.
+    /// WHAT THIS TEST ACTUALLY CATCHES — narrower than it looks, and the note
+    /// that stood here claimed otherwise ("a tight test by construction … 4.7
+    /// apart … nothing weaker tells them apart"). It doesn't. A block always
+    /// scores `d == 0` against its own colour, and `closest_block` keeps the
+    /// incumbent on ties (`d < best_d`, strict), so the only way an entry can
+    /// fail to round-trip is if an EARLIER entry holds the exact same colour.
+    /// It is a duplicate-colour check, and it stays green for any palette whose
+    /// entries are distinct — move `stone` to within 1.0 of `cobblestone` and
+    /// this still passes. Tightness is pinned by
+    /// [`closest_block_palette_pairs_stay_far_enough_apart`] instead.
+    ///
+    /// It is still worth its line: it is the ONLY duplicate check that covers
+    /// `lamp`. `block.rs`'s `designer_colours_are_distinct` walks `DESIGNER_HEX`,
+    /// which deliberately omits lamp (no designer hex yet), so a lamp albedo
+    /// that collided with another block would slip past it and land here.
     #[test]
     fn closest_block_round_trips_every_palette_colour() {
         for &id in BlockId::ALL_PLACEABLE {
@@ -463,15 +475,73 @@ mod tests {
         }
     }
 
+    /// The palette's closest pair, pinned as a FLOOR. This is the guard the
+    /// round-trip test above was mistakenly credited with: it is the one that
+    /// goes red if someone moves two blocks nearer each other, which is what
+    /// actually degrades the `.vox` importer — the tighter the closest pair, the
+    /// less colour noise it takes to import a wall of `stone` as `cobblestone`.
+    ///
+    /// Squared distance, so the arithmetic stays in integers exactly as
+    /// `closest_block` does it. `22` is `stone` #8f8776 vs `cobblestone` #8c8a78
+    /// — Δ(3, −3, −2), i.e. 4.69 apart in sRGB — measured over Monanisa's §6.1
+    /// palette as shipped.
+    ///
+    /// A floor, not a fixture: widening the palette is a improvement and should
+    /// not fail. If this ever goes red the question is not "which number do I
+    /// change" but "did the designer mean to put those two materials that close
+    /// together" — the palette is hers (`docs/block-palette.md` §6.1), and the
+    /// fix for a genuinely-too-close pair lives in the importer (match by block
+    /// name), never in the hex.
+    #[test]
+    fn closest_block_palette_pairs_stay_far_enough_apart() {
+        const MIN_D2: i32 = 22;
+
+        let mut worst = i32::MAX;
+        let mut pair = (BlockId::AIR, BlockId::AIR);
+        for (i, &a) in BlockId::ALL_PLACEABLE.iter().enumerate() {
+            for &b in &BlockId::ALL_PLACEABLE[i + 1..] {
+                let (ca, cb) = (a.base_color(), b.base_color());
+                let d2: i32 = (0..3)
+                    .map(|c| {
+                        let d = ca[c] as i32 - cb[c] as i32;
+                        d * d
+                    })
+                    .sum();
+                if d2 < worst {
+                    worst = d2;
+                    pair = (a, b);
+                }
+            }
+        }
+        assert!(
+            worst >= MIN_D2,
+            "{} and {} are only d²={} apart (floor {}): the palette got tighter \
+             than the importer was pinned against",
+            pair.0.name(),
+            pair.1.name(),
+            worst,
+            MIN_D2
+        );
+    }
+
     /// A colour equal to no palette entry still lands on its nearest one —
     /// proves the search really is nearest-neighbour, which a plain exact-match
     /// lookup would also satisfy above.
+    ///
+    /// Nudged off `stone`, not `obsidian`. Obsidian #1a1620 is the most isolated
+    /// entry in the palette — its nearest neighbour is thousands of d² away — so
+    /// a nudge there is the easiest case there is and passes under almost any
+    /// mistake. `stone` is half of the closest pair (see
+    /// [`closest_block_palette_pairs_stay_far_enough_apart`]), so this watches
+    /// the boundary that is actually contested: +2 on every channel is d²=12
+    /// from `stone` and d²=26 from `cobblestone`, and the assert is that it
+    /// still comes back `stone`.
     #[test]
     fn closest_block_snaps_a_near_colour_to_its_neighbour() {
-        let exact = BlockId::OBSIDIAN.base_color();
-        let near = exact.map(|c| c.saturating_add(4));
+        let exact = BlockId::STONE.base_color();
+        let near = exact.map(|c| c.saturating_add(2));
         assert_ne!(near, exact, "the nudge degenerated into an exact match");
-        assert_eq!(closest_block(near[0], near[1], near[2]), BlockId::OBSIDIAN);
+        assert_eq!(closest_block(near[0], near[1], near[2]), BlockId::STONE);
     }
 
     #[test]

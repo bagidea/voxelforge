@@ -202,3 +202,49 @@ the symbol, not by trusting the prose. What is still open:
 
 Closed since the first draft: the §5 palette hand-off (landed a3bb308, audited
 72408ad).
+
+## 7. `stone` vs `cobblestone` — CLOSED, the hex does not move
+
+Raised during the 72408ad audit: `stone` #8f8776 and `cobblestone` #8c8a78 are
+Δ(3, −3, −2) apart — **4.69 in sRGB, d² = 22** — the closest pair in the whole
+16-entry palette, and close enough that a noisy `.vox` import can resolve one as
+the other. The question put to the Director was whether to widen them.
+
+**Ruling (Director, 2026-08-14): do not move the colours.** The reasoning, so
+nobody re-opens it:
+
+* The palette was *just* locked as a single source of truth, and
+  `base_color_matches_the_designer_palette` pins it to `docs/block-palette.md`
+  §6.1. Nudging a hex is not a bug fix — it is editing the designer's work
+  through the back door, and the test would have to be edited to let it through,
+  which is the exact loop that test exists to break.
+* The blast radius is one code path: `client/src/import.rs::closest_block`,
+  reached only when importing a `.vox`. Nothing the player sees comes off a
+  nearest-colour search — the renderer looks blocks up **by id**, so the in-game
+  read of stone vs cobblestone is unaffected.
+* If an import ever does come back wrong, the fix belongs in the importer —
+  match on the block *name* carried by the source file — not in the palette. A
+  colour search is a fallback for data that has no names; it should not get to
+  dictate the art.
+
+Two guards now hold the line instead (both in `import.rs`, both proven to go red
+by `scripts/_poppy_closest_block_control.py`, which re-runs them against a
+scratch palette with `stone` moved to 1.73 from `cobblestone`):
+
+* `closest_block_palette_pairs_stay_far_enough_apart` — pins d² ≥ 22 across
+  every pair in `ALL_PLACEABLE`. A floor, not a fixture: widening is fine, and
+  this going red means "did the designer mean to put those two that close",
+  never "bump the constant".
+* `closest_block_snaps_a_near_colour_to_its_neighbour` — moved off `obsidian`
+  (the most isolated entry in the palette, so the easiest possible case) onto
+  `stone` +2, which sits d² 12 from `stone` and 26 from `cobblestone`. It now
+  watches the boundary that is actually contested.
+
+And a correction worth keeping, because it is the same species of mistake §6
+warns about: `closest_block_round_trips_every_palette_colour` was documented as
+"a tight test by construction … nothing weaker tells them apart". It is not. A
+block scores d = 0 against its own colour and `closest_block` keeps the incumbent
+on ties (`d < best_d`, strict), so it can only fail on an **exact** duplicate —
+in the control run above it stayed green with the palette tightened 7× . Its real
+and only value is that it is the one duplicate check that covers `lamp`, which
+`designer_colours_are_distinct` skips. The comment has been fixed to say so.
