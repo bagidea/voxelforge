@@ -596,11 +596,10 @@ fn check_gate_on_exit(
     }
 }
 
-/// The env-var combat demo (`VOXELFORGE_COMBAT_DEMO=1`) drives `CombatIntent`
-/// directly inside `combat::combat_demo` — no scene, no campsite, no respawn loop.
-/// When `--combat-demo` (the CLI flag) is used instead, `cfg.play` is also true, the
-/// full scene boots, and `scene::combat_proof` handles the proof. This condition keeps
-/// the two proof systems from overwriting each other.
+/// Dead code: `combat_demo` now always forces `play=true` (the `Cfg::play`
+/// boot derives from `combat_demo`), so this `combat_demo && !play` condition
+/// is never true and `combat::combat_demo` is never reached. The path that
+/// actually runs is `scene::combat_proof`, which scripts the heavy attack.
 fn combat_demo_env_only(cfg: Res<Cfg>) -> bool {
     cfg.combat_demo && !cfg.play
 }

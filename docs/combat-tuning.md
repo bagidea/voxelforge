@@ -138,20 +138,22 @@ so the same read doesn't work twice in a row without the player adapting.
 
 ## 9. Feedback — hit-stop, screen-shake, knockback (`combat.rs`) — §5
 
+> Canonical: `31f1d71` — the values in this section follow that commit (combat.rs is the source of truth).
+
 | Constant | Value | Meaning |
 |---|---|---|
 | `HITSTOP_LIGHT` | 0.080 s | Player light lands (both sides pause) |
-| `HITSTOP_HEAVY` | 0.120 s | Player heavy/charged lands |
+| `HITSTOP_HEAVY` | 0.140 s | Player heavy/charged lands |
 | `HITSTOP_PARRY` | 0.120 s | Parry succeeds |
 | `HITSTOP_ENEMY` | 0.100 s | Enemy hits player |
 | `HITSTOP_STAGGER` | 0.150 s | Stagger / critical punish |
-| `HITSTOP_CRITICAL` | 0.170 s | Charged hit or a poise break (riposte rides this row) |
+| `HITSTOP_CRITICAL` | 0.200 s | Charged hit or a poise break (riposte rides this row) |
 | `SHAKE_LIGHT` | amp 0.04 / 0.10 s | Screen-shake, light hit |
 | `SHAKE_HEAVY` | amp 0.10 / 0.20 s | Screen-shake, heavy/charged hit |
 | `SHAKE_ENEMY_HIT` | amp 0.15 / 0.25 s | Screen-shake, enemy hits player |
 | `KNOCKBACK_LIGHT` / `_HEAVY` / `_CRITICAL` | 0.18 / 0.32 / 0.55 blocks | Push-back distance by impact weight |
-| `KNOCKBACK_TIME` | 0.12 s | Time the knockback plays over |
-| `KICK_LIGHT` / `_HEAVY` / `_CRITICAL` / `_TAKEN` | 0.045 / 0.100 / 0.155 / 0.130 | Directional camera-kick magnitude by weight (`_TAKEN` = player eating a hit) |
+| `KNOCKBACK_TIME` | 0.15 s | Time the knockback plays over |
+| `KICK_LIGHT` / `_HEAVY` / `_CRITICAL` / `_TAKEN` | 0.045 / 0.120 / 0.155 / 0.130 | Directional camera-kick magnitude by weight (`_TAKEN` = player eating a hit) |
 | `KICK_TIME` | 0.16 s | Kick snap-out/ease-back time |
 
 `ImpactWeight::{Light, Heavy, Critical}` bundles a hit-stop/knockback/kick row so

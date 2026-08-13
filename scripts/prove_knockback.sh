@@ -90,7 +90,7 @@ else
 fi
 
 # ── gate 2: every impact's numbers match the ImpactWeight table ──────────
-# light 0.080/0.180/0.045 · heavy 0.120/0.320/0.100 · critical 0.170/0.550/0.155
+# light 0.080/0.180/0.045 · heavy 0.140/0.320/0.120 · critical 0.200/0.550/0.155
 BADW=0
 while IFS= read -r line; do
   [ -z "$line" ] && continue
@@ -100,8 +100,8 @@ while IFS= read -r line; do
   kk=$(sed -nE 's/.*kick=([0-9.]+).*/\1/p' <<<"$line")
   case "$w" in
     light)    e_hs=0.080; e_kb=0.180; e_kk=0.045 ;;
-    heavy)    e_hs=0.120; e_kb=0.320; e_kk=0.100 ;;
-    critical) e_hs=0.170; e_kb=0.550; e_kk=0.155 ;;
+    heavy)    e_hs=0.140; e_kb=0.320; e_kk=0.120 ;;
+    critical) e_hs=0.200; e_kb=0.550; e_kk=0.155 ;;
     *) echo "  => FAIL [WEIGHT] unknown weight label '$w'"; BADW=1; continue ;;
   esac
   if ! awk -v a="$hs" -v b="$e_hs" -v c="$kb" -v d="$e_kb" -v e="$kk" -v f="$e_kk" \
