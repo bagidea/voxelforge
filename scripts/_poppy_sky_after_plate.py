@@ -24,11 +24,25 @@ only the dome's vertex colours, so terrain must come back near-identical; if
 that number is large the capture moved and no sky comparison below means
 anything.
 
-And one refusal, learned the hard way: if the AFTER frame is byte-identical to
-the BEFORE one, the shot has NOT been re-taken with the fixed binary and this
-script writes nothing. A plate headed "SKY AFTER THE FIX" whose after column is
-the before frame reads as "the fix moved nothing" — a wrong result is worse
-than a missing one, so a dry-run must not be able to leave one on disk.
+THREE refusals, each learned the hard way, each blocking the write:
+
+  1. AFTER byte-identical to BEFORE — the shot was never re-taken. A plate
+     headed "SKY AFTER THE FIX" whose after column is the before frame reads as
+     "the fix moved nothing", and a wrong result is worse than a missing one.
+  2. Angle guard >= `DRIFT_MAX`. The note above already says a large guard means
+     "no sky comparison below means anything"; it now stops the write instead of
+     colouring a caption red. `POPPY_SKY_SET=proof` fired at 28.60 / 13.93 and
+     wrote the sheet anyway.
+  3. Mask purity below `PURITY_MIN`, checked against the renderer via
+     `VOXELFORGE_LOOK_SKYPROBE=1`. This is the one that mattered: on the frames
+     both sets ship, `sky_mask` was selecting 88-100% interior masonry, and the
+     famous "88% still pinned at R>=250" was those walls, not a sky the fix
+     failed to reach. Measured on the dome pixels alone the same pair goes
+     100% -> 0.0% pinned and 32.99% -> 0.000% pure white.
+
+Both new refusals are shown to be reachable — not merely loud — by
+`scripts/_flamingo_sky_gate_control.py`, which feeds `main()` a synthetic
+100%-pure probe and gets a written plate, then a 50% one and gets exit 2.
 
 Two pairs can be plated, because the first one turned out not to isolate the fix:
 
@@ -63,6 +77,8 @@ if SET == "proof":
     # comparison anyone can re-run.
     BEFORE_OF = {n: f"_poppy_sky_before_{n}" for n in
                  ("playable-walk-after.png", "edhari-load.png")}
+    PROBE_OF = {n: f"_poppy_sky_probe_{n}" for n in
+                ("playable-walk-after.png", "edhari-load.png")}
     FRAMES = [
         ("playable-walk-after.png", (620, 60, 820, 190)),
         ("edhari-load.png", (280, 46, 440, 110)),
@@ -73,14 +89,45 @@ if SET == "proof":
 else:
     OUT = AFTER_DIR / "_poppy_sky_ab_2026-08-14.png"
     BEFORE_OF = {"_poppy_sky_ab_fixed.png": "_poppy_sky_ab_prefix.png"}
+    PROBE_OF = {"_poppy_sky_ab_fixed.png": "_poppy_sky_ab_probe.png"}
     FRAMES = [("_poppy_sky_ab_fixed.png", (280, 46, 440, 110))]
     TITLE = ("SKY AFTER THE FIX -- ONE binary, one map, one camera: the dome put "
              "back at its pre-fix radiance via VOXELFORGE_LOOK_SKYGAIN=3632.16 "
              "(= 2.4 x 1513.4)")
 
+# --- the three things that make a number on this plate meaningless -----------
+# Each is a REFUSAL, not a warning. The plate is headed "SKY AFTER THE FIX"; a
+# sheet that carries that title while one of these is true is worse than no
+# sheet, and the byte-identical case already taught us that once.
+#
+# 1. DRIFT_MAX — the angle guard. Its own note says "if that number is large the
+#    capture moved and no sky comparison below means anything", so it has to be
+#    able to stop the write, not just colour a caption red.
+DRIFT_MAX = 3.0
+# 2/3. MASK PURITY. `sky_mask` is `R>=250 & B>=170` in the top 45% of frame, and
+#    that predicate cannot tell a dome from a sunlit sandstone wall. Every
+#    `prove_playable.sh` frame stands INSIDE a house in Edhari (spawn (32.5,
+#    2.6, 32.5), campfire at (32.5, 1.0, 29.5)), so most of what it selects is
+#    masonry. Settle it against the renderer instead of against a colour range:
+#    `VOXELFORGE_LOOK_SKYPROBE=1` (look.rs:1988) swaps the dome material for
+#    `base_color: BLACK, unlit: true` — and it is the BLACK doing the work, not
+#    the `emissive` beside it, because an unlit fragment writes base_color
+#    verbatim (`pbr.wgsl:80-84`, the bug 5eba1e8 fixed). So every dome pixel on
+#    screen goes near-black and nothing else moves at all. A masked pixel that
+#    does not react is not sky.
+#
+#    Do NOT reach for `VOXELFORGE_LOOK_SKYGAIN` here: `haze_color()` folds
+#    `sky_gain` in and is also the geometry fog colour, so it moves the world.
+DOME_RESPONSE_MIN = 60.0   # levels a real dome pixel swings when forced black
+PURITY_MIN = 0.90          # ...and this much of the published mask must do it
+
 
 def before_path(name: str) -> Path:
     return AFTER_DIR / BEFORE_OF[name]
+
+
+def probe_path(name: str) -> Path:
+    return AFTER_DIR / PROBE_OF[name]
 
 BG = (18, 18, 22)
 FG = (232, 232, 238)
@@ -149,6 +196,7 @@ def main() -> int:
     PW, PH = 420, 236
     PAD, HDR = 14, 30
     rows = []
+    refusals = []
 
     for name, (x0, y0, x1, y1) in FRAMES:
         b_src = Image.open(before_path(name)).convert("RGB")
@@ -159,9 +207,9 @@ def main() -> int:
         b = np.asarray(b_src).astype(np.int16)
         a = np.asarray(a_src).astype(np.int16)
         if np.array_equal(b, a):
-            print(f"REFUSE {name}: AFTER is byte-identical to BEFORE -- this frame "
-                  f"has not been re-shot with the fixed binary. Nothing written.")
-            return 2
+            refusals.append(f"{name}: AFTER is byte-identical to BEFORE — this "
+                            f"frame has not been re-shot with the fixed binary")
+            continue
 
         m = sky_mask(b)                      # frozen on the BEFORE frame
         guard = np.abs(b - a).mean(axis=2)   # angle guard, off-sky only
@@ -174,6 +222,35 @@ def main() -> int:
 
         print(f"=== {name}  ({m.sum()} sky px, frozen from BEFORE) ===")
         print(f"  angle guard: mean |before-after| over non-sky = {cam_drift:.2f} levels")
+        if cam_drift >= DRIFT_MAX:
+            refusals.append(
+                f"{name}: angle guard {cam_drift:.2f} >= {DRIFT_MAX:.1f} levels — the "
+                f"two frames are not the same shot, so no sky number below is a "
+                f"before/after of the dome")
+
+        # Mask purity, against the renderer rather than against a colour range.
+        p_path = probe_path(name)
+        if not p_path.exists():
+            refusals.append(
+                f"{name}: no dome probe at {p_path.name}. Re-shoot this frame with "
+                f"VOXELFORGE_LOOK_SKYPROBE=1 and everything else identical, so the "
+                f"mask can be checked against the dome instead of assumed")
+        else:
+            p = np.asarray(Image.open(p_path).convert("RGB")).astype(np.int16)
+            if p.shape != a.shape:
+                refusals.append(f"{name}: probe frame is {p.shape}, frame is {a.shape}")
+            else:
+                dome = np.abs(a - p).mean(axis=2) > DOME_RESPONSE_MIN
+                purity = float((m & dome).sum()) / max(int(m.sum()), 1)
+                print(f"  mask purity: {int((m & dome).sum())} of {int(m.sum())} masked px "
+                      f"go dark when the dome does = {100 * purity:.1f}% sky, "
+                      f"{100 * (1 - purity):.1f}% geometry")
+                if purity < PURITY_MIN:
+                    refusals.append(
+                        f"{name}: only {100 * purity:.1f}% of the mask is dome "
+                        f"(need {100 * PURITY_MIN:.0f}%) — the rest is lit masonry that "
+                        f"cannot unpin no matter what the sky does, and it drags every "
+                        f"percentage on this plate toward 'unchanged'")
         # NB: on the BEFORE side `R>=250` is 100% *by construction* — it is the
         # mask predicate. The number that carries information is the AFTER one:
         # of the pixels that were pinned at the top of the range, how many still
@@ -200,6 +277,15 @@ def main() -> int:
             ((c - lo) / np.maximum(hi - lo, 1e-6) * 255).clip(0, 255).astype(np.uint8)),
             PW, PH)
         rows.append((name, cam_drift, b_st, a_st, b_prof, a_prof, [p1, p2, p3, p4]))
+
+    if refusals:
+        print("REFUSED — nothing written. This plate would have carried "
+              f"'{TITLE.split(' -- ')[0]}' over numbers that do not mean it:")
+        for r in refusals:
+            print(f"  * {r}")
+        print("Fix the capture, not the threshold: every one of these says the "
+              "pixels being compared are not a before/after of the same sky.")
+        return 2
 
     if not rows:
         print("nothing measured")

@@ -63,6 +63,14 @@ shoot "$OUT/_poppy_sky_ab_prefix.png" ab-prefix \
       VOXELFORGE_LOOK_SKYGAIN="$PREFIX_GAIN" || fails=$((fails + 1))
 # B — the dome as it ships now (sky_gain default 2.4, exp_comp 1.0).
 shoot "$OUT/_poppy_sky_ab_fixed.png" ab-fixed || fails=$((fails + 1))
+# C — B again with the dome forced to `base_color: BLACK` (look.rs:1988). Not a
+# beauty shot: it is the only way to find out WHICH pixels in B are the dome.
+# `sky_mask` is a colour range (`R>=250 & B>=170`) and this camera stands inside
+# a house, so it also selects sunlit sandstone — 88.4% of it, measured. The
+# plate refuses to write without this frame, because without it the "% still
+# pinned at R>=250" is a statement about masonry.
+shoot "$OUT/_poppy_sky_ab_probe.png" ab-probe \
+      VOXELFORGE_LOOK_SKYPROBE=1 || fails=$((fails + 1))
 
 echo
 [ "$fails" -eq 0 ] && echo "SKY_AB: both frames captured" || echo "SKY_AB: FAIL — $fails shot(s) bad"

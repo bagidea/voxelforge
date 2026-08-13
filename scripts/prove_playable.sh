@@ -38,6 +38,21 @@ OUT=docs/assets
 LOGS=_poppy_proof
 mkdir -p "$OUT" "$LOGS"
 
+# WHICH EXE WROTE THESE PNGs. The default above is the DEBUG target, and nothing
+# in this repo rebuilds it — on 2026-08-14 it was three days stale (01:05 on
+# 08-11) while the fix under test had landed at 05:53 and the release exe was
+# built at 06:15. Whoever reads a frame later has no way to tell which one shot
+# it, and "did the fix land in this picture" is exactly the question these
+# frames get asked. So stamp the binary's identity into stdout and every log,
+# and say so out loud when it predates the source it is supposed to contain.
+BIN_STAMP="$(ls -l --time-style=+%Y-%m-%d\ %H:%M:%S "$BIN" 2>/dev/null | awk '{print $5" bytes  "$6" "$7}')"
+echo "BIN $BIN  $BIN_STAMP"
+NEWEST_SRC=$(ls -t client/src/*.rs 2>/dev/null | head -1)
+if [ -n "$NEWEST_SRC" ] && [ "$NEWEST_SRC" -nt "$BIN" ]; then
+  echo "  ! STALE: $NEWEST_SRC is newer than $BIN — these shots do NOT contain it."
+  echo "  ! Re-run as: BIN=./target/release/voxelforge.exe bash scripts/prove_playable.sh"
+fi
+
 # The first three shots must exercise the IMPLICIT play_map() path, so make sure
 # an inherited VOXELFORGE_MAP_LOAD from the caller's shell can't stand in for it
 # and quietly turn shot 4 into a duplicate of shots 1-3.
@@ -49,7 +64,8 @@ shot() { # <png> <extra-arg...>
   local png="$1"; shift
   local log="$LOGS/$(basename "$png").log"
   echo "=== $png  ($*) ==="
-  VOXELFORGE_SHOT="$png" "$BIN" "$@" >"$log" 2>&1
+  echo "BIN $BIN  $BIN_STAMP" >"$log"
+  VOXELFORGE_SHOT="$png" "$BIN" "$@" >>"$log" 2>&1
   local rc=$?
   grep -E 'MAP_LOAD|MAP_APPLY|SPAWN_GROUND|SCENE_READY|PLAY_LOOK|PLAY_WALK|SHOT saved' "$log" || true
 
