@@ -71,27 +71,14 @@ pub fn block_id_from_name(name: &str) -> Option<BlockId> {
 }
 
 /// The name written to a file for a block id (inverse of `block_id_from_name`).
+///
+/// Delegates to `BlockId::name()` rather than keeping a third copy of the table.
+/// Commit 0b02fe9 already caught the editor calling `LAMP` "air" because
+/// `main.rs` carried its own stale match; this module carried a second full copy
+/// that happened to agree, which is the same bug waiting for the next block.
+/// Saving a map and naming it in the HUD now cannot disagree by construction.
 pub fn block_name(b: BlockId) -> &'static str {
-    match b {
-        BlockId::AIR => "air",
-        BlockId::GRASS => "grass",
-        BlockId::DIRT => "dirt",
-        BlockId::STONE => "stone",
-        BlockId::SAND => "sand",
-        BlockId::WOOD => "wood",
-        BlockId::LEAVES => "leaves",
-        BlockId::SNOW => "snow",
-        BlockId::RED_SAND => "red_sand",
-        BlockId::CLAY => "clay",
-        BlockId::GRAVEL => "gravel",
-        BlockId::COBBLESTONE => "cobblestone",
-        BlockId::OBSIDIAN => "obsidian",
-        BlockId::BRICK => "brick",
-        BlockId::MOSS => "moss",
-        BlockId::LIMESTONE => "limestone",
-        BlockId::LAMP => "lamp",
-        _other => "unknown",
-    }
+    b.name()
 }
 
 /// Parse a map from its JSON text. Errors carry the serde message so a malformed
@@ -103,4 +90,66 @@ pub fn parse(text: &str) -> Result<MapFile, String> {
 /// Render a map to pretty JSON (stable key order via the struct field order).
 pub fn to_text(map: &MapFile) -> Result<String, String> {
     serde_json::to_string_pretty(map).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Save → load has to be lossless for every block a player can place. The
+    /// parser is still a hand-written match (it has to be: it maps *file text*,
+    /// including names we may retire, onto ids), so this is what keeps it from
+    /// drifting away from `BlockId::name()` the way `main.rs` did in 0b02fe9.
+    /// A missing arm here does not crash: `main.rs::apply_map` drops those
+    /// voxels into its `skipped` counter, which lumps them together with
+    /// out-of-range and out-of-chunk blocks and never names the block — so the
+    /// village quietly loses a material and the log says only a number.
+    #[test]
+    fn every_placeable_block_round_trips_through_its_name() {
+        for &id in BlockId::ALL_PLACEABLE {
+            let name = block_name(id);
+            assert_ne!(name, "unknown", "block {} has no name to save", id.0);
+            assert_eq!(
+                block_id_from_name(name),
+                Some(id),
+                "{name} saves but does not load back"
+            );
+        }
+        assert_eq!(block_id_from_name("air"), Some(BlockId::AIR));
+    }
+
+    /// Hand-written maps are written by people and agents, not by the editor.
+    #[test]
+    fn names_are_read_case_and_space_insensitively() {
+        assert_eq!(
+            block_id_from_name("  CobbleStone \n"),
+            Some(BlockId::COBBLESTONE)
+        );
+        assert_eq!(block_id_from_name("Lamp"), Some(BlockId::LAMP));
+        assert_eq!(
+            block_id_from_name("glass"),
+            None,
+            "unknown names must not guess"
+        );
+    }
+
+    /// The map the game actually ships (`maps/edhari.json`) must parse with
+    /// every one of its block names known — an unknown name is a hole in the
+    /// village, and the loader reports it rather than filling it in.
+    #[test]
+    fn the_shipped_village_map_uses_only_known_blocks() {
+        let text = include_str!("../../maps/edhari.json");
+        let map = parse(text).expect("edhari.json must parse");
+        assert_eq!(map.version, MAP_VERSION);
+        for b in &map.blocks {
+            assert!(
+                block_id_from_name(&b.block).is_some(),
+                "edhari.json places unknown block {:?} at ({}, {}, {})",
+                b.block,
+                b.x,
+                b.y,
+                b.z
+            );
+        }
+    }
 }

@@ -945,14 +945,16 @@ pub fn build_block_metallic_roughness(id: BlockId) -> Option<Image> {
     ))
 }
 
-/// Base colour for a tile, including [`LAMP`] which the sim palette has no entry
-/// for.
+/// Base colour for a tile — one lookup, straight off the sim palette.
+///
+/// The lamp used to be special-cased here with its own literal, from back when
+/// `BlockId::LAMP` did not exist in sim. It does now, and carrying a second copy
+/// of one block's colour is how a palette drifts: `import.rs::closest_block`
+/// reads `base_color()` while the renderer read this, so the same lamp was two
+/// different oranges depending on who asked. The literal moved into
+/// `block.rs::base_color()` byte-for-byte, so this unification repaints nothing.
 fn tile_base(id: BlockId) -> [u8; 3] {
-    if id == LAMP {
-        [255, 196, 118]
-    } else {
-        id.base_color()
-    }
+    id.base_color()
 }
 
 /// The nearest-neighbour sampler every voxel texture uses.
