@@ -1,0 +1,20 @@
+{
+  "label": "REF elder-maren",
+  "image": "docs/assets/characters/elder-maren-concept.png",
+  "ref": true,
+  "actor": "player",
+  "metrics": {
+    "warmth": 81.19783782958984,
+    "blue": 7.043710708618164,
+    "sat": 91.37959289550781,
+    "micro": 8.782132148742676,
+    "p95": 135.10195922851562,
+    "p05L": 5.589961051940918,
+    "darkRB": 15.413223147392273,
+    "edge": 38.448246002197266,
+    "form": 78.65660095214844,
+    "iso": 18.981935017853736,
+    "mats": 6.0,
+    "pen": null
+  }
+}

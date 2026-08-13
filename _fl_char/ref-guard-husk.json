@@ -1,0 +1,20 @@
+{
+  "label": "REF guard-husk",
+  "image": "docs/assets/characters/guard-husk-concept.png",
+  "ref": true,
+  "actor": "husk",
+  "metrics": {
+    "warmth": 59.95541000366211,
+    "blue": 19.946670532226562,
+    "sat": 74.20991516113281,
+    "micro": 12.901586532592773,
+    "p95": 158.72560119628906,
+    "p05L": 6.681488990783691,
+    "darkRB": 12.909090757369995,
+    "edge": 39.43929672241211,
+    "form": 120.29060363769531,
+    "iso": 41.15854208901337,
+    "mats": 5.0,
+    "pen": null
+  }
+}

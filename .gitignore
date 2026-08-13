@@ -249,6 +249,20 @@ _*.patch
 /_flamingo_ev/*
 !/_flamingo_ev/LADDER.txt
 
+# ── The concept-reference metrics every character grade compares against (2026-08-14) ─
+# `_*/` ignores /_fl_char/, and for almost everything in it that is right: the dir holds
+# an 80 MB vfchar.exe and ~5 MB of plate PNGs. But `ref-*.json` is the CONCEPT side of
+# every character grade — the numbers a render is scored against. Nine tracked files
+# already name `_fl_char/ref-auren-hero.json`, including three VERDICT docs and the
+# A6.2' command block in docs/look-acceptance-rubric.md, so without these a fresh clone
+# cannot run the gate the rubric specifies. Exactly the failure the `_nohud2_guard.py`
+# block above describes, caught before it shipped rather than after.
+# Same allowlist shape: un-ignore the dir, re-ignore its contents, name only the small
+# text files. ~2 KB total — the exe and the PNGs still cannot reach the repo.
+!/_fl_char/
+/_fl_char/*
+!/_fl_char/ref-*.json
+
 # ── One-shot artifacts (2026-08-06 Kevin cleanup) ──
 # One-shot rebuild script with a hardcoded local path.
 /scripts/tests/step2_rebuild_audio.ps1

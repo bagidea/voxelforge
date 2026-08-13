@@ -1,0 +1,44 @@
+[
+ {
+  "frame": "docs/assets/gate3-a6-teal-2026-08-14/gate3-after-boot-nohud2.png",
+  "size": [
+   1280,
+   640
+  ],
+  "raw_px": 0,
+  "px": 0,
+  "dropped_by_L_floor": 0,
+  "components": 0,
+  "top": [],
+  "charmask": "docs\\assets\\gate3-a6-teal-2026-08-14\\gate3-after-boot-nohud2-charmask.png",
+  "hero_px": 33505,
+  "pct_of_hero": 0.0,
+  "px_on_hero": 0
+ },
+ {
+  "frame": "docs/assets/gate3-a6-teal-2026-08-14/gate3-after-walk-nohud2.png",
+  "size": [
+   1280,
+   640
+  ],
+  "raw_px": 0,
+  "px": 0,
+  "dropped_by_L_floor": 0,
+  "components": 0,
+  "top": [],
+  "charmask": null
+ },
+ {
+  "frame": "docs/assets/gate3-a6-teal-2026-08-14/gate3-after-combat-nohud2.png",
+  "size": [
+   1280,
+   640
+  ],
+  "raw_px": 0,
+  "px": 0,
+  "dropped_by_L_floor": 0,
+  "components": 0,
+  "top": [],
+  "charmask": null
+ }
+]
