@@ -2375,7 +2375,10 @@ fn quest_demo(
         let stage5 = journal.quests.get("q5_sigil_that_knew_you")
             .map(|p| p.current_objective).unwrap_or(0);
         if stage5 < 2 {
-            if ptf.translation.x < 35.0 && ptf.translation.z < 3.0 {
+            // Brake only once inside hollow_reach_intro. That region is z 0–2
+            // (`region_contains` tests `pz <= 2`), so braking at `z < 3` stopped
+            // the walk one block short of `o2_enter` and q5 timed out there.
+            if ptf.translation.x < 35.0 && ptf.translation.z < 2.0 {
                 steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
             } else if ptf.translation.x > 36.0 || ptf.translation.z > 8.0 {
                 steer(&mut key_input, cam_yaw, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, WAYPOINT_TOL);
