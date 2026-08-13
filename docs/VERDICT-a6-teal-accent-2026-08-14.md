@@ -142,6 +142,10 @@ cool accent renders at all**.
 >   shadow-noise specks documented above. At the clasp's own screen location the
 >   surface renders at L≈59, and `#4FC9D6` only falls under L 20 below 11.4 % of
 >   full value, so the floor has >10× headroom against a legitimately shaded gem.
+> * **the component must land ON the hero mask** — the scene has its own teal quota
+>   (rubric Pass 9b, ≤15 % of the frame), so a whole-frame scan would pass a teal
+>   block behind the hero. This clause has its own positional control since §7b;
+>   before that it was not falsifiable.
 
 The old `hero vs bg hue split` number keeps being printed — as **ADVISORY**, the same
 treatment `warmth / blue / sat` got on 2026-08-09 for the same reason (no threshold
@@ -274,7 +278,7 @@ did not write:
 | reading | result |
 |---|---|
 | `_flamingo_a62_accent_presence.py --gate` | **0 px, 3/3 frames** → `A6.2 ACCENT GATE: FAIL`, exit 1 |
-| any teal on the hero at all (`--hero_crop`, loose: sat ≥ 0.15, L ≥ 12, hue ±20°) | **0 px** inside a 33,505-px hero mask |
+| any teal on the hero at all (`--hero_crop`, loose: sat ≥ 0.15, L ≥ 12, hue ±20°) | **0 px** inside the hero mask (33,505 px as recovered; **33,433 px** as the gate now scopes it — see §7b) |
 | `grade_character.py` **C11 material clusters** | **5.00** vs concept 6.00 — the corroborator §5 *pre-registered* ("C11 going 5 → 6 confirms the gem is on screen") **has not moved** |
 
 **The 0 is the art, not the instrument — re-proven on this plate class.** A control
@@ -285,16 +289,49 @@ re-planted at the 08-11 projection site mapped through the hero bbox
 here (**8×8**, from the hero-mask area ratio 33,505/119,170 = 0.281 → linear 0.53 →
 15×17 becomes 8×9 ≈ 72 px):
 
-| rung | planted | recovered | bbox | centre | L | verdict |
-|---|---|---|---|---|---|---|
-| unplanted | — | 0 | — | — | — | clean baseline |
-| full value | 64 | **64** | 8×8 | (667,379) | 176.0 | RECOVERED |
-| 45 % value | 64 | **64** | 8×8 | (667,379) | 79.0 | RECOVERED |
+| rung | planted | recovered | bbox | centre | L | gate | verdict |
+|---|---|---|---|---|---|---|---|
+| unplanted | — | 0 | — | — | — | FAIL | clean baseline |
+| full value | 64 | **64** | 8×8 | (667,379) | 176.0 | **PASS** | RECOVERED |
+| 45 % value | 64 | **64** | 8×8 | (667,379) | 79.0 | **PASS** | RECOVERED |
+| off-hero (60,60) | 64 | **64** | 8×8 | (59,59) | 176.0 | **FAIL** | seen whole-frame, 0 px on the hero body |
 
 The gem would land at **2× the read floor** at this framing, so the 0 px is not a
 resolution artefact. The gate also now returns **PASS** on those planted plates
 (exit 0) — a gate that has only ever returned FAIL has not been shown to
 discriminate, so this rung is required, not decorative.
+
+### 7b. Correction (same day, after review) — the hero-mask clause had no control
+
+The table above originally had **three** rungs, and the last one is the reason this
+section needed re-writing. The rubric declares "the blob must be ON THE HERO MASK"
+load-bearing, but `hero_mask()` recovered the mask as `|frame − charmask| > 20`, and
+`grade_character.py` stores the mask as a **tinted overlay of the frame** — so any
+pixel painted into the frame became "hero" by construction. Measured: planting the
+same 8×8 gem at **(60,60) — the frame's top-left corner, while the character's own
+bbox is x528-750, y258-566** — grew the recovered mask by exactly **+64 px (33,505 → 33,569)** and the
+gate returned **PASS, exit 0**. The clause could not fail. "Proven in both
+directions" was true of the hue/sat/L/minor-axis chain and **not** of the clause the
+rubric itself called load-bearing — which is rubric rule 7 applied to everything
+except the newest line in it.
+
+Fixed in `_flamingo_a62_accent_presence.py`: the hero is one body, so the mask keeps
+the **largest connected component plus whatever its silhouette encloses** and drops
+free-floating islands. On the boot plate that is **33,505 → 33,433 px** (4 islands,
+72 px). The (60,60) plant now moves the mask by **0 px** and the gate returns
+**FAIL, exit 1**, while the on-hero rungs still PASS. The off-hero rung is wired into
+`_flamingo_a62_synth_control.py` permanently, so it re-runs with every plate class.
+
+Two related gaps closed at the same time, both found by running the rubric's own
+commands rather than re-reading them:
+
+* the control script wrote its plates into `_fl_a62_control/` **without a charmask**,
+  so the rubric's positive-control command returned `UNRELIABLE, exit 1` as written —
+  the PASS 2/2 claim needed two undocumented manual steps (copy a charmask in, rename
+  `synth-45-nohud2.png`). The script now copies the source charmask beside every
+  planted plate and names them `synth-{full,45value,offhero}-nohud2.png`.
+* `hero_px` in the gate's own output changes with this fix (**33,433**, not 33,505);
+  every number in this section is the post-fix reading.
 
 **What this changes about the verdict:** nothing in §1–§3 — the hue-split retirement
 stands on its own control run and is now landed in the rubric. What it changes is

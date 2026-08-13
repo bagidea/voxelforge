@@ -35,6 +35,13 @@ writes and counts only components ON the hero; with no mask it reports
 UNRELIABLE rather than PASS (same rule the rubric already applies to
 `grade_hero.py`). Informational runs (no `--gate`) stay whole-frame.
 
+That clause needs its own two-sided control, and the first version of it did not
+have one: the mask is recovered as frame-minus-overlay, so anything painted into
+the frame joined the mask by definition and a gem planted in a far frame corner
+still PASSed. `hero_mask()` now keeps only the hero BODY (largest component + what its
+silhouette encloses), and `_flamingo_a62_synth_control.py` plants a third rung
+off-hero that must FAIL. Do not weaken either without re-running that rung.
+
 Usage:
     python scripts/_flamingo_a62_accent_presence.py FRAME [FRAME ...]
                         [--charmask-suffix -charmask.png] [--json OUT.json]
@@ -73,15 +80,42 @@ def load(path):
 
 
 def hero_mask(frame, suffix):
-    """The character mask grade_character.py already wrote next to the frame."""
+    """The character mask grade_character.py already wrote next to the frame.
+
+    `grade_character.py` stores the mask as a tinted OVERLAY of the frame, so the
+    mask is recovered as "where the overlay differs from the frame". That recovery
+    is frame-relative, and on its own it makes the "must be on the hero" clause
+    unfalsifiable: ANY pixel that differs from the overlay — including one painted
+    into the frame by an instrument control, or a scenery block the mask never
+    covered — is labelled hero by construction. Proof from the 08-14 plate: an 8x8
+    gem planted at (60,60) — the frame's top-left corner, nowhere near the
+    character's own bbox (x528-750, y258-566) — grew the recovered mask by exactly
+    +64 px (33,505 -> 33,569) and the gate PASSed on it.
+
+    So the recovered diff is not the mask; it is the mask PLUS islands. The hero is
+    one body: keep the largest connected component and everything enclosed by its
+    silhouette (interior holes where the tint diff fell under the threshold), and
+    drop every free-floating island. On the 08-14 boot plate that is 33,505 ->
+    33,433 px (4 islands, 72 px dropped), and the (60,60) plant is now excluded:
+    the mask does not move at all and the gate FAILs. Returns (mask, path, stats).
+    """
     cm = Path(str(Path(frame).with_suffix("")) + suffix)
     if not cm.exists():
-        return None, None
+        return None, None, None
     a = np.asarray(Image.open(frame).convert("RGB"), dtype=np.int16)
     b = np.asarray(Image.open(cm).convert("RGB"), dtype=np.int16)
     if a.shape != b.shape:
-        return None, None
-    return (np.abs(a - b).sum(axis=2) > 20), str(cm)
+        return None, None, None
+    raw = np.abs(a - b).sum(axis=2) > 20
+    lab, n = ndimage.label(raw)
+    if not n:
+        return raw, str(cm), dict(raw_px=0, body_px=0, islands_dropped_px=0, islands=0)
+    sizes = ndimage.sum(raw, lab, range(1, n + 1))
+    body = ndimage.binary_fill_holes(lab == (int(np.argmax(sizes)) + 1))
+    kept = raw & body
+    return kept, str(cm), dict(raw_px=int(raw.sum()), body_px=int(kept.sum()),
+                               islands_dropped_px=int(raw.sum() - kept.sum()),
+                               islands=int(n - 1))
 
 
 def components_of(binary, rgb, top_n=5):
@@ -109,12 +143,13 @@ def measure(frame, suffix):
 
     n, comps = components_of(kept, rgb)
 
-    mask, cmpath = hero_mask(frame, suffix)
+    mask, cmpath, mstats = hero_mask(frame, suffix)
     out = dict(frame=str(frame), size=list(rgb.shape[:2][::-1]),
                raw_px=int(raw.sum()), px=int(kept.sum()),
                dropped_by_L_floor=int(raw.sum() - kept.sum()),
                components=n, top=comps, charmask=cmpath)
     if mask is not None:
+        out["hero_mask"] = mstats
         out["hero_px"] = int(mask.sum())
         out["pct_of_hero"] = round(100.0 * float((kept & mask).sum()) / max(1, mask.sum()), 4)
         out["px_on_hero"] = int((kept & mask).sum())
@@ -133,6 +168,9 @@ def verdict_of(r):
                               "(rubric Pass 9b budgets teal blocks), so it cannot PASS")
     best = max((c["minor"] for c in r["hero_components"]), default=0)
     if not r["hero_components"]:
+        if r["px"]:
+            return "FAIL", (f"{r['px']} accent px in the frame but 0 on the hero body — "
+                            "this is scenery/plant teal, not the character's accent")
         return "FAIL", "0 accent px on the hero mask — the accent is not rendering"
     if best < MIN_AXIS_PX:
         return "FAIL", (f"largest accent blob on the hero has minor axis {best} px "
@@ -166,6 +204,11 @@ def main():
         if "pct_of_hero" in r:
             print(f"{'':44s} hero mask {r['hero_px']:,} px -> accent is "
                   f"{r['pct_of_hero']:.4f}% of the character")
+            ms = r["hero_mask"]
+            if ms["islands_dropped_px"]:
+                print(f"{'':44s} (mask recovered {ms['raw_px']:,} px; dropped "
+                      f"{ms['islands_dropped_px']} px in {ms['islands']} island(s) not "
+                      f"enclosed by the hero body — see hero_mask() docstring)")
         for c in r["top"][:3]:
             reads = "reads" if c["minor"] >= MIN_AXIS_PX else f"TOO THIN (<{MIN_AXIS_PX:.0f} px)"
             print(f"{'':44s} blob {c['px']:5d} px  {c['w']}x{c['h']} at "
