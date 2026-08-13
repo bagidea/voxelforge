@@ -155,15 +155,22 @@ python scripts/_flamingo_a62_accent_presence.py <frame>-nohud2.png --gate
 
 ```bash
 python scripts/_flamingo_a62_synth_control.py \
-  docs/assets/gate3-a6-teal-2026-08-14/gate3-after-boot-nohud2.png --x 668 --y 380 --size 8
+  docs/assets/gate3-a6-teal-2026-08-14/gate3-after-boot-nohud2.png
 # ผลลัพธ์เขียนลง _fl_a62_control/synth-{full,45value,offhero}-nohud2.png (+ -charmask.png ของแต่ละใบ)
 ```
+
+> **ไม่ต้องใส่พิกัด/ขนาดเอง** — สคริปต์อ่าน hero bbox ของเพลตที่ส่งเข้าไปแล้ว map ให้เอง:
+> จุดแปะ = สัดส่วนเดียวกับไซต์ (1337,842) บนเพลต 2560×1360 ของ 08-11 (round-trip: ส่งเพลต 08-11
+> กลับเข้าไปได้ (1337,842) ขนาด 16 เป๊ะ) · เพลต 1280×640 ได้ **(668,380) ขนาด 8** ซึ่งคือเลขชุดเดิม
+> ที่เคยต้องพิมพ์มือ · rung `offhero` ไปมุมเฟรมที่ไกลจากฮีโร่ที่สุด. ใส่ `--x/--y/--size/--off-x/--off-y`
+> ได้อยู่ ถ้าพิกัดที่ใส่ไม่ตกบนลำตัวฮีโร่ (หรือชิดขอบ silhouette จนแพตช์ล้น) สคริปต์บอกตรงๆ แล้ว
+> exit 1 — ไม่ปล่อยให้ได้ 0 px ที่อ่านเหมือนงานอาร์ตหาย.
 
 | control | ต้องได้อะไร | ผลล่าสุด (2026-08-14 · plate 1280×640) |
 |---|---|---|
 | **negative** | เฟรมก่อนแก้ต้องอ่านได้ **0 px** | 0 px **3/3** ใบ · ยืนข้าม 2 shoot 2 binary |
 | **instrument (positive)** | แปะ gem สังเคราะห์ที่พิกัดที่ projection ทำนายไว้ ต้องอ่านคืน **ครบเป๊ะ ทั้งค่าเต็มและที่ 45% value** (gem ในร่มต้องไม่ถูก floor กิน) | rung `full` / `45value` → **64/64 px ทั้งสองรุ่น**, bbox 8×8 ที่ (667,379), L 176.0 / 79.0 → **PASS** |
-| **positional (ของ clause hero mask)** | gem ดวงเดียวกันที่ **ไม่ได้อยู่บนตัวละคร** ต้องถูกสแกนเห็น (64 px whole-frame) แต่ด่านต้อง **FAIL** | rung `offhero` ที่ (60,60) → เห็น 64 px, บน hero body **0 px** → **FAIL** · hero mask ไม่ขยับ (33,433 เท่าเดิม) |
+| **positional (ของ clause hero mask)** | gem ดวงเดียวกันที่ **ไม่ได้อยู่บนตัวละคร** ต้องถูกสแกนเห็น (64 px whole-frame) แต่ด่านต้อง **FAIL** | rung `offhero` ที่ (8,8) — มุมที่ไกลจากฮีโร่ที่สุดของเพลตนี้ → เห็น 64 px, บน hero body **0 px** → **FAIL** · hero mask ไม่ขยับ (33,433 เท่าเดิม) |
 | **ด่านต้องเคยคืน PASS จริง** | ด่านที่ยังไม่เคย PASS อะไรเลย = ยังพิสูจน์ไม่ได้ว่ามันไม่ได้ FAIL ทุกอย่าง | `python scripts/_flamingo_a62_accent_presence.py _fl_a62_control/synth-full-nohud2.png _fl_a62_control/synth-45value-nohud2.png --gate` → **PASS 2/2 · exit 0** (คู่กับ `synth-offhero-nohud2.png` → **FAIL · exit 1**) |
 | **read-floor headroom** | gem ที่เรนเดอร์ได้ต้องโตกว่าเส้น 4 px พอสมควรที่ framing นั้น | hero body 33,433 px (mask ดิบ 33,505 − 72 px เกาะลอย · เทียบ 119,170 ที่ 2560×1360) ⇒ linear 0.53 ⇒ gem 15×17 เหลือ **8×9 px (~72 px)** = **2× ของเส้น** ⇒ 0 ที่อ่านได้ไม่ใช่ผลของความละเอียด |
 
@@ -174,6 +181,7 @@ python scripts/_flamingo_a62_synth_control.py \
 > ⚠️ **เปลี่ยน plate class = รัน control ใหม่.** `MIN_AXIS_PX` มีหน่วยเป็นพิกเซล ⇒ มันผูกกับ framing.
 > control ที่ผ่านบนเพลต 2560×1360 **ไม่ยกมาใช้กับเพลต 1280×640 โดยอัตโนมัติ** — พิกัดที่แปะและขนาด
 > ที่แปะต้อง map ตาม hero bbox ก่อน (นี่คือเหตุผลที่ตารางข้างบนระบุความละเอียดกำกับทุกตัวเลข).
+> การ map นั้น**สคริปต์ทำให้แล้ว** (ตั้งแต่ 2026-08-14) แต่ตัวเลขในตารางยังต้องรันใหม่ต่อ plate class อยู่ดี.
 
 ---
 

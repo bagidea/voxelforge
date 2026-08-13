@@ -15,6 +15,23 @@ the clasp's torso-local point through `grade_character.py`'s own camera math, an
 then cropped at 5x to find flat, featureless cloak colour. Planting there is what
 makes this a control on the 08-11 finding rather than a generic self-test.
 
+That site is kept, but it is NOT stored as a pixel pair any more. A pixel pair is
+bound to one plate size: run this script bare on the current 1280x640 plate class
+and (1337, 842) lands outside the frame's hero entirely, the on-hero rungs recover
+0 px, and the whole control reports FAIL — loud and correct, but for a reason that
+has nothing to do with the render. So the site is stored as the fraction it occupies
+of the hero's own bbox (`PRED_FX/PRED_FY`, measured from that same 08-11 plate:
+bbox x1057-1501 y598-1213) and re-projected onto whatever plate is handed in.
+Round-trip proof: on the 08-11 plate the fraction resolves back to (1337, 842)
+exactly; on the 1280x640 08-14 plate it resolves to (668, 380), 39 px clear of the
+silhouette edge. The patch size scales with the plate the same way (frame_w/160 ->
+16 px at 2560, 8 px at 1280), and the off-hero rung is placed in whichever frame
+corner is furthest from the hero, not at a fixed (60, 60).
+
+A hand-passed `--x/--y` is still honoured, and is checked against the hero body
+before anything is planted: landing off the hero says so in one line instead of
+silently producing a 0-px "FAIL" that reads like a render defect.
+
 Three rungs, because a lit gem is not a flat swatch and because "on the hero" is
 a load-bearing clause that has to be falsifiable:
   * full value  #4FC9D6  — the nominal accent, on the hero. Gate must PASS.
@@ -46,6 +63,7 @@ read floor, AND every rung's gate verdict matches what it was planted to prove
 Usage:
     python scripts/_flamingo_a62_synth_control.py FRAME [--x X --y Y] [--size N]
                                                   [--off-x X --off-y Y]
+    (bare is the intended form — every default is derived from FRAME's own hero mask)
 """
 import argparse
 import shutil
@@ -54,18 +72,94 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _flamingo_a62_accent_presence import (GEM_SRGB, L_MIN, MIN_AXIS_PX, measure,
-                                           verdict_of)
+from _flamingo_a62_accent_presence import (GEM_SRGB, L_MIN, MIN_AXIS_PX, hero_mask,
+                                           measure, verdict_of)
 
-# See module docstring — the 08-11 pixel-projection site, not an arbitrary spot.
-PRED_X, PRED_Y = 1337, 842
+# See module docstring — the 08-11 pixel-projection site (1337, 842), expressed as
+# its share of that plate's hero bbox (x1057-1501, y598-1213) so it survives a
+# change of plate size. NOT an arbitrary spot, and NOT a pixel pair.
+PRED_FX, PRED_FY = 0.629213, 0.396104
+PRED_SITE = "(1337,842) on the 2560x1360 08-11 plate"
+# 16 px at 2560 wide — the size the 08-11 control ran at — scaled per plate.
+SIZE_PER_PX = 1.0 / 160.0
 CHARMASK_SUFFIX = "-charmask.png"
 
 
 def charmask_of(frame):
     return Path(str(Path(frame).with_suffix("")) + CHARMASK_SUFFIX)
+
+
+def bbox_of(mask):
+    ys, xs = np.nonzero(mask)
+    return int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+
+
+def patch_box(x, y, size, shape):
+    """The exact pixels `plant()` will paint — kept in one place so the fit checks
+    below test the patch that actually lands, not an approximation of it."""
+    h, w = shape[:2]
+    half = size // 2
+    return (max(0, x - half), min(w, x - half + size),
+            max(0, y - half), min(h, y - half + size))
+
+
+def fits_on_hero(mask, x, y, size):
+    x0, x1, y0, y1 = patch_box(x, y, size, mask.shape)
+    if (x1 - x0) * (y1 - y0) != size * size:
+        return False           # clipped by the frame edge
+    return bool(mask[y0:y1, x0:x1].all())
+
+
+def default_size(mask):
+    """Scale the gem with the plate, but never below the read floor it must clear."""
+    w = mask.shape[1]
+    return max(int(MIN_AXIS_PX) * 2, int(round(w * SIZE_PER_PX)))
+
+
+def resolve_site(mask, size):
+    """Project the 08-11 torso site onto THIS plate's hero bbox.
+
+    Returns (x, y, note). If the projected point cannot hold the whole patch on the
+    hero (a thin limb, an odd pose), snap to the nearest centre that can rather than
+    planting half a gem into the background — a half-off patch would make the
+    on-hero rungs recover fewer px than planted and the control would fail for a
+    reason that is about geometry, not about the gate.
+    """
+    x0, x1, y0, y1 = bbox_of(mask)
+    bw, bh = x1 - x0 + 1, y1 - y0 + 1
+    ax, ay = int(round(x0 + PRED_FX * bw)), int(round(y0 + PRED_FY * bh))
+    if fits_on_hero(mask, ax, ay, size):
+        return ax, ay, f"projected from {PRED_SITE} onto hero bbox x{x0}-{x1} y{y0}-{y1}"
+    room = ndimage.binary_erosion(mask, structure=np.ones((size + 2, size + 2), bool))
+    cy, cx = np.nonzero(room)
+    if len(cx):
+        for i in np.argsort((cx - ax) ** 2 + (cy - ay) ** 2)[:512]:
+            px, py = int(cx[i]), int(cy[i])
+            if fits_on_hero(mask, px, py, size):
+                d = int(round(float(np.hypot(px - ax, py - ay))))
+                return px, py, (f"projected site ({ax},{ay}) could not hold a "
+                                f"{size}x{size} patch — snapped {d} px to ({px},{py})")
+    return None, None, (f"no {size}x{size} spot on the hero body of this plate "
+                        f"(hero bbox x{x0}-{x1} y{y0}-{y1})")
+
+
+def resolve_offhero(mask, size):
+    """The frame corner furthest from the hero that the patch clears entirely."""
+    h, w = mask.shape[:2]
+    ys, xs = np.nonzero(mask)
+    hx, hy = float(xs.mean()), float(ys.mean())
+    inset = size
+    corners = [(inset, inset), (w - 1 - inset, inset),
+               (inset, h - 1 - inset), (w - 1 - inset, h - 1 - inset)]
+    corners.sort(key=lambda p: -((p[0] - hx) ** 2 + (p[1] - hy) ** 2))
+    for x, y in corners:
+        cx0, cx1, cy0, cy1 = patch_box(x, y, size, mask.shape)
+        if (cx1 - cx0) * (cy1 - cy0) == size * size and not mask[cy0:cy1, cx0:cx1].any():
+            return int(x), int(y)
+    return None, None
 
 
 def plant(src, dst, x, y, size, value):
@@ -94,12 +188,16 @@ def plant(src, dst, x, y, size, value):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("frame")
-    ap.add_argument("--x", type=int, default=PRED_X)
-    ap.add_argument("--y", type=int, default=PRED_Y)
-    ap.add_argument("--size", type=int, default=16)
-    ap.add_argument("--off-x", type=int, default=60,
-                    help="x of the off-hero rung (default: a frame corner)")
-    ap.add_argument("--off-y", type=int, default=60)
+    ap.add_argument("--x", type=int, default=None,
+                    help="override the plant site (default: the 08-11 torso site "
+                         "re-projected onto this plate's own hero bbox)")
+    ap.add_argument("--y", type=int, default=None)
+    ap.add_argument("--size", type=int, default=None,
+                    help="patch size in px (default: scaled from frame width)")
+    ap.add_argument("--off-x", type=int, default=None,
+                    help="x of the off-hero rung (default: the frame corner "
+                         "furthest from the hero)")
+    ap.add_argument("--off-y", type=int, default=None)
     ap.add_argument("--outdir", default="_fl_a62_control")
     args = ap.parse_args()
 
@@ -110,13 +208,74 @@ def main():
               f"nothing in either direction.")
         return 1
 
+    # Every default below is read off THIS plate's hero body, so the control travels
+    # between plate classes instead of silently pointing at last month's resolution.
+    mask, _, _ = hero_mask(args.frame, CHARMASK_SUFFIX)
+    if mask is None or not mask.any():
+        print(f"!! the charmask beside {args.frame} does not recover a hero body "
+              f"(empty, or a different size than the frame) — re-run "
+              f"grade_character.py on this exact frame.")
+        return 1
+    fh, fw = mask.shape[:2]
+    hx0, hx1, hy0, hy1 = bbox_of(mask)
+
+    size = args.size if args.size is not None else default_size(mask)
+    if size < MIN_AXIS_PX:
+        print(f"!! --size {size} is under the scanner's own read floor "
+              f"({MIN_AXIS_PX:.0f} px) — the on-hero rungs would be planted to fail.")
+        return 1
+
+    if (args.x is None) != (args.y is None):
+        print("!! pass --x and --y together, or neither.")
+        return 1
+    if args.x is not None:
+        x, y, site_note = args.x, args.y, "hand-passed --x/--y"
+        if not (0 <= x < fw and 0 <= y < fh) or not fits_on_hero(mask, x, y, size):
+            on = 0 <= x < fw and 0 <= y < fh and bool(mask[y, x])
+            print(f"!! --x/--y ({x},{y}) does not carry a {size}x{size} patch on the "
+                  f"hero body of this plate.\n"
+                  f"   frame {fw}x{fh}, hero bbox x{hx0}-{hx1} y{hy0}-{hy1} — the point "
+                  f"is {'on the hero but too close to the silhouette edge' if on else 'off the hero'}.\n"
+                  f"   Planting there makes the on-hero rungs read short and the control "
+                  f"FAIL for geometry, not for the gate. Pass a point inside the hero, "
+                  f"or drop --x/--y and let the site be derived.")
+            return 1
+    else:
+        x, y, site_note = resolve_site(mask, size)
+        if x is None:
+            print(f"!! {site_note}.\n"
+                  f"   The derived site does not fit this plate class — pass --x/--y "
+                  f"explicitly (a flat spot on the hero's torso).")
+            return 1
+
+    if (args.off_x is None) != (args.off_y is None):
+        print("!! pass --off-x and --off-y together, or neither.")
+        return 1
+    if args.off_x is not None:
+        ox, oy, off_note = args.off_x, args.off_y, "hand-passed --off-x/--off-y"
+        ox0, ox1, oy0, oy1 = patch_box(ox, oy, size, mask.shape)
+        if mask[oy0:oy1, ox0:ox1].any():
+            print(f"!! --off-x/--off-y ({ox},{oy}) overlaps the hero body — that rung "
+                  f"exists to prove the mask clause FAILs an accent that is NOT on the "
+                  f"hero, so it must be planted clear of it. Drop the flags to use the "
+                  f"furthest free corner.")
+            return 1
+    else:
+        ox, oy = resolve_offhero(mask, size)
+        off_note = "furthest frame corner clear of the hero"
+        if ox is None:
+            print("!! no frame corner is clear of the hero on this plate — pass "
+                  "--off-x/--off-y for the off-hero rung.")
+            return 1
+
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
 
-    print(f"instrument control — plant #4FC9D6 at ({args.x},{args.y}) "
-          f"[the 08-11 pixel-projection site] size {args.size}x{args.size}")
-    print(f"source frame: {args.frame}")
+    print(f"instrument control — plant #4FC9D6 at ({x},{y}) size {size}x{size}")
+    print(f"source frame: {args.frame}  ({fw}x{fh}, hero bbox x{hx0}-{hx1} y{hy0}-{hy1})")
     print(f"charmask    : {src_cm}  (copied beside every planted plate)")
+    print(f"on-hero site: {site_note}")
+    print(f"off-hero    : ({ox},{oy}) — {off_note}")
     print("-" * 104)
 
     # rung 0: the untouched frame. Must read 0 — otherwise the plant proves nothing.
@@ -129,14 +288,14 @@ def main():
              else "!! frame already has accent — control void"))
 
     ok = base["px"] == 0
-    rungs = (("full", 1.00, args.x, args.y, "PASS"),
-             ("45value", 0.45, args.x, args.y, "PASS"),
-             ("offhero", 1.00, args.off_x, args.off_y, "FAIL"))
+    rungs = (("full", 1.00, x, y, "PASS"),
+             ("45value", 0.45, x, y, "PASS"),
+             ("offhero", 1.00, ox, oy, "FAIL"))
     for label, value, px, py, want in rungs:
         # NOTE: plant into a *-nohud2.png name so the graders' de-HUD guard and the
         # scanner's charmask lookup behave exactly as they do on a real plate.
         dst = out / f"synth-{label}-nohud2.png"
-        n, rgb, L = plant(args.frame, dst, px, py, args.size, value)
+        n, rgb, L = plant(args.frame, dst, px, py, size, value)
         r = measure(str(dst), CHARMASK_SUFFIX)
         got, why = verdict_of(r)
         top = r["top"][0] if r["top"] else None
