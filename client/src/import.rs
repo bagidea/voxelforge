@@ -437,15 +437,41 @@ mod tests {
         assert!(voxels[1].3.is_opaque(), "voxel 1 should be opaque");
     }
 
+    /// Feeding a palette colour straight back in must return the block it came
+    /// from — over the whole table, read off `base_color()` rather than spelled
+    /// out as hex. The version this replaced hand-wrote six colours, and when
+    /// Monanisa's §6.1 palette landed, five of the six stopped naming the block
+    /// they were paired with: four (grass, dirt, snow, obsidian) kept "passing"
+    /// because the old value was still the nearest one, and the fifth had been
+    /// quietly red ever since — grey `(128,128,138)` resolves to `cobblestone`,
+    /// not `stone`. A literal cannot notice the table moved underneath it.
+    ///
+    /// This is a tight test by construction: `stone` (#8f8776) and
+    /// `cobblestone` (#8c8a78) sit 4.7 apart in sRGB, so nothing weaker than an
+    /// exact round-trip tells them apart at all.
     #[test]
-    fn closest_block_exact_matches() {
-        // Colours that exactly match a BlockId base_color.
-        assert_eq!(closest_block(70, 160, 66), BlockId::GRASS);
-        assert_eq!(closest_block(124, 88, 56), BlockId::DIRT);
-        assert_eq!(closest_block(128, 128, 138), BlockId::STONE);
-        assert_eq!(closest_block(214, 202, 148), BlockId::SAND);
-        assert_eq!(closest_block(240, 245, 250), BlockId::SNOW);
-        assert_eq!(closest_block(20, 18, 28), BlockId::OBSIDIAN);
+    fn closest_block_round_trips_every_palette_colour() {
+        for &id in BlockId::ALL_PLACEABLE {
+            let [r, g, b] = id.base_color();
+            assert_eq!(
+                closest_block(r, g, b),
+                id,
+                "{} does not round-trip its own base_color {:?}",
+                id.name(),
+                [r, g, b]
+            );
+        }
+    }
+
+    /// A colour equal to no palette entry still lands on its nearest one —
+    /// proves the search really is nearest-neighbour, which a plain exact-match
+    /// lookup would also satisfy above.
+    #[test]
+    fn closest_block_snaps_a_near_colour_to_its_neighbour() {
+        let exact = BlockId::OBSIDIAN.base_color();
+        let near = exact.map(|c| c.saturating_add(4));
+        assert_ne!(near, exact, "the nudge degenerated into an exact match");
+        assert_eq!(closest_block(near[0], near[1], near[2]), BlockId::OBSIDIAN);
     }
 
     #[test]

@@ -112,27 +112,26 @@ to `1.0` rather than inverting every surface in the game on a typo.
 ## 5. Verdict on Monanisa's palette pass (`docs/block-palette.md` §5)
 
 Her doc asked the engineering lane to pick one. **Option A is the call. Option B
-is declined.** Both are decided here rather than left open, because the CEO's
-colour note has been sitting without an owner — but "decided" is not "landed",
-and the split is spelled out below so nobody reads this section as a changelog.
+is declined.**
 
-**Option A — taken as the decision, but NOT landed. It is blocked on a lane.**
-The five corrected hex values belong in `sim/src/block.rs::base_color()`, which
-is where `voxel.rs::tile_base()` reads every non-lamp tile colour from. As of
-this commit that file still carries the **old** literals — verified, not
+**Option A — landed.** *(Written as a hand-off request in the original pass; the
+five hex values went in at `a3bb308`, 2026-08-07, and the whole §6.1 table is
+audited at `72408ad`. Updated 2026-08-14 — this section used to say "NOT landed,
+blocked on a lane", which was true when it was written and false from a3bb308
+onward.)* The corrected values live in `sim/src/block.rs::base_color()`, which is
+where `voxel.rs::tile_base()` reads every tile colour from — verified, not
 assumed:
 
-    $ git log -1 --format='%h %ad' --date=short -- sim/src/block.rs
-    cbb0716 2026-07-29                       # untouched since the wasm-lane import
-    $ grep -n 'GRASS\|WOOD\|COBBLESTONE\|MOSS\|LIMESTONE' sim/src/block.rs
-    86:  Self::GRASS       => [70, 160, 66],  # still the pre-Option-A value
-    ...
+    $ git log --format='%h %ad %s' --date=short -- sim/src/block.rs | head -3
+    72408ad 2026-08-14 fix(blocks): one source of truth per block colour + pin the designer palette
+    183f5b3 2026-08-10 feat(play): land the 5 stale code files ...
+    a3bb308 2026-08-07 feat(sim): complete block palette + track Rose lane harness/docs
+    $ git show a3bb308^:sim/src/block.rs | grep 'Self::GRASS       =>'
+                Self::GRASS       => [70, 160, 66],
+    $ grep 'Self::GRASS       =>' sim/src/block.rs
+                Self::GRASS       => [91, 140, 70],     // #5b8c46
 
-`sim/` appears in **no row of `docs/LANES.md`**, and that page's closing rule is
-"anything not listed: ask the Director before the first edit". So this pass does
-not take it. **Hand-off: the Director assigns `sim/src/block.rs` to a lane, and
-that owner applies the table below.** Until then the shipped palette is the old
-one and this section is a request, not a record:
+What moved, kept as the record of the change:
 
 | BlockId | was | now | hex |
 |---|---|---|---|
@@ -141,6 +140,12 @@ one and this section is a request, not a record:
 | `COBBLESTONE` | `[92, 92, 98]` | `[140, 138, 120]` | `#8c8a78` |
 | `MOSS` | `[55, 100, 40]` | `[75, 110, 55]` | `#4b6e37` |
 | `LIMESTONE` | `[200, 190, 160]` | `[222, 204, 168]` | `#decca8` |
+
+All 15 designer-owned hexes now match §6.1 mechanically —
+`scripts/block_palette_audit.py` exits 1 on drift, and four unit tests in
+`sim/src/block.rs` pin the table. `lamp` is the one slot with no designer hex and
+carries a `PROVISIONAL` engineer value; see
+`docs/note-to-monanisa-lamp-albedo-gap-2026-08-14.md`.
 
 The reasoning that sells it is her golden-hour correction, not the sampling:
 `base_color()` is documented as *unshaded* and the engine lights it afterwards,
@@ -165,33 +170,35 @@ catches it, and glass is served by `OBSIDIAN` as an alpha-blended pane
 `block_atlas_v2_bonus_glass_lamp.png` tiles 16–17 no longer block on
 engineering. They stay unloaded for the Option B reason above.
 
-**Files handed back — on disk, still uncommitted, and not this lane's to commit:**
+**Her reference deliverable — tracked, and deliberately unloaded:**
 `assets/textures/block_atlas_v2.png`, `assets/textures/block_atlas_v2_bonus_glass_lamp.png`,
 `assets/textures/block_atlas_v1_procedural_BACKUP.png`, `docs/block-palette.md`
-and `docs/assets/block-palette/*` are Monanisa's reference deliverable. They are
-**not loaded by any code** — grep-verified, and the check is worth repeating
-before anyone "cleans up" an unreferenced PNG:
+and `docs/assets/block-palette/*` all went into git at `644cc61` (2026-08-06).
+They are **not loaded by any code** — grep-verified, and the check is worth
+repeating before anyone "cleans up" an unreferenced PNG:
 
     $ grep -rn 'block_atlas_v2\|block_atlas_v1_procedural' --include=*.rs \
         --include=*.toml --include=*.json client/ sim/
     (no matches)
 
 They are the record of where the five hex values came from; deleting them would
-orphan the audit trail in her §2 table. They sit **untracked** in `git status`
-because this pass is scoped to `voxel.rs` + this file and does not commit another
-lane's assets — whoever owns the palette hand-off commits them alongside the
-`base_color()` change above.
+orphan the audit trail in her §2 table.
 
 ## 6. What this doc does NOT claim
 
 Every statement in §1–§4 was re-checked against `client/src/voxel.rs` by grepping
-the symbol, not by trusting the prose. Two things are deliberately left as open
-items rather than written up as done:
+the symbol, not by trusting the prose. What is still open:
 
-* **The palette hex values are not applied** (§5) — blocked on a lane owner for
-  `sim/src/block.rs`.
-* **The unit tests in `voxel.rs` are authored but were not executed in this
-  pass.** `cargo check --target-dir target-poppy` is green with zero errors; the
+* **The unit tests in `voxel.rs` are authored but have not been executed.**
+  `cargo check --target-dir target-poppy` was green with zero errors; the client
   crate is bin-only, so `cargo test` means linking the full `voxelforge` binary,
-  which is the integration lead's build lock. Read every assertion as *pinned in
-  source*, not as *observed passing*, until an integration pass runs them.
+  which is the integration lead's build lock — and on this machine that test
+  binary dies at DLL init (`0xc0000142`) before running anything. Read every
+  assertion in `voxel.rs` as *pinned in source*, not as *observed passing*, until
+  an integration pass runs them. (`sim/src/block.rs`'s tests do not have this
+  problem — `sim` is Bevy-free and its tests run headless via `rustc --test`.)
+* **The §4 A/B pair is still owed.** `VOXELFORGE_FLAT_MATERIAL=1` is in the
+  binary; no rendered before/after has been shot from it yet.
+
+Closed since the first draft: the §5 palette hand-off (landed a3bb308, audited
+72408ad).

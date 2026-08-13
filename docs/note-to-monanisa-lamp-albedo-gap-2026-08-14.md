@@ -69,12 +69,36 @@ you would rather express it as your `#fff0ce`→`#ffb25a` gradient, tell me the
 midpoint you want and I will fit the falloff to it — but I am not picking that
 number for you, same rule as the rest of the table.
 
-## 3. Not mine, still worth saying
+## 3. One thing to look at — `stone` and `cobblestone` are 4.7 apart
 
-`maps/FORMAT.md` still documents block ids 0–4 only (item 5 of
-`art-order-2026-08-09-composition.md`, Shiba's lane). Ten of the seventeen
-blocks — including every one of your corrected materials — are undocumented for
-whoever hand-writes the next map. That is the cheapest remaining reason a map
-author reaches for `stone` again.
+*(This section replaces a wrong claim I published here earlier: I wrote that
+`maps/FORMAT.md` still documents block ids 0–4 only. It does not — it has carried
+the full `air`(0) → `lamp`(16) table since `0096ed6`, 2026-08-11. I copied the
+line out of `art-order-2026-08-09-composition.md` item 5 without opening the
+file. Corrected 2026-08-14.)*
+
+The real narrow spot in §6.1 is a colour one, and it is yours to rule on. Across
+all 16 placeable slots the two closest entries are:
+
+```
+d= 4.69  stone #8f8776  <->  cobblestone #8c8a78
+d=18.06  leaves         <->  moss
+d=18.14  wood           <->  brick
+d=21.63  sand           <->  limestone
+```
+
+(Euclidean in sRGB.) Everything else in the palette is at least four times
+further apart than that pair. Two consequences:
+
+* `client/src/import.rs::closest_block` maps a MagicaVoxel colour to the nearest
+  `base_color`, so for a grey anywhere near those two it is effectively a coin
+  flip — a `.vox` model authored in stone can import as cobblestone.
+* In a frame at 4.7 apart they read as one material, which is the same failure
+  your §6.1 caught when dirt was nearly wood.
+
+They may be *meant* to be near-identical greys that only the relief in
+`docs/block-materials.md` §3 separates (cobblestone relief 1.00 vs stone 0.55) —
+if so, say the word and I will leave it and note it as intentional. If not, one
+of the two wants nudging and I will land whichever hex you give me.
 
 — Poppy
