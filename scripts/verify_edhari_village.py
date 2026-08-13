@@ -16,6 +16,7 @@ Read-only: does not touch client/src, does not build/run Rust.
 """
 import json
 import os
+import sys
 from collections import deque
 
 MAP_PATH = os.path.join(os.path.dirname(__file__), "..", "maps", "edhari.json")
@@ -813,5 +814,7 @@ check("Builder fresco (52,1,7) reachable from guard_post_east courtyard",
 print()
 if fail:
     print(f"RESULT: FAIL ({len(fail)} check(s) failed)")
+    sys.exit(1)
 else:
     print("RESULT: PASS (all checks green)")
+    sys.exit(0)
