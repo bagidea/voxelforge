@@ -9,6 +9,12 @@ second one turned out to be bigger than the question.
 Nothing in `client/src/look.rs` was touched. Every measurement here comes out of
 env levers the engine already ships.
 
+![mask vs dome](assets/_flamingo_sky_mask_vs_dome_2026-08-14.png)
+
+Magenta is every pixel `sky_mask` publishes as sky; cyan is the subset that
+actually goes dark when the dome is forced black. Top row is the A/B frame
+(2,507 of 21,633), bottom row is `edhari-load` (0 of 18,829).
+
 ## Short version
 
 * The 06:18 frames were shot with `target/release/voxelforge.exe` (06:15), not
