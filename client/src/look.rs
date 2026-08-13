@@ -1858,14 +1858,43 @@ fn build_sky_dome_mesh() -> Mesh {
     // across the upper hemisphere (40 latitude bands from nadir to zenith).
     let mut mesh = Sphere::new(r).mesh().uv(64, 40);
 
-    // EXPOSURE COMPENSATION. The dome is an UNLIT `StandardMaterial`, and Bevy
-    // applies `Exposure` to unlit fragments exactly as to lit ones
-    // (`pbr_functions.wgsl`: `exposure * (direct + indirect) + emissive`). The
-    // flat `ClearColor` it replaces was written UN-exposed — straight into the
-    // HDR target — so to land at the same radiance the dome must be pre-multiplied
-    // by `1 / exposure`. That keeps `sky_gain`'s meaning (and the p95 / bloom
-    // behaviour it was tuned against) byte-identical to the flat sky.
-    let exp_comp = 1.0 / Exposure { ev100: h.ev100 }.exposure();
+    // NO EXPOSURE COMPENSATION — and the note that used to stand here asserting
+    // the opposite is why the sky shipped blown to white.
+    //
+    // It claimed Bevy applies `Exposure` to unlit fragments exactly as to lit
+    // ones, cited `pbr_functions.wgsl`'s `exposure * (direct + indirect) +
+    // emissive`, and pre-multiplied every vertex by `1 / exposure` so that the
+    // multiply would cancel. The multiply never happens. In bevy_pbr 0.19
+    // `pbr.wgsl:80-84` the unlit branch never reaches that line at all:
+    //
+    //     if (pbr_input.material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
+    //         out.color = apply_pbr_lighting(pbr_input);   // <- exposure lives in here
+    //     } else {
+    //         out.color = pbr_input.material.base_color;   // <- the dome takes this
+    //     }
+    //
+    // `view.exposure` is applied only inside `apply_pbr_lighting`
+    // (`pbr_functions.wgsl:863`), so an unlit fragment writes its base colour
+    // into the HDR target verbatim — which is *also* what makes the premise
+    // wrong in the useful direction: unlit behaves exactly like `ClearColor`,
+    // the very thing [`Hour::sky_gain`]'s own note says never passes through
+    // `Exposure`. The two paths were already identical; the compensation was
+    // correcting for a step that was never there, so at `ev100` 10.3 it shipped
+    // the dome at 1/exposure() = 1513x its authored radiance (zenith went
+    // [0.256, 0.765, 1.890] -> [387, 1157, 2859] linear). Everything past the
+    // tonemapper's shoulder lands on the same near-white: measured on the two
+    // 05:35 captures the sky is a flat [252, 226, 191] whose red moves 0.8
+    // levels across 170 rows of elevation — a gradient authored deep-blue to
+    // warm-haze, crushed to one value.
+    //
+    // So: author the vertex colours at exactly the scene-referred radiance the
+    // flat `ClearColor` sky carried, and let the fragment write them through.
+    // `sky_gain` keeps its meaning and the p95 / bloom behaviour it was tuned
+    // against, which is what the old note wanted and did not get.
+    //
+    // Evidence: `scripts/_poppy_sky_exposure_probe.py` (shader quote + both
+    // frames measured).
+    let exp_comp = 1.0;
 
     // ZENITH = the hour's own sky hue at its own gain, exposure-compensated. The
     // top of the dome is therefore the exact colour/brightness the whole flat sky
