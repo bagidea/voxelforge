@@ -149,8 +149,10 @@ so the same read doesn't work twice in a row without the player adapting.
 | `HITSTOP_STAGGER` | 0.150 s | Stagger / critical punish |
 | `HITSTOP_CRITICAL` | 0.200 s | Charged hit or a poise break (riposte rides this row) |
 | `SHAKE_LIGHT` | amp 0.04 / 0.10 s | Screen-shake, light hit |
-| `SHAKE_HEAVY` | amp 0.10 / 0.20 s | Screen-shake, heavy/charged hit |
-| `SHAKE_ENEMY_HIT` | amp 0.15 / 0.25 s | Screen-shake, enemy hits player |
+| `SHAKE_HEAVY` | amp 0.12 / 0.22 s | Screen-shake, heavy/charged hit |
+| `SHAKE_ENEMY_HIT` | amp 0.16 / 0.28 s | Screen-shake, enemy hits player |
+| `SHAKE_PARRY` | amp 0.12 / 0.18 s | Screen-shake, parry lands |
+| `SHAKE_STAGGER` | amp 0.20 / 0.30 s | Screen-shake, stagger / poise break |
 | `KNOCKBACK_LIGHT` / `_HEAVY` / `_CRITICAL` | 0.18 / 0.32 / 0.55 blocks | Push-back distance by impact weight |
 | `KNOCKBACK_TIME` | 0.15 s | Time the knockback plays over |
 | `KICK_LIGHT` / `_HEAVY` / `_CRITICAL` / `_TAKEN` | 0.045 / 0.120 / 0.155 / 0.130 | Directional camera-kick magnitude by weight (`_TAKEN` = player eating a hit) |
