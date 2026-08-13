@@ -45,8 +45,8 @@ use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{
-    CascadeShadowConfigBuilder, DirectionalLightShadowMap, FogVolume, ShadowFilteringMethod,
-    VolumetricFog, VolumetricLight,
+    CascadeShadowConfigBuilder, DirectionalLightShadowMap, FogVolume, NotShadowCaster,
+    ShadowFilteringMethod, VolumetricFog, VolumetricLight,
 };
 use bevy::pbr::{
     ContactShadows, DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion,
@@ -1936,25 +1936,74 @@ fn sky_dome(
         return;
     }
     let mesh = meshes.add(build_sky_dome_mesh());
-    let material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        // Unlit: the dome's colour IS its vertex colour (white base × vertex
-        // colour); no sun/fill shading on the sky.
-        unlit: true,
-        // The dome IS the sky. Distance fog is for geometry; if it applied here
-        // the dome at 640 units (well past `HAZE_FULL`) would fog out to a flat
-        // haze plate and bury the gradient.
-        fog_enabled: false,
-        // Render both faces so the sphere is visible from inside (the camera sits
-        // at its centre; the outward-facing winding would otherwise be culled).
-        cull_mode: None,
-        ..default()
+    // ── TEMP-A1-PROOF (REVERT before shipping) ───────────────────────────────
+    // The A1 dome was proven dead at the fragment level
+    // (docs/_rose_a1_dome_dead_2026-08-11.md): an HDR green-8.0 emissive on the
+    // dome changed nothing — every frame stayed gold, i.e. the dome geometry never
+    // reached the fragment shader. Root cause, fixed two blocks down: the spawn
+    // was missing a `Visibility` component, so Bevy never computed a
+    // `ViewVisibility` for the entity and the render world never extracted it.
+    // Every other mesh entity in this crate spawns with `Visibility::default()`
+    // (the Maren NPC in quest.rs, imported models in import.rs); the dome was the
+    // sole mesh entity without it. The earlier green probe "did nothing" because
+    // those captures came off a contested build lane — the three `_dbg_dome*`
+    // frames were near-identical regardless of which flag was set, the signature
+    // of a binary that never relinked, not of a live material with no effect.
+    //
+    // `VOXELFORGE_LOOK_SKYPROBE=1` swaps the dome material for a nuclear-green
+    // unlit emissive so the falsification is unambiguous: if the dome now renders,
+    // the WHOLE frame goes green; if it stays gold the fix is wrong. The shipped
+    // path (env unset) keeps the real gradient dome. REVERT this block (the env
+    // read + the `if sky_probe` branch) once green is confirmed, leaving only the
+    // `Visibility::default()` + `NotShadowCaster` lines on the spawn below.
+    let sky_probe = std::env::var("VOXELFORGE_LOOK_SKYPROBE")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let material = materials.add(if sky_probe {
+        println!(
+            "LOOK-A1-PROOF: nuclear-green emissive ACTIVE (Visibility+NotShadowCaster on spawn) \
+             — frame MUST go green, or the dome still does not render"
+        );
+        StandardMaterial {
+            base_color: Color::BLACK,
+            emissive: LinearRgba::rgb(0.0, 8.0, 0.0),
+            unlit: true,
+            fog_enabled: false,
+            cull_mode: None,
+            ..default()
+        }
+    } else {
+        StandardMaterial {
+            base_color: Color::WHITE,
+            // Unlit: the dome's colour IS its vertex colour (white base × vertex
+            // colour); no sun/fill shading on the sky.
+            unlit: true,
+            // The dome IS the sky. Distance fog is for geometry; if it applied
+            // here the dome at 640 units (well past `HAZE_FULL`) would fog out to
+            // a flat haze plate and bury the gradient.
+            fog_enabled: false,
+            // Render both faces so the sphere is visible from inside (the camera
+            // sits at its centre; the outward-facing winding would otherwise be
+            // culled).
+            cull_mode: None,
+            ..default()
+        }
     });
     commands.spawn((
         SkyDome,
         Mesh3d(mesh),
         MeshMaterial3d(material),
         Transform::from_translation(cam_tf.translation),
+        // ROOT-CAUSE FIX (A1): without an explicit `Visibility` the dome carried no
+        // `ViewVisibility`, so the render world never extracted it and the sky read
+        // as the flat `ClearColor`. `Visibility::default()` (Inherited) on a root
+        // entity computes visible — exactly how every other mesh entity here is
+        // spawned (the Maren NPC, imported models). See TEMP-A1-PROOF above and
+        // docs/_rose_a1_dome_dead_2026-08-11.md.
+        Visibility::default(),
+        // The dome encloses the whole scene; left as a default shadow caster its
+        // shell would shadow everything inside it. It is the sky — never a caster.
+        NotShadowCaster,
     ));
     println!(
         "LOOK sky-dome spawned r={SKY_DOME_RADIUS} sky_gain={:.2} ev100={:.1}",
