@@ -57,6 +57,37 @@ Usage
 -----
   grade_character.py --cam YAW,PITCH,DIST [--actor player|husk] <frame>-nohud2.png
   grade_character.py --ref docs/assets/characters/auren-hero-concept.png
+
+EXIT CODES
+----------
+  0  every graded axis PASSed (or --ref: the sheet was measured and printed)
+  1  the character WAS measured and at least one axis FAILed  <- a look verdict
+  2  REFUSED / could not measure at all — no verdict was produced
+
+`1` and `2` are not interchangeable and a caller must not collapse them. A `1`
+says the render is wrong; a `2` says this script never got far enough to have an
+opinion (frame still HUDded, no --cam, no --ref-json, file missing, bbox off
+frame, mask too small to carry a statistic). Reading a `2` as a look FAIL invents
+a red verdict out of a plumbing error; reading it as a PASS — which is what the
+pre-2026-08-14 code did by exiting 0 on some of these — silently drops the axis
+from the scorecard. `_flamingo_p2a_isoprobe.py` uses the same 0/1/2 split for the
+same reason.
+
+INVOCATION SITES (checked 2026-08-14, `git grep -n grade_character.py`)
+----------------------------------------------------------------------
+Three scripts actually EXECUTE this file; all three tolerate a non-zero exit, so
+the 0/1/2 split above cannot wedge a chain:
+
+  scripts/_flamingo_a62_chain.sh:45     ... || true
+  scripts/_flamingo_char_shoot.sh:59    `set -uo pipefail`, no -e
+  scripts/_flamingo_char_shoot2.sh:87   `set -uo pipefail`, no -e
+
+Six more scripts IMPORT this file as a module for its mask/camera math and never
+run main(): _flamingo_char_report.py, _flamingo_char_dist_solve.py,
+_flamingo_a62_huesep_control.py, _flamingo_a62_metric_probe.py,
+_flamingo_hue_delta.py, _flamingo_p2a_isoprobe.py. They see `unmeasurable()` as a
+plain SystemExit, which is what it was before this split — the exception TYPE is
+deliberately unchanged so importers keep working; only the code moved 1 -> 2.
 """
 import argparse
 import json
@@ -139,6 +170,23 @@ FRAME_CONTEXT = {
 
 # Look Lab reads this directly from the sidecar; the panel must never derive it.
 GRADER_VERSION = "v2"  # post 2026-08-09 rubric re-derive
+
+# See "EXIT CODES" in the module docstring. 2 exists so "I refuse to measure this"
+# stops sharing a channel with "I measured it and it is bad".
+EXIT_PASS = 0
+EXIT_FAIL = 1
+EXIT_UNMEASURABLE = 2
+
+
+def unmeasurable(msg):
+    """Refuse to produce a verdict, loudly, with the 'no verdict' exit code.
+
+    Raises SystemExit exactly like the `sys.exit("...")` calls this replaced, so
+    the six modules that import this file are unaffected; only the numeric code
+    changes (1 -> 2) and the line gains a greppable prefix.
+    """
+    print(f"UNMEASURABLE: {msg}", file=sys.stderr)
+    sys.exit(EXIT_UNMEASURABLE)
 
 # Match as a distinct token so "after-boot" resolves to boot, not to a stray
 # substring, and "boots" does not read as boot.
@@ -282,7 +330,7 @@ def mask_from_bbox(rgb, bbox, foot_y, key_tol, shadow_guard, pad=0.18):
     Y0 = int(max(0, y0 - bh * pad))
     Y1 = int(min(h, y1 + bh * pad))
     if X1 - X0 < 8 or Y1 - Y0 < 8:
-        raise SystemExit(f"bbox degenerate: {(X0, Y0, X1, Y1)} on a {w}x{h} frame")
+        unmeasurable(f"bbox degenerate: {(X0, Y0, X1, Y1)} on a {w}x{h} frame")
 
     box = np.zeros((h, w), bool)
     box[Y0:Y1, X0:X1] = True
@@ -343,7 +391,7 @@ def mask_from_ref(rgb, grad_thresh=5.0):
 
     lab, n = ndimage.label(smooth)
     if n == 0:
-        raise SystemExit("ref matte: no smooth backdrop found")
+        unmeasurable("ref matte: no smooth backdrop found")
     border = set(lab[0, :]) | set(lab[-1, :]) | set(lab[:, 0]) | set(lab[:, -1])
     border.discard(0)
     bg = np.isin(lab, list(border))
@@ -354,7 +402,7 @@ def mask_from_ref(rgb, grad_thresh=5.0):
     m = ndimage.binary_fill_holes(m)
     lab, n = ndimage.label(m)
     if n == 0:
-        raise SystemExit("ref matte: nothing left after backdrop removal")
+        unmeasurable("ref matte: nothing left after backdrop removal")
     sizes = ndimage.sum(m, lab, range(1, n + 1))
     m = lab == (int(np.argmax(sizes)) + 1)
     m = ndimage.binary_fill_holes(m)
@@ -385,7 +433,7 @@ def measure(rgb, mask, norm_h):
 
     Lm = L[m]
     if Lm.size < 200:
-        raise SystemExit(f"character mask too small to grade: {Lm.size} px")
+        unmeasurable(f"character mask too small to grade: {Lm.size} px")
 
     # midtone band, inside the mask (grade_axes definition, region-restricted)
     tlo, thi = np.percentile(Lm, 35), np.percentile(Lm, 75)
@@ -557,11 +605,16 @@ def main():
     args = ap.parse_args()
 
     if not args.ref and "-nohud2" not in os.path.basename(args.image):
-        sys.exit("REFUSED: play frames must be de-HUDded first "
-                 "(python scripts/_flamingo_dehud2.py <frame>.png). "
-                 "HUD glyphs sit at ~250 and poison p95 and micro-contrast.")
+        unmeasurable("REFUSED: play frames must be de-HUDded first "
+                     "(python scripts/_flamingo_dehud2.py <frame>.png). "
+                     "HUD glyphs sit at ~250 and poison p95 and micro-contrast.")
 
-    rgb = np.asarray(Image.open(args.image).convert("RGB")).astype(np.float32)
+    # A missing/undecodable file is a plumbing failure, not a look verdict — an
+    # uncaught PIL traceback would have exited 1 and read as "the render FAILed".
+    try:
+        rgb = np.asarray(Image.open(args.image).convert("RGB")).astype(np.float32)
+    except (FileNotFoundError, IsADirectoryError, OSError, ValueError) as exc:
+        unmeasurable(f"cannot read image {args.image!r}: {exc}")
     h, w, _ = rgb.shape
     stem = os.path.splitext(args.image)[0]
 
@@ -571,15 +624,18 @@ def main():
         foot_y = float(np.where(mask)[0].max())
     else:
         if not args.cam:
-            sys.exit("--cam YAW,PITCH,DIST is required for a play frame "
-                     "(it is what makes the bbox analytic instead of eyeballed)")
-        yaw, pitch, dist = [float(v) for v in args.cam.split(",")]
+            unmeasurable("--cam YAW,PITCH,DIST is required for a play frame "
+                         "(it is what makes the bbox analytic instead of eyeballed)")
+        try:
+            yaw, pitch, dist = [float(v) for v in args.cam.split(",")]
+        except ValueError:
+            unmeasurable(f"--cam must be YAW,PITCH,DIST floats; got {args.cam!r}")
         bbox, foot_y = analytic_bbox(w, h, yaw, pitch, dist, args.actor, args.hud_crop)
         mask = mask_from_bbox(rgb, bbox, foot_y, args.key_tol,
                               not args.no_shadow_guard)
         if mask.sum() < 200:
-            sys.exit(f"character mask empty ({int(mask.sum())} px) — bbox {bbox}. "
-                     "Wrong --cam, or the avatar is off-frame.")
+            unmeasurable(f"character mask empty ({int(mask.sum())} px) — bbox {bbox}. "
+                         "Wrong --cam, or the avatar is off-frame.")
 
     m = measure(rgb, mask, args.norm_h)
     pen, pen_edges = (None, 0) if args.ref else contact_penumbra(rgb, mask, foot_y)
@@ -601,8 +657,11 @@ def main():
 
     refv = {}
     if args.ref_json:
-        with open(args.ref_json, encoding="utf-8") as f:
-            refv = json.load(f).get("metrics", {})
+        try:
+            with open(args.ref_json, encoding="utf-8") as f:
+                refv = json.load(f).get("metrics", {})
+        except (OSError, ValueError) as exc:
+            unmeasurable(f"cannot read --ref-json {args.ref_json!r}: {exc}")
         print(f"  reference sheet: {args.ref_json}")
         print()
 
@@ -619,12 +678,12 @@ def main():
                            "actor": args.actor, "graderVersion": GRADER_VERSION,
                            "metrics": {k: v for k, v in m.items() if not k.startswith("_")}},
                           f, indent=2)
-        sys.exit(0)
+        sys.exit(EXIT_PASS)
 
     if not refv:
-        sys.exit("--ref-json <concept.json> is required to grade a render: the "
-                 "approved concept sheet IS this lane's target. Produce it with "
-                 "grade_character.py --ref <sheet>.png --json <out>.json")
+        unmeasurable("--ref-json <concept.json> is required to grade a render: the "
+                     "approved concept sheet IS this lane's target. Produce it with "
+                     "grade_character.py --ref <sheet>.png --json <out>.json")
 
     fails, rows = [], []
     print(f"  {'axis':<30}{'render':>9}{'concept':>10}{'target':>16}  {'frame ctx':>10}")
@@ -661,7 +720,7 @@ def main():
                                  "bound": (list(b) if isinstance(b, tuple) else b),
                                  "pass": o} for k, l, vv, rr, b, o in rows],
                        "fails": fails}, f, indent=2)
-    sys.exit(0 if not fails else 1)
+    sys.exit(EXIT_PASS if not fails else EXIT_FAIL)
 
 
 if __name__ == "__main__":
