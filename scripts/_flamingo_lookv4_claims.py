@@ -5,23 +5,33 @@ measured on the file the caption names. Claims checked here:
 
   C1 void-black   the floating squares in the sky band really are ~0,0,0
                   (a rendering hole, not a dark colour choice)
-  C2 cast-shadow  does the grass population split into lit + shadowed?
-                  no split = the sun casts nothing onto the ground
+  C2 cast-shadow  RETIRED AS EVIDENCE - kept because a negative result that
+                  gets deleted is a negative result that gets re-derived.
+                  Intent was: grass splits into lit + shadowed, no split = the
+                  sun casts nothing onto the ground. It does not work. noon
+                  (no cast shadow) 0.718 vs evening (casts correctly) 0.730 -
+                  0.012 apart - and night, which has no sun at all, scores
+                  highest at 0.983 because fire falloff is bimodal too. The
+                  metric cannot separate a shadow edge from a light falloff.
+                  Nothing on the sheet is sourced from C2; the blocker rests
+                  on _shadowmask.py + the crops. See look-gap-v4-2026-08-15.md
+                  "What does not support this blocker".
   C3 bloom        radial profile out from an emissive lamp cube
   C4 char-bounce  the night silhouette vs the lit wall 40px away
 """
 import os
+import sys
 
 import numpy as np
 from PIL import Image
 
-LOOK = os.path.join('docs', 'assets', 'look')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flamingo_lookv4_plates as plates  # noqa: E402
 
 
 def load(scene, variant='after'):
     return np.asarray(Image.open(
-        os.path.join(LOOK, '%s_%s.png' % (scene, variant))).convert('RGB')
-    ).astype(np.float32)
+        plates.plate(scene, variant)).convert('RGB')).astype(np.float32)
 
 
 def lum(a):
@@ -93,6 +103,7 @@ def c4_char_bounce():
 
 
 if __name__ == '__main__':
+    print(plates.banner('claims'))
     for s in ['outdoor-noon', 'evening-raking', 'night-firelit']:
         c1_void(s)
     print()

@@ -14,16 +14,19 @@ Flat-lit ground makes the curve flat. The golden ref runs through the same
 code as the positive control - a metric with no control is not a verdict.
 """
 import os
+import sys
 
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flamingo_lookv4_plates as plates  # noqa: E402
 
 try:
     from scipy.ndimage import distance_transform_edt as edt
 except ImportError:  # pragma: no cover - fall back to a coarse ring walk
     edt = None
 
-LOOK = os.path.join('docs', 'assets', 'look')
 BANDS = [(1, 2), (2, 4), (4, 7), (7, 12), (12, 20), (20, 40)]
 
 
@@ -56,10 +59,11 @@ def profile(a, tag):
 
 
 if __name__ == '__main__':
+    print(plates.banner('contact'))
     for s in ['outdoor-noon', 'evening-raking', 'night-firelit']:
         for v in ('before', 'after'):
             a = np.asarray(Image.open(
-                os.path.join(LOOK, '%s_%s.png' % (s, v))).convert('RGB')).astype(np.float32)
+                plates.plate(s, v)).convert('RGB')).astype(np.float32)
             profile(a, '%s %s' % (s, v))
     ref = np.asarray(Image.open(os.path.join(
         'docs', 'assets', 'golden-beauty-shot-ref.png')).convert('RGB')).astype(np.float32)

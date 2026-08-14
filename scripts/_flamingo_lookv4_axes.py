@@ -15,17 +15,20 @@ gets measured on the exact file the caption names. Axes:
   micro       high-frequency energy (texture/normal detail survival)
 """
 import os
+import sys
 
 import numpy as np
 from PIL import Image
 
-LOOK = os.path.join('docs', 'assets', 'look')
-SCENES = ['outdoor-noon', 'evening-raking', 'night-firelit']
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flamingo_lookv4_plates as plates  # noqa: E402
+
+SCENES = plates.SCENES
 
 
 def load(scene, variant):
-    p = os.path.join(LOOK, '%s_%s.png' % (scene, variant))
-    return np.asarray(Image.open(p).convert('RGB')).astype(np.float32)
+    return np.asarray(Image.open(
+        plates.plate(scene, variant)).convert('RGB')).astype(np.float32)
 
 
 def lum(a):
@@ -79,6 +82,7 @@ def micro(a):
 
 
 def main():
+    print(plates.banner('axes'))
     print('%-16s %-7s %7s %7s %8s %8s %8s %8s %8s' % (
         'scene', 'var', 'void%', 'B=0%', 'stdFar', 'stdNear', 'faceD', 'micro', 'R-B'))
     for scene in SCENES:

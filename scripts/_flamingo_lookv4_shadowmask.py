@@ -12,13 +12,16 @@ import sys
 import numpy as np
 from PIL import Image
 
-LOOK = os.path.join('docs', 'assets', 'look')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flamingo_lookv4_plates as plates  # noqa: E402
+
 COLS = np.array([(20, 20, 34), (60, 60, 130), (110, 170, 110), (250, 240, 170)],
                 dtype=np.uint8)
 
 
 def main(scene, variant='after'):
-    a = np.asarray(Image.open(os.path.join(LOOK, '%s_%s.png' % (scene, variant))
+    print(plates.banner('shadowmask'))
+    a = np.asarray(Image.open(plates.plate(scene, variant)
                               ).convert('RGB')).astype(np.float32)
     L = 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
     m = (a[..., 1] > a[..., 2] + 12) & (a[..., 1] > a[..., 0] * 0.75) & (L > 6)

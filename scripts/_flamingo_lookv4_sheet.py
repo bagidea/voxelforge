@@ -160,11 +160,19 @@ The shoot that settles it: re-shoot the SCENE 1 camera at sun elevation 22 deg, 
 at 66 deg. If the shadow follows the elevation it is bias/cascade; if it follows the camera it is the
 vista frustum. Either answer is a one-line fix; guessing between them is not."""
 
-DRIFT = """SINCE THIS SHEET WAS CUT - all six plates were re-shot in the working tree at 2026-08-15 03:38, after b361a9d. This sheet is pinned to b361a9d and does not grade
-them; here is what changed, measured the same way. FIXED: night G3 is back over the line, p05-L 7.3% -> 8.8% (floor 8) - the "must fix" below is already done, do not
-re-raise it. UNCHANGED: the blocker. The re-shot noon plate's ground map still puts every dark pixel on a cube side face - no cast shadow. Evening G6 still FAILS at
-L 53.4 against a floor of 55, exactly as before. WORSE: the new grade buys its warmth by crushing blue - noon R-B +75.6 -> +87.1 with B clamped to 0 on 19.20% of the
-frame (was 9.43%), evening 4.77% -> 8.59%. A fifth of a frame with a dead channel is warmth you cannot grade back out, so that one wants a look before it settles."""
+DRIFT = """SINCE THIS SHEET WAS CUT - the plates are being re-shot on a loop. At least THREE different sets have sat at docs/assets/look/ since b361a9d: 03:38, 03:43, and the one
+on disk now. This sheet is pinned to b361a9d and grades none of them. What follows is a STAMPED SNAPSHOT of the 03:50:38-03:51:07 set - AFTER md5 outdoor bb18a84f0b / evening
+672bbe78fd / night 64a6cca33d. If your md5s differ you are on a LATER shoot: re-measure, do not reconcile (LOOKV4_LIVE=1 points every script on this sheet at the working tree).
+FIXED: night G3 is back over the line, p05-L 7.3% -> 8.1% (floor 8) - the "must fix" to the left is already done, do not re-raise it. UNCHANGED: the blocker - the re-shot noon
+ground map still puts every dark pixel on a cube side face. Evening G6 still FAILS, L 53.4 -> 53.7 against a floor of 55. WORSE: the new grade buys warmth by crushing blue -
+noon R-B +75.6 -> +87.5 with B clamped to 0 on 18.70% of the frame (was 9.43%), evening 4.77% -> 8.67%. Warmth out of a dead channel cannot be graded back out later."""
+
+NEGATIVE = """WHAT DOES NOT SUPPORT THE BLOCKER - printed because a negative result that gets deleted is a negative result somebody re-derives in a week. _claims.py C2 was written
+as the numeric test of exactly the blocker above; its own docstring reads "no split = the sun casts nothing onto the ground". It came back unable to tell the scenes apart. Grass
+luminance bimodality (otsu-sep) on the pinned plates: outdoor-noon 0.718 (claimed: NO cast shadow) vs evening-raking 0.730 (claimed: casts correctly) - the two scenes on opposite
+sides of the claim are 0.012 apart - and night-firelit, which has no sun at all, scores HIGHEST at 0.983, because fire falloff is bimodal too. So C2 is a broken instrument for
+this question rather than evidence either way, and no number on this sheet is sourced from it. The blocker stands on the two things that did measure it: the ground-plane
+luminance maps (_shadowmask.py) and the 200% crops in the columns above."""
 
 CAVEAT = """CAVEAT ON THESE SCORES - read this before quoting them anywhere. Every threshold in look-acceptance-rubric.md was calibrated on an INDOOR window-lit kitchen
 (golden-beauty-shot-ref.png), and BOTH signed-off references are interiors. Two of the three frames graded here are open air. G2 literally asks for "window mullion bars on the
@@ -357,7 +365,16 @@ def main():
         d.text((pad + 14, dy + 12 + i * 21), ln, font=F_S,
                fill=(190, 245, 205) if i else GOOD)
 
-    cy = dy + 30 + len(dlines) * 21 + 16
+    # A measurement that came back against me still has to be on the sheet.
+    ny = dy + 30 + len(dlines) * 21 + 16
+    nlines = NEGATIVE.split('\n')
+    d.rectangle([pad, ny, W - pad, ny + 30 + len(nlines) * 21], fill=(34, 30, 20),
+                outline=(150, 132, 78))
+    for i, ln in enumerate(nlines):
+        d.text((pad + 14, ny + 12 + i * 21), ln, font=F_S,
+               fill=(226, 214, 176) if i else (236, 206, 120))
+
+    cy = ny + 30 + len(nlines) * 21 + 16
     clines = CAVEAT.split('\n')
     d.rectangle([pad, cy, W - pad, cy + 30 + len(clines) * 21], fill=(24, 28, 40),
                 outline=(96, 122, 176))
@@ -374,8 +391,10 @@ def main():
               plates.md5('evening-raking', 'after'), plates.md5('night-firelit', 'after')),
            font=F_S, fill=(112, 112, 126))
     d.text((pad, fy + 22),
-           'Measured by scripts/_flamingo_lookv4_axes.py, _claims.py, _contact.py, _shadowmask.py '
-           'and scripts/grade_gate.py \u00b7 sheet by scripts/_flamingo_lookv4_sheet.py',
+           'Measured by scripts/_flamingo_lookv4_axes.py, _claims.py, _contact.py, _shadowmask.py, '
+           '_stage.py \u2192 scripts/grade_gate.py \u00b7 sheet by _sheet.py \u00b7 EVERY one of them resolves '
+           'its input through _flamingo_lookv4_plates.plate(), so they all read the pinned set by '
+           'default and the working tree only under LOOKV4_LIVE=1',
            font=F_S, fill=(112, 112, 126))
 
     sheet = sheet.crop((0, 0, W, fy + 56))

@@ -11,6 +11,12 @@ md5s printed here are the ones on the sheet footer.
 
 Working-tree plates are NOT graded here. When they differ, that is a delta to
 report, not a silent re-grade.
+
+EVERY tool that feeds a number onto the sheet must resolve its input through
+`plate()` below, not through `docs/assets/look/`. Default is pinned. Set
+LOOKV4_LIVE=1 to point the same code at the working tree - that is how a delta
+gets measured without hand-editing a script, and `banner()` prints which set
+was read so no output is ever ambiguous about its own source.
 """
 import hashlib
 import os
@@ -20,6 +26,7 @@ PLATE_REV = 'b361a9d'  # feat(look): v4 gate-green look pass + first before/afte
 SRC = 'docs/assets/look/%s_%s.png'
 CACHE = os.path.join('_fl_lookv4', 'pinned')
 SCENES = ['outdoor-noon', 'evening-raking', 'night-firelit']
+LIVE = os.environ.get('LOOKV4_LIVE') == '1'
 
 
 def path(scene, variant):
@@ -32,6 +39,18 @@ def path(scene, variant):
         with open(dst, 'wb') as fh:
             fh.write(blob)
     return dst
+
+
+def plate(scene, variant='after'):
+    """The plate a MEASURING tool should open. Pinned unless LOOKV4_LIVE=1."""
+    return (SRC % (scene, variant)) if LIVE else path(scene, variant)
+
+
+def banner(tool):
+    """One line naming the plate set behind everything that follows."""
+    if LIVE:
+        return '# %s reading LIVE working-tree plates (LOOKV4_LIVE=1) - NOT the graded set' % tool
+    return '# %s reading plates pinned at %s' % (tool, PLATE_REV)
 
 
 def md5(scene, variant, n=10):
