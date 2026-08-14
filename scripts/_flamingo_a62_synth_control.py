@@ -64,6 +64,22 @@ Usage:
     python scripts/_flamingo_a62_synth_control.py FRAME [--x X --y Y] [--size N]
                                                   [--off-x X --off-y Y]
     (bare is the intended form — every default is derived from FRAME's own hero mask)
+
+EXIT CODE (added 2026-08-14): the run printed `INSTRUMENT CONTROL: PASS|FAIL` and
+exited 0 either way, so a caller reading `$?` was told the instrument was sound by
+a run whose own last line said it was not.
+
+    0 = the control passed
+    1 = the control failed, or the inputs cannot carry it (no charmask, no hero
+        body, a hand-passed site off the hero)
+    2 = the stored torso fraction no longer round-trips onto the plate it was
+        measured on — the instrument is stale and nothing was planted
+
+Round-trip, re-run 2026-08-14 on both live plate classes:
+    2560x1360 (zfix 08-11): site -> (1337,842), patch 16x16, off-hero (2543,16)
+    1280x640  (teal 08-14): site -> ( 668,380), patch  8x8,  off-hero (8,8)
+both PASS 3/3 rungs. `--x 1337 --y 842` on the 1280 plate is REFUSED (exit 1),
+which is the check that the old pixel pair can no longer be smuggled in.
 """
 import argparse
 import shutil
@@ -83,6 +99,14 @@ from _flamingo_a62_accent_presence import (GEM_SRGB, L_MIN, MIN_AXIS_PX, hero_ma
 # change of plate size. NOT an arbitrary spot, and NOT a pixel pair.
 PRED_FX, PRED_FY = 0.629213, 0.396104
 PRED_SITE = "(1337,842) on the 2560x1360 08-11 plate"
+# The plate those fractions were measured on, kept so the claim above can be
+# CHECKED rather than believed. `hero_mask()` has already been rewritten once
+# (83d8630); if it is rewritten again the 08-11 bbox moves, these fractions
+# quietly resolve somewhere else, and the control would still print PASS — at a
+# site that is no longer the projected clasp. `assert_roundtrip()` runs on every
+# invocation and is pure arithmetic, so it costs nothing.
+REF_BBOX = (1057, 1501, 598, 1213)      # x0, x1, y0, y1 on the 08-11 plate
+REF_SITE = (1337, 842)
 # 16 px at 2560 wide — the size the 08-11 control ran at — scaled per plate.
 SIZE_PER_PX = 1.0 / 160.0
 CHARMASK_SUFFIX = "-charmask.png"
@@ -95,6 +119,26 @@ def charmask_of(frame):
 def bbox_of(mask):
     ys, xs = np.nonzero(mask)
     return int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+
+
+def project(bbox):
+    """The stored torso fraction, resolved onto one hero bbox. One implementation,
+    so the round-trip check below tests the same arithmetic the run uses."""
+    x0, x1, y0, y1 = bbox
+    bw, bh = x1 - x0 + 1, y1 - y0 + 1
+    return int(round(x0 + PRED_FX * bw)), int(round(y0 + PRED_FY * bh))
+
+
+def assert_roundtrip():
+    """PRED_FX/PRED_FY must still resolve to REF_SITE on REF_BBOX. Returns an
+    error string, or None when the stored site is self-consistent."""
+    got = project(REF_BBOX)
+    if got != REF_SITE:
+        return (f"stored site is stale: PRED_FX/PRED_FY resolve to {got} on the "
+                f"08-11 hero bbox x{REF_BBOX[0]}-{REF_BBOX[1]} y{REF_BBOX[2]}-"
+                f"{REF_BBOX[3]}, but that plate's projected clasp is {REF_SITE}. "
+                f"Re-measure the fractions before planting anything.")
+    return None
 
 
 def patch_box(x, y, size, shape):
@@ -129,8 +173,7 @@ def resolve_site(mask, size):
     reason that is about geometry, not about the gate.
     """
     x0, x1, y0, y1 = bbox_of(mask)
-    bw, bh = x1 - x0 + 1, y1 - y0 + 1
-    ax, ay = int(round(x0 + PRED_FX * bw)), int(round(y0 + PRED_FY * bh))
+    ax, ay = project((x0, x1, y0, y1))
     if fits_on_hero(mask, ax, ay, size):
         return ax, ay, f"projected from {PRED_SITE} onto hero bbox x{x0}-{x1} y{y0}-{y1}"
     room = ndimage.binary_erosion(mask, structure=np.ones((size + 2, size + 2), bool))
@@ -200,6 +243,11 @@ def main():
     ap.add_argument("--off-y", type=int, default=None)
     ap.add_argument("--outdir", default="_fl_a62_control")
     args = ap.parse_args()
+
+    stale = assert_roundtrip()
+    if stale:
+        print(f"!! {stale}")
+        return 2
 
     src_cm = charmask_of(args.frame)
     if not src_cm.exists():

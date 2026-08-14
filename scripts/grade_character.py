@@ -61,7 +61,9 @@ Usage
 import argparse
 import json
 import os
+import re
 import sys
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -134,6 +136,40 @@ FRAME_CONTEXT = {
     "warmth": ">=110", "blue": "<=10", "sat": ">=90",
     "micro": ">=5", "p95": "150..185", "p05L": ">=8", "darkRB": ">=0", "pen": ">=5",
 }
+
+# Look Lab reads this directly from the sidecar; the panel must never derive it.
+GRADER_VERSION = "v2"  # post 2026-08-09 rubric re-derive
+
+# Match as a distinct token so "after-boot" resolves to boot, not to a stray
+# substring, and "boots" does not read as boot.
+LANE_POSES = ["boot", "walk", "combat", "idle", "menu", "vista", "hero"]
+
+
+def compute_lane(image_path):
+    """Return the shot lane the Look Lab panel uses for trend/regression grouping.
+
+    Format: gate:pose:character.  The engine emits this explicitly so the panel
+    never has to guess and risk a false regression report.
+    """
+    p = Path(image_path)
+    text = (p.name + " " + " ".join(part.name for part in p.parents)).lower()
+    gate = None
+    if "gate3" in text:
+        gate = "gate3"
+    elif "hero" in text:
+        gate = "hero"
+    elif "b0002" in text:
+        gate = "b0002"
+    elif "grade-vista" in text:
+        gate = "grade-vista"
+    pose = None
+    for cand in LANE_POSES:
+        if re.search(rf"(^|[-_]){cand}([-_.]|$)", text):
+            pose = cand
+            break
+    if gate and pose:
+        return f"{gate}:{pose}:character"
+    return None
 
 
 def resolve_bound(rule, ref):
@@ -580,7 +616,7 @@ def main():
         if args.json:
             with open(args.json, "w", encoding="utf-8") as f:
                 json.dump({"label": label, "image": args.image, "ref": True,
-                           "actor": args.actor,
+                           "actor": args.actor, "graderVersion": GRADER_VERSION,
                            "metrics": {k: v for k, v in m.items() if not k.startswith("_")}},
                           f, indent=2)
         sys.exit(0)
@@ -616,6 +652,8 @@ def main():
             json.dump({"label": label, "image": args.image, "ref": False,
                        "actor": args.actor, "cam": args.cam,
                        "ref_json": args.ref_json,
+                       "graderVersion": GRADER_VERSION,
+                       "lane": compute_lane(args.image),
                        "metrics": {k: v for k, v in m.items() if not k.startswith("_")},
                        "ref_metrics": refv,
                        "mask_px_frame": int(mask.sum()),

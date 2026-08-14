@@ -7,9 +7,26 @@ other axis. Four rows = four plates; two columns = the two rungs actually in
 dispute; every caption is measured by scripts/grade_axes.py at render time, and
 each cell names its own plate.
 
-Read it left-to-right: the cell that changes from PASS to FAIL is `hero`, and
-once its clip co-gate fires its honest-sat cell goes N-A -- the plate the board
+Read it left-to-right: the cell that changes from PASS to FAIL is `hero`'s clip,
+and once that co-gate fires its honest-sat cell goes N-A -- the plate the board
 judges on stops being readable. That is the whole argument against 1.05.
+
+FALSE-GREEN AUDIT 2026-08-14 — two fixes:
+
+  * `warmth` and `sat` were stamped PASS/FAIL. Both are `grade_axes.ADVISORY`:
+    measured and printed for tuning, NEVER gated
+    (docs/VERDICT-rose-chroma-rederive-2026-08-09.md §5). They now read `[ADV]`,
+    and `clip` -- the one hard axis -- carries the cell colour. The ADVISORY set
+    is imported, not re-listed, so this sheet cannot drift from the gate.
+  * `main()` returned None, i.e. exit 0, including when a plate could not be
+    measured. It now returns an explicit code:
+
+        0 = all 8 cells measured and the sheet was written
+        1 = a plate could not be read (nothing is written)
+
+    A FAIL *cell* is not an error here: the sheet exists to show that 1.05 fails
+    on `hero`, so a red exit on that would make the artefact impossible to
+    produce. This file emits a picture, not a gate verdict.
 """
 import os
 import sys
@@ -39,10 +56,16 @@ def font(sz, bold=False):
 
 
 def main():
+    assert {"warmth", "blue", "sat"} == G.ADVISORY, \
+        f"grade_axes.ADVISORY moved to {G.ADVISORY} — re-label this sheet"
     cells = {}
     for p in PLATES:
         for rung, d, _sub in COLS:
             path = f"{d}/after/{p}-nohud2.png"
+            if not os.path.isfile(path):
+                print(f"MISSING {path} — refusing to write a sheet that is "
+                      f"missing a plate", file=sys.stderr)
+                return 1
             m = G.measure(path)
             im = Image.open(path).convert("RGB")
             im = im.resize((TW, round(TW * im.height / im.width)), Image.LANCZOS)
@@ -75,15 +98,23 @@ def main():
             im, m = cells[(p, rung)]
             sheet.paste(im, (x, y))
             sok, stxt = G.sat_status(m)
-            parts = [("warmth", f"{m['warmth']:.1f}", m["warmth"] >= 110.0),
-                     ("clip", f"{m['clip']:.1f}%", m["clip"] <= G.CLIP_THRESH),
-                     ("sat", stxt, sok)]
+            # (label, value, ok, hard?) -- only `clip` is a gate; see the docstring.
+            parts = [("warmth", f"{m['warmth']:.1f}", m["warmth"] >= 110.0, False),
+                     ("clip", f"{m['clip']:.1f}%", m["clip"] <= G.CLIP_THRESH, True),
+                     ("sat", stxt, sok, False)]
             ty = y + im.height + 8
-            for label, val, ok in parts:
+            for label, val, ok, hard in parts:
                 col = NAC if ok is None else (OKC if ok else BADC)
                 # N-A is not a third verdict -- it means the co-gate fired and this
                 # axis can no longer be read on this plate. Say that, don't print "N-A N-A".
-                tag = "UNREADABLE (clip>35)" if ok is None else ("PASS" if ok else "FAIL")
+                if ok is None:
+                    tag = "UNREADABLE (clip>35)"
+                elif hard:
+                    tag = "PASS" if ok else "FAIL"
+                else:
+                    # advisory: report the direction, never the word PASS/FAIL
+                    tag = f"{'on' if ok else 'off'}-target [ADV]"
+                    col = DIM if ok else NAC
                 dr.text((x, ty), f"{label:<7}{val:>8}  {tag}", font=f_num, fill=col)
                 ty += 25
             dr.text((x + 300, y + im.height + 8),
@@ -93,7 +124,9 @@ def main():
     out = "docs/assets/flamingo-perplate-102-vs-105-2026-08-09.png"
     sheet.save(out)
     print(f"[written] {out}  ({sheet.width}x{sheet.height})")
+    print(f"drew {len(cells)}/{len(PLATES) * len(COLS)} cells -> exit 0")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

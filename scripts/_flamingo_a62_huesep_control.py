@@ -28,6 +28,18 @@ Usage:
     python scripts/_flamingo_a62_huesep_control.py IMAGE --matte
     python scripts/_flamingo_a62_huesep_control.py IMAGE --box x0,y0,x1,y1
     python scripts/_flamingo_a62_huesep_control.py IMAGE --charmask PATH
+
+EXIT CODE (added 2026-08-14): this harness printed `PASS`/`FAIL` per mask and
+then exited 0 either way, so a caller reading `$?` was told the control passed
+by a run whose own line said FAIL. The verdict is now carried:
+
+    0 = every mask reported cleared the bar
+    1 = at least one mask reported FAIL
+    2 = nothing could be measured (no mask / no blob) -- unknown is not a pass
+
+Callers that want this number as ADVISORY (it is a retired target -- see
+`_flamingo_a62_chain.sh` step 5) must say so explicitly with `|| true`, which is
+what that chain already does. Silence is no longer read as agreement.
 """
 import argparse
 import sys
@@ -89,7 +101,10 @@ def box_from_charmask(frame_path, mask_path, pad=0.06):
         (a.shape[1], a.shape[0]), Image.NEAREST), dtype=np.int16)
     diff = np.abs(a - b).sum(axis=2) > 20
     if not diff.any():
-        raise SystemExit(f"{mask_path}: overlay identical to frame, no mask to read")
+        # exit 2, not 1: nothing was measured, so this is "unknown", not "FAIL".
+        print(f"{mask_path}: overlay identical to frame, no mask to read",
+              file=sys.stderr)
+        raise SystemExit(2)
     return box_from_mask(diff, pad)
 
 
@@ -126,7 +141,7 @@ def report(kind, f, blob, total_px):
     else:
         print(f"        to clear the bar: {100 * need:5.2f}% of the hero "
               f"({int(need * px):,} px) must sit at hue {ACCENT_HUE:.1f}")
-    return sep
+    return sep, sep >= BAR
 
 
 def main():
@@ -156,16 +171,29 @@ def main():
     elif matte is not None:
         box = box_from_mask(matte)
     else:
-        raise SystemExit("need --box, --charmask or --matte (A6 refuses to guess a mask)")
+        print("need --box, --charmask or --matte (A6 refuses to guess a mask)",
+              file=sys.stderr)
+        return 2
     print(f"  box {box}")
 
     blob = gate_blob(f, box)
     if blob is None:
-        raise SystemExit(f"{args.image}: no blob for box {box}")
-    report("gate blob ", f, blob, total)
+        print(f"{args.image}: no blob for box {box}", file=sys.stderr)
+        return 2
+
+    oks = [report("gate blob ", f, blob, total)[1]]
     if matte is not None:
-        report("true matte", f, matte, total)
+        oks.append(report("true matte", f, matte, total)[1])
+
+    bad = oks.count(False)
+    if bad:
+        print(f"  -> CONTROL FAIL: {bad}/{len(oks)} mask(s) below the "
+              f"{BAR:.0f} deg bar (exit 1)")
+        return 1
+    print(f"  -> CONTROL PASS: {len(oks)}/{len(oks)} mask(s) clear the "
+          f"{BAR:.0f} deg bar (exit 0)")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

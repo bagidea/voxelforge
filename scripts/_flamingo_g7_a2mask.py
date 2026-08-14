@@ -21,6 +21,17 @@ observed:
     enormous; far-field sunlit stone is already close to the haze colour and its
     swing is small. delta ~ alpha x swing, and the ratio the gate reads is the
     product of BOTH -- which is why a 7x alpha ratio scores 2.3x on screen.
+
+EXIT CODE (added 2026-08-14): the per-row `PASS`/`fail` column was printed and
+then thrown away -- the script returned 0 whether every row passed, every row
+failed, or (worse) every row's PNG was missing and the `except FileNotFoundError:
+continue` swallowed it and printed an empty table under a green exit. Now:
+
+    0 = every row in ROWS was scored and every one PASSed (near/far ratio >= 2.5
+        AND far >= 6.0, sky excluded)
+    1 = at least one row scored fail
+    2 = the table is incomplete -- some or all sweep PNGs were missing, so the
+        rows that were never opened cannot be reported as passing
 """
 import sys
 
@@ -37,10 +48,20 @@ def load(p):
 
 
 def main():
-    off_img = load(f"{G7}/hazeoff-nohud2.png")
+    # The two BASELINES. Every row below is a |baseline - row| difference, so a
+    # missing baseline means nothing can be measured at all -- exit 2. Without
+    # this guard PIL raised FileNotFoundError, Python exited 1, and a run that
+    # measured NOTHING was indistinguishable from a run that scored every row and
+    # failed it. A crash must never be able to pose as a verdict.
+    try:
+        off_img = load(f"{G7}/hazeoff-nohud2.png")
+        full = load(f"{PR}/uni100-nohud2.png").load()
+    except FileNotFoundError as e:
+        print(f"A2 MASK RESCORE: no baseline to measure against ({e.filename}) "
+              f"-- nothing scored (exit 2)", file=sys.stderr)
+        return 2
     W, H = off_img.size
     off = off_img.load()
-    full = load(f"{PR}/uni100-nohud2.png").load()
 
     def is_sky(p):
         return p[2] > 150 and p[2] > p[0] + 30 and p[1] > p[0]
@@ -74,10 +95,12 @@ def main():
 
     print(f"{'row':7s} {'far(gate)':>10s} {'near':>7s} {'ratio':>6s}  |  "
           f"{'far(nosky)':>11s} {'near':>7s} {'ratio':>6s}  verdict")
+    scored, bad, missing = 0, 0, []
     for r in ROWS:
         try:
             on = load(f"{G7}/{r}-nohud2.png").load()
         except FileNotFoundError:
+            missing.append(r)
             continue
         gf, _ = band(n_far, on, False)
         gn, _ = band(n_near, on, False)
@@ -85,9 +108,28 @@ def main():
         hn, _ = band(n_near, on, True)
         gr = gf / gn if gn else 0
         hr = hf / hn if hn else 0
-        ok = "PASS" if (hr >= 2.5 and hf >= 6.0) else "fail"
+        passed = hr >= 2.5 and hf >= 6.0
+        scored += 1
+        bad += not passed
         print(f"{r:7s} {gf:10.2f} {gn:7.2f} {gr:6.2f}  |  "
-              f"{hf:11.2f} {hn:7.2f} {hr:6.2f}  {ok}")
+              f"{hf:11.2f} {hn:7.2f} {hr:6.2f}  {'PASS' if passed else 'fail'}")
+
+    if missing:
+        print(f"\n! {len(missing)} row(s) had no PNG and were not scored: "
+              f"{', '.join(missing)}")
+    if not scored:
+        print("A2 MASK RESCORE: nothing scored -- no sweep PNG present (exit 2)")
+        return 2
+    if missing and not bad:
+        # a partial table cannot say PASS for the rows it never opened.
+        print(f"\nA2 MASK RESCORE: INCOMPLETE ({scored}/{len(ROWS)} rows scored, "
+              f"none failed) -> exit 2")
+        return 2
+    if bad:
+        print(f"\nA2 MASK RESCORE: FAIL ({bad}/{scored} row(s) below "
+              f"ratio>=2.5 / far>=6.0) -> exit 1")
+        return 1
+    print(f"\nA2 MASK RESCORE: PASS ({scored}/{scored} row(s)) -> exit 0")
     return 0
 
 

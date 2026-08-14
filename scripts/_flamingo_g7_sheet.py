@@ -7,6 +7,20 @@ hand-written caption on a render sheet is the easiest place in this whole
 pipeline to launder a number, so the sheet refuses to carry one.
 
 Usage: _flamingo_g7_sheet.py <before.png> <after.png> <out.png> [before-label] [after-label]
+
+EXIT CODE (added 2026-08-14): the captions print `G3 F` / `C FAIL`, and when a
+grader crashed they printed `G3 ?` / `C FAIL` from an empty stdout -- and the
+script exited 0 in all three cases, so a sheet whose own caption says the frame
+failed handed back a green exit.
+
+The verdict carried is the AFTER panel's, because that is the frame being
+proposed; the BEFORE panel is context and is *expected* to fail (that is the
+point of a before/after sheet), so it never turns the exit red on its own.
+
+    0 = every grader answered for both panels and the AFTER panel is all-P/PASS
+    1 = graders answered and the AFTER panel carries a real FAIL
+    2 = a grader printed no verdict for either panel (a `?` in a caption) --
+        the sheet is still written, but `?` is not a pass
 """
 import re
 import subprocess
@@ -33,6 +47,9 @@ def grade(png):
 
     v = re.search(r"MEASURABLE GATES: G3=(\w)\s+G5=(\w)\s+G6=(\w)", gate)
     g3, g5, g6 = v.groups() if v else ("?", "?", "?")
+    # grade_g7 prints one `=> PASS|FAIL` summary. Without it the grader never had
+    # an opinion, which must read as `?`, not as a vegetation FAIL.
+    veg_sum = re.search(r"=>\s+(PASS|FAIL)", g7)
     return {
         "G3": g3, "G5": g5, "G6": g6,
         "p05": g(gate, r"interior p05-L=([\d.]+)%"),
@@ -41,7 +58,7 @@ def grade(png):
         "micro": g(axes, r"micro-contrast\s+([\d.]+)"),
         "sat": g(g7, r"saturation\s+([\d.]+)%\s+need"),
         "hue": g(g7, r"hue\s+([\d.]+)deg need"),
-        "C": "PASS" if re.search(r"->\s+PASS\s+\[", g7) else "FAIL",
+        "C": ("PASS" if re.search(r"->\s+PASS\s+\[", g7) else "FAIL") if veg_sum else "?",
     }
 
 
@@ -59,14 +76,26 @@ def main():
     except OSError:
         font = ImageFont.load_default()
 
-    panels = []
+    # A panel PNG that is not there is unmeasurable (exit 2), not a FAIL. Without
+    # this, PIL raised FileNotFoundError and Python exited 1 -- so "you gave me the
+    # wrong path" was handed back in the same number as "the AFTER frame failed the
+    # gates", which is the exact confusion the exit codes above exist to remove.
+    for tag, path in zip(tags, (before, after)):
+        if not Path(path).is_file():
+            print(f"SHEET VERDICT: UNREADABLE -- no PNG for the "
+                  f"{tag.strip()} panel ({path}) -> exit 2", file=sys.stderr)
+            return 2
+
+    panels, marks = [], []
     for tag, path in zip(tags, (before, after)):
         im = Image.open(path).convert("RGB")
         w, h = im.size
         bar = 24
         p = Image.new("RGB", (w, h + bar), (16, 16, 16))
         p.paste(im, (0, bar))
-        text = caption(tag, grade(path))
+        m = grade(path)
+        marks.append((tag, m))
+        text = caption(tag, m)
         ImageDraw.Draw(p).text((7, 4), text, fill=(240, 226, 190), font=font)
         panels.append(p)
         print(text)
@@ -78,6 +107,25 @@ def main():
     sheet.save(out)
     print(f"OK {out} {sheet.size}")
 
+    # --- carry the verdict (see module docstring for why AFTER only) ---------
+    unknown = [f"{tag}:{k}" for tag, m in marks
+               for k in ("G3", "G5", "G6", "C") if m[k] == "?"]
+    if unknown:
+        print(f"SHEET VERDICT: UNREADABLE -- no grader verdict for "
+              f"{', '.join(unknown)} -> exit 2")
+        return 2
+
+    after_tag, after_m = marks[-1]
+    bad = [k for k in ("G3", "G5", "G6") if after_m[k] != "P"]
+    if after_m["C"] != "PASS":
+        bad.append("vegetation")
+    if bad:
+        print(f"SHEET VERDICT: FAIL on the AFTER panel ({after_tag.strip()}): "
+              f"{', '.join(bad)} -> exit 1")
+        return 1
+    print(f"SHEET VERDICT: PASS on the AFTER panel ({after_tag.strip()}) -> exit 0")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
