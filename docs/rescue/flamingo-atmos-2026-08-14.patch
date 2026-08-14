@@ -1,0 +1,315 @@
+diff --git a/client/src/look.rs b/client/src/look.rs
+index 99cacb2..f69148a 100644
+--- a/client/src/look.rs
++++ b/client/src/look.rs
+@@ -45,12 +45,13 @@ use bevy::anti_alias::taa::TemporalAntiAliasing;
+ use bevy::camera::Exposure;
+ use bevy::core_pipeline::tonemapping::Tonemapping;
+ use bevy::light::{
+-    CascadeShadowConfigBuilder, DirectionalLightShadowMap, FogVolume, NotShadowCaster,
+-    ShadowFilteringMethod, VolumetricFog, VolumetricLight,
++    atmosphere::ScatteringMedium, Atmosphere, CascadeShadowConfigBuilder,
++    DirectionalLightShadowMap, FogVolume, NotShadowCaster, ShadowFilteringMethod, VolumetricFog,
++    VolumetricLight,
+ };
+ use bevy::pbr::{
+-    ContactShadows, DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion,
+-    ScreenSpaceAmbientOcclusionQualityLevel,
++    AtmosphereMode, AtmosphereSettings, ContactShadows, DistanceFog, FogFalloff,
++    ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
+ };
+ use bevy::post_process::bloom::{Bloom, BloomPrefilter};
+ use bevy::post_process::dof::DepthOfField;
+@@ -111,6 +112,19 @@ pub const FOG_START: f32 = 112.0;
+ /// (`scripts/_flamingo_g7_probe.ps1` steps the fog through `FOG=S,S+0.5`, which
+ /// makes alpha a hard step at S and turns the frame into a depth ruler), 20
+ /// leaves half that band at exactly zero and the rest under 2.1 %.
++///
++/// RE-MEASURED AND HELD, 2026-08-14. The set the second paragraph's "~55 blocks
++/// deep" describes is gone — the depth ruler now reads p99 **47.7** on the
++/// deepest play framing and nothing above the capture noise floor past ~56
++/// (`scripts/_flamingo_depth_ruler.sh`; the table is in [`HAZE_FULL`], which is
++/// what moved). This const does NOT move with it, and the reason is that its
++/// bound was never the set: `combat::LOCK_RANGE` is 16 blocks from the avatar
++/// and [`crate::BOOM_DIST`] puts the camera 6.5 further back, so a locked-on
++/// target at maximum range is 22.5 from the lens. 20 keeps the whole fightable
++/// volume out of the haze at any orbit pose, and it already sits inside the
++/// measured range — on the `0,1,18` framing it leaves **31.9 %** of the frame
++/// receiving haze, which is a third of the picture doing aerial perspective
++/// rather than the 21 %-of-one-ramp the old [`HAZE_FULL`] allowed it.
+ pub const HAZE_START: f32 = 20.0;
+ 
+ /// Distance (blocks) at which the shipped haze is FULLY opaque — the `Linear`
+@@ -190,11 +204,65 @@ pub const HAZE_START: f32 = 20.0;
+ /// the signed-off look on margin.
+ ///
+ /// Note for the streaming lane: nothing between `HAZE_FULL` and
+-/// [`RENDER_RADIUS`] is visible any more, so that shell — now **170 blocks**,
+-/// grown from 70 by this change — is pure draw cost. Tightening `RENDER_RADIUS`
+-/// toward `HAZE_FULL` is available and is Kevin's call, not this lane's, which is
+-/// why this const does not make it. It is worth more now than it was.
+-pub const HAZE_FULL: f32 = 150.0;
++/// [`RENDER_RADIUS`] is visible any more, so that shell — now **248 blocks**,
++/// grown from 70 and then from 170 by the two changes below — is pure draw cost.
++/// Tightening `RENDER_RADIUS` toward `HAZE_FULL` is available and is Kevin's
++/// call, not this lane's, which is why this const does not make it. It is worth
++/// a great deal more now than it was.
++///
++/// ─────────────────────────────────────────────────────────────────────────
++/// 150 → 72, 2026-08-14. THE SET MOVED OUT FROM UNDER THE FIT.
++///
++/// Every number above was fitted on the framing's "measured depth span (26–78
++/// blocks)". That span is no longer true of the world `--play` boots into.
++/// `--play` stopped meaning procedural terrain when Shiba's village landed:
++/// `main.rs:355` sets `cfg.map_load = scene::play_map()`, and `play_map`
++/// (`scene.rs:44`) returns `scene::PLAY_MAP` = `maps/edhari.json` whenever that
++/// file is on disk. Edhari is a tight village, not an open landscape. The fit
++/// was never re-run against it.
++///
++/// SO IT WAS RE-MEASURED, on the shipped binary, with the repo's own depth ruler
++/// — `VOXELFORGE_LOOK_FOG=S,S+0.5` makes the `Linear` falloff a hard step at S,
++/// so the pixels that move against a no-haze reference are exactly the pixels
++/// farther than S, and sweeping S reads the frame's depth CDF straight off the
++/// screen (`scripts/_flamingo_depth_ruler.sh` + `.py`, 22 rungs × 2 framings,
++/// one binary, env only). Depth percentiles over the fog-receiving geometry:
++///
++/// | framing | p50 | p75 | p90 | p95 | p99 | deepest above the noise floor |
++/// |---|---|---|---|---|---|---|
++/// | `35,-18,26` (the pinned gate framing) | 5.7 | 7.7 | 11.8 | 16.0 | — | 28 |
++/// | `0,1,18` (level, sees the ruins)      | 11.1 | 23.7 | 38.9 | 44.1 | 47.7 | ~56 |
++///
++/// THE RULER'S OWN NOISE FLOOR IS SUBTRACTED, and finding it is why the first
++/// read of these captures was wrong. Past S≈32 the moved-pixel count did not
++/// fall to zero, it went FLAT at ~1.0–1.2 % of frame across every remaining
++/// rung out to 320. Nothing in this map is 320 blocks away; that plateau is the
++/// capture's own frame-to-frame irreproducibility (TAA history + stochastic
++/// SSAO — every capture is a separate process). Read raw it invents a 320-block
++/// tail and inflates p95 by 12 %. The script now measures the plateau, subtracts
++/// it, and prints every rung inside it as UNMEASURABLE rather than as a number.
++///
++/// AGAINST THAT, 150 WAS 3.1x PAST THE DEEPEST GEOMETRY THAT EXISTS. The ramp
++/// reached `(47.7 - 20) / (150 - 20)` = **21.3 %** on the farthest surface in
++/// frame and never got further, because there is no farther surface. The haze
++/// was not too weak — it was a 130-block ramp with 28 blocks of world in it,
++/// which is the same failure [`FOG_START`] was retired for (first sample point
++/// past the back of the set), one order of magnitude in.
++///
++/// WHY 72 AND NOT 48. `1.5 x p99`, rounded. Ending the ramp AT the deepest
++/// geometry (48) makes the back of the set 100 % opaque — a fog wall, the exact
++/// failure mode [`HAZE_DENSITY`]'s own note calls out ("the numbers moved and
++/// the picture died"). 1.5x puts the deepest visible surface at **53 %** and
++/// p90 at 36 %, inside the band the approved curve was signed off in (its 63 %
++/// at 100 blocks is documented as still reading "ruins receding rather than
++/// fog"), and it leaves the ramp headroom for a scene edit that pushes the set
++/// deeper without going opaque the day it lands. [`HAZE_START`] does NOT move:
++/// it is bounded by gameplay, not by the set — `combat::LOCK_RANGE` is 16 from
++/// the avatar and `main::BOOM_DIST` puts the camera 6.5 further back, so a
++/// locked-on target at max range sits at 22.5 from the lens and 20 keeps
++/// essentially all of the fightable volume clean. It is also already inside the
++/// measured range, which is what it had to be.
++pub const HAZE_FULL: f32 = 72.0;
+ 
+ const _: () = assert!(
+     HAZE_FULL <= RENDER_RADIUS,
+@@ -1104,6 +1172,11 @@ impl Plugin for LookPlugin {
+                     apply_look_to_cameras,
+                     apply_look_to_sun,
+                     cycle_look_quality,
++                    // A0 (docs/sky-research-2026-08-14.md): Bevy 0.19's own
++                    // physical atmosphere. `AtmospherePlugin` is NOT added here
++                    // — `PbrPlugin` already did (`bevy_pbr-0.19.0/src/lib.rs:252`)
++                    // and adding it twice panics; see the A0 section note.
++                    atmosphere_sky.run_if(atmos_enabled),
+                     // A1/A2 (art-order-2026-08-09-composition): the gradient sky
+                     // dome and the play-scene fog volume that turns the already
+                     // installed `VolumetricFog`/`VolumetricLight` into actual god
+@@ -1771,6 +1844,161 @@ fn cycle_look_quality(keys: Res<ButtonInput<KeyCode>>, mut quality: ResMut<LookQ
+     println!("LOOK_QUALITY -> {quality:?}");
+ }
+ 
++// ===========================================================================
++// A0 · Bevy's built-in physical atmosphere  (docs/sky-research-2026-08-14.md)
++// ===========================================================================
++//
++// Sahara's research landed the fact this section is built on: `bevy = "0.19"`
++// ALREADY SHIPS the Hillaire LUT atmosphere. Nothing is ported here and no
++// dependency moves — `Atmosphere` is `bevy_light::atmosphere` (re-exported at
++// `bevy_light-0.19.0/src/lib.rs:44`) and the render pipeline is
++// `bevy_pbr::AtmospherePlugin` (`bevy_pbr-0.19.0/src/atmosphere/mod.rs:96`).
++//
++// AND THE PLUGIN IS NOT ADDED HERE, WHICH IS THE ONE CORRECTION TO THE WORK
++// ORDER. `docs/sky-research-2026-08-14.md:71` reads "Add `AtmospherePlugin` to
++// the app". It is already added: `PbrPlugin::build` adds it unconditionally at
++// `bevy_pbr-0.19.0/src/lib.rs:252`, and `PbrPlugin` is in `DefaultPlugins`,
++// which `main.rs` uses. `App::add_plugins` PANICS on a duplicate unique plugin
++// ("plugin was already added in application"), so writing that line would have
++// traded a missing sky for a boot crash. The plugin only builds its render
++// graph if the adapter supports compute shaders and Rgba16Float storage
++// textures (`mod.rs:137/146/155` warn and bail otherwise) — on a GPU that fails
++// those checks the `Atmosphere` entity is inert and the frame falls back to
++// `ClearColor`, which is why [`atmos_mode`] keeps the dome reachable.
++//
++// WHAT THIS BUYS AND WHAT IT DOES NOT, at Voxelforge's scale. The atmosphere is
++// authored in METRES against a 6 360 km planet, and one block is one unit. The
++// sky is therefore exactly right (it is a function of view direction and sun
++// angle, not of scene size) — but the AERIAL PERSPECTIVE is not: Rayleigh
++// scattering is 5.802e-6 per metre (`bevy_light-0.19.0/src/atmosphere.rs:203`),
++// so across the ~64 blocks this map is deep the built-in in-scatter integrates
++// to ~4e-4 of a unit — three orders of magnitude below one 8-bit level. So
++// `docs/sky-research-2026-08-14.md:36` is right that the two systems are one
++// physical family and wrong that this one "replaces the current `DistanceFog`
++// haze": at block scale it CANNOT, and deleting the haze would delete the
++// depth cue outright. The division of labour that ships here is
++//
++//     Atmosphere  -> the sky (everything at far depth)
++//     DistanceFog -> the aerial perspective (everything that is geometry)
++//
++// and [`HAZE_START`]/[`HAZE_FULL`] are refitted to the map's MEASURED depth
++// span (`scripts/_flamingo_depth_ruler.sh`) instead of to a guess, which is the
++// other half of this change.
++
++/// How far the aerial-view LUT is stretched, in metres — and metres are blocks.
++///
++/// Bevy's default is `3.2e4` (`bevy_pbr-0.19.0/src/atmosphere/mod.rs:350`): 32 km,
++/// for a scene the size of a landscape flight sim. The aerial-view LUT is a 3-D
++/// texture "fit to the view frustum" whose 32 z-slices are "distributed linearly
++/// from the camera to this value" (`mod.rs:322-328`), so on the default the
++/// ENTIRE playable map — every block of it inside the p99 measured by
++/// `_flamingo_depth_ruler.sh` — falls inside the first slice and gets one
++/// constant sample.
++///
++/// TIED TO [`HAZE_FULL`], NOT TO [`RENDER_RADIUS`] AND NOT TO A LITERAL. Past
++/// `HAZE_FULL` the `DistanceFog` ramp is 100% opaque, so no atmosphere value
++/// computed out there can reach a pixel — sampling to 320 would spend 4/5 of the
++/// slices on depths the haze has already buried, which is the same mistake at
++/// the same scale that `HAZE_FULL = 150` was. Tying the two means the LUT
++/// re-aims itself the next time the haze is refitted to a re-measured set,
++/// instead of drifting silently the way the old fit did.
++const ATMOS_AERIAL_MAX_DISTANCE: f32 = HAZE_FULL;
++
++/// Marks the single atmosphere entity so it is spawned exactly once.
++#[derive(Component)]
++struct AtmosphereAnchor;
++
++/// `VOXELFORGE_LOOK_ATMOS=off|lut|raymarched` — the single-binary A/B lever this
++/// lane requires of every look change, and the tier switch
++/// `docs/sky-research-2026-08-14.md:95` asks for, in one hook.
++///
++/// * unset / `lut` — `AtmosphereMode::LookupTexture`, the shipped default and
++///   Bevy's own (`mod.rs:416-422`): "high-performance … tailored to scenes that are
++///   mostly inside of the atmosphere", which is every frame this game renders.
++/// * `raymarched` — `AtmosphereMode::Raymarched`, the Ultra/cinematic toggle.
++///   Not tiered off [`LookQuality`] yet ON PURPOSE: the research asks for it
++///   "only if Poppy's profiling shows it is affordable", and wiring it to a tier
++///   before that profile exists would ship an unmeasured cost.
++/// * `off` — no atmosphere at all, which is also what re-enables the [`SkyDome`]
++///   (see [`sky_grad_enabled`]). That is the before/after pair out of ONE
++///   binary, same as `_SKYGRAD`, `_HAZE` and `_FOG` before it.
++fn atmos_mode() -> Option<AtmosphereMode> {
++    static MODE: std::sync::OnceLock<Option<AtmosphereMode>> = std::sync::OnceLock::new();
++    *MODE.get_or_init(|| {
++        match std::env::var("VOXELFORGE_LOOK_ATMOS")
++            .unwrap_or_default()
++            .trim()
++            .to_ascii_lowercase()
++            .as_str()
++        {
++            "off" | "0" => None,
++            "raymarched" | "ray" => Some(AtmosphereMode::Raymarched),
++            // Unset and anything unrecognised => the shipped LUT mode.
++            _ => Some(AtmosphereMode::LookupTexture),
++        }
++    })
++}
++
++/// Run condition: is the built-in atmosphere the sky this session?
++fn atmos_enabled() -> bool {
++    atmos_mode().is_some()
++}
++
++/// Spawn the planet once, and dress the gameplay camera with the view settings.
++///
++/// TWO ENTITIES, AND NEITHER BELONGS TO ANOTHER LANE. The `Atmosphere` is a new
++/// entity of this lane's own; the `AtmosphereSettings` goes on the existing
++/// `OrbitCam` for the same reason [`apply_look_to_cameras`] filters on it —
++/// `With<Camera3d>` would also dress the VFX lane's stage camera.
++///
++/// NO TRANSFORM IS WRITTEN. `Atmosphere` carries
++/// `#[component(on_add = set_default_transform)]`
++/// (`bevy_light-0.19.0/src/atmosphere.rs:34,58-68`), which places the planet
++/// centre at `-Y * inner_radius` when the `GlobalTransform` is still `Default` —
++/// i.e. the ground plane lands at y=0 with the surface normal on `+Y`, exactly
++/// where this map's ground already is. `#[require(GlobalTransform)]` means that
++/// default is present, so the hook fires. Setting a transform by hand here would
++/// only be right if we also rescaled the planet, and we do not: see the section
++/// note above on why the metre-scale aerial term is left to `DistanceFog`.
++///
++/// `AtmosphereSettings` carries `#[require(Hdr)]` (`mod.rs:288`). The camera is
++/// already HDR because [`base_camera_look`]'s `Bloom` requires it, so this adds
++/// no target change — but it is why this insert must not be moved onto a camera
++/// that does not carry the base look.
++fn atmosphere_sky(
++    mut commands: Commands,
++    mut media: ResMut<Assets<ScatteringMedium>>,
++    anchor: Query<(), With<AtmosphereAnchor>>,
++    cams: Query<Entity, (With<crate::OrbitCam>, Without<AtmosphereSettings>)>,
++) {
++    let Some(rendering_method) = atmos_mode() else {
++        return;
++    };
++    if anchor.is_empty() {
++        // `ScatteringMedium::default()` IS `ScatteringMedium::earth(256, 256)`
++        // (`bevy_light-0.19.0/src/atmosphere.rs:148-152`) — Rayleigh + Mie +
++        // Ozone at the paper's scale heights. Written as `earth(256, 256)`
++        // rather than `default()` so the two LUT resolutions are visible at the
++        // call site instead of hidden behind a trait impl.
++        let medium = media.add(ScatteringMedium::earth(256, 256));
++        commands.spawn((AtmosphereAnchor, Atmosphere::earth(medium)));
++        println!(
++            "LOOK atmosphere spawned mode={} aerial_max={ATMOS_AERIAL_MAX_DISTANCE}",
++            match rendering_method {
++                AtmosphereMode::Raymarched => "raymarched",
++                _ => "lut",
++            }
++        );
++    }
++    for cam in &cams {
++        commands.entity(cam).insert(AtmosphereSettings {
++            aerial_view_lut_max_distance: ATMOS_AERIAL_MAX_DISTANCE,
++            rendering_method,
++            ..default()
++        });
++    }
++}
++
+ // ===========================================================================
+ // A1 · the gradient sky dome  (art-order-2026-08-09-composition §A1)
+ // ===========================================================================
+@@ -1806,11 +2034,25 @@ struct SkyDome;
+ 
+ /// `VOXELFORGE_LOOK_SKYGRAD=off` reverts to the flat single-colour `ClearColor`
+ /// sky. The dome/flat A/B therefore comes out of ONE binary — the same env-swap
+-/// discipline every other `_LOOK_*` hook exists for. Default: dome on.
++/// discipline every other `_LOOK_*` hook exists for.
++///
++/// THE ATMOSPHERE TAKES PRECEDENCE, AND IT HAS TO. The dome is opaque geometry
++/// at [`SKY_DOME_RADIUS`] = 640 with `cull_mode: None`, so it writes depth
++/// across every pixel the sky would otherwise occupy. Bevy's `render_sky` pass
++/// only writes where the depth buffer is still at the far plane, so a live dome
++/// does not "fight" the atmosphere — it hides it completely, and the frame would
++/// come back looking exactly like today's while every atmosphere LUT was
++/// computed and thrown away. Hence: atmosphere on ⇒ dome off, unconditionally.
++/// `VOXELFORGE_LOOK_ATMOS=off` is what gets the dome back, which is also what
++/// makes the pair a ONE-BINARY A/B rather than two builds.
++///
++/// Default: atmosphere on, dome off.
+ fn sky_grad_enabled() -> bool {
+     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+     // Unset (None) => dome on; only the literal "off" disables it.
+-    *ON.get_or_init(|| std::env::var("VOXELFORGE_LOOK_SKYGRAD").ok().as_deref() != Some("off"))
++    *ON.get_or_init(|| {
++        !atmos_enabled() && std::env::var("VOXELFORGE_LOOK_SKYGRAD").ok().as_deref() != Some("off")
++    })
+ }
+ 
+ /// A linear colour scaled by `s` (componentwise). Kept explicit rather than
