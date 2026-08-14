@@ -1625,6 +1625,10 @@ pub enum VfxShot {
     Parry,
     /// The husk taking a stagger break: it reels back and the ground kicks up dust.
     Stagger,
+    /// The weapon ribbon alone: the blade sweeps with the trail hot and nothing
+    /// else fires. Isolates the swing-trail for a before/after that a debris-laden
+    /// impact frame would drown out.
+    Trail,
 }
 
 impl VfxShot {
@@ -1636,6 +1640,7 @@ impl VfxShot {
             "fire" | "campfire" => Some(VfxShot::Fire),
             "parry" | "riposte" => Some(VfxShot::Parry),
             "stagger" | "stun" | "dust" => Some(VfxShot::Stagger),
+            "trail" | "ribbon" => Some(VfxShot::Trail),
             _ => None,
         }
     }
@@ -2060,7 +2065,7 @@ pub fn showcase_timeline(
     // every beat that swings a blade gets the trail: the parry and stagger plates
     // show a real weapon arc for the same reason the impact one does. `Off` is left
     // out on purpose — it is the legacy bare "before" — and `Fire` has no swing.
-    if matches!(*shot, VfxShot::Impact | VfxShot::Parry | VfxShot::Stagger) {
+    if matches!(*shot, VfxShot::Impact | VfxShot::Parry | VfxShot::Stagger | VfxShot::Trail) {
         let hot = (SWING_FROM..SWING_TO).contains(&t);
         for (mut b, _) in &mut blades {
             b.hot = hot;
@@ -2068,7 +2073,7 @@ pub fn showcase_timeline(
     }
 
     match *shot {
-        VfxShot::Off | VfxShot::Fire => {}
+        VfxShot::Off | VfxShot::Fire | VfxShot::Trail => {}
         VfxShot::Impact => {
             // Three staggered hits (light, light, heavy) so the frame shows debris at
             // three different ages — one lone burst reads as a single freeze-frame.
