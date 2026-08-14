@@ -286,3 +286,17 @@ _*.patch
 !docs/evidence/worktree-rescue-2026-08-14/_*.patch
 !docs/evidence/worktree-rescue-2026-08-14/_vf_poppy_head_untracked/
 !docs/evidence/worktree-rescue-2026-08-14/_vf_poppy_head_untracked/**
+
+# ── Flamingo atmos-lane rescue backup (2026-08-14) ──────────────────────
+# Same shape as the worktree-rescue block above: a safety copy of Flamingo's
+# atmosphere-lane script trio plus the client/src/look.rs diff they back up,
+# saved under docs/rescue/ before a risky worktree operation. `_*.sh` /
+# `_[!_]*.py` above would silently drop the two scripts inside; allowlisted
+# so the backup actually carries what it claims to.
+!docs/rescue/_*.sh
+!docs/rescue/_*.py
+
+# ── One-shot build-launcher batch files with a hardcoded local absolute
+# path (same reasoning as scripts/tests/step2_rebuild_audio.ps1 above) —
+# never portable, always regenerated per machine/session.
+/_shino_build_quest.cmd
