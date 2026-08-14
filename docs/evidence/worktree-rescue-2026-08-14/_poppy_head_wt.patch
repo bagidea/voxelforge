@@ -1,0 +1,797 @@
+diff --git a/client/src/voxel.rs b/client/src/voxel.rs
+index 4aaee5b..86d68f3 100644
+--- a/client/src/voxel.rs
++++ b/client/src/voxel.rs
+@@ -22,6 +22,23 @@
+ //! which a single shared material can never express.
+ //!
+ //! Both paths carry vertex ambient occlusion.
++//!
++//! ## Material response
++//!
++//! A per-type material still gives one flat answer *across a face*: every texel of
++//! a cobble wall reflects the sun identically, so the painted stones stay a
++//! picture of stones and the whole palette reads flat. The split path therefore
++//! also ships two derived maps per block type — [`build_block_normal_map`] and
++//! [`build_block_metallic_roughness`] — both generated from the same
++//! [`tile_shade`] pattern that paints the albedo, so relief, finish and colour
++//! cannot drift out of register. That needs a tangent frame, which the split
++//! sweep emits analytically (the quads are axis-aligned, so it is exact).
++//!
++//! `VOXELFORGE_FLAT_MATERIAL=1` ([`flat_material_forced`]) drops both maps, which
++//! is the pre-pass render — the A/B lever for photographing the change out of one
++//! binary. `VOXELFORGE_MAT_RELIEF` / `VOXELFORGE_MAT_ROUGH_VAR` scale the two
++//! amplitudes at runtime (see [`relief_knob`]) so the grade can be swept from
++//! rendered frames without paying for a fat-LTO relink per attempt.
+ 
+ use bevy::asset::RenderAssetUsages;
+ use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
+@@ -74,6 +91,15 @@ pub struct BlockSurface {
+     pub alpha: f32,
+     /// Whether this block draws in the transparent pass.
+     pub alpha_blend: bool,
++    /// Surface relief, 0..=1 — how far the tile's own pattern is allowed to tilt
++    /// the shading normal ([`build_block_normal_map`]). `0.0` means the block is
++    /// genuinely flat and gets no normal map at all: a polished pane's interest
++    /// comes from its specular, and faking geometry into it only frosts it.
++    pub relief: f32,
++    /// Half-width of the per-texel roughness spread around
++    /// [`Self::perceptual_roughness`] ([`build_block_metallic_roughness`]). `0.0`
++    /// means one uniform roughness over the whole surface.
++    pub roughness_var: f32,
+ }
+ 
+ impl Default for BlockSurface {
+@@ -86,6 +112,8 @@ impl Default for BlockSurface {
+             emissive: LinearRgba::BLACK,
+             alpha: 1.0,
+             alpha_blend: false,
++            relief: 0.55,
++            roughness_var: 0.10,
+         }
+     }
+ }
+@@ -107,26 +135,67 @@ impl Default for BlockSurface {
+ /// * **glass** — obsidian, the darkest and smoothest block in the palette, is
+ ///   what the reflective-pane surface is tuned on (the sim has no glass id).
+ /// * **emitter** — [`LAMP`].
++///
++/// `relief` and `roughness_var` are the second half of the answer to "the
++/// materials still read flat". A single roughness number per block type is still
++/// one flat number *across the whole face*: every texel of a cobble wall answers
++/// the sun identically, so the painted stones stay a picture of stones. Relief
++/// tilts the normal per texel and the roughness spread makes the hollows dusty
++/// and the high points polished, which is what makes a light moving over the
++/// wall pick the stones out one at a time.
+ pub fn block_surface(id: BlockId) -> BlockSurface {
+     match id {
+         BlockId::WOOD => BlockSurface {
+             perceptual_roughness: 0.58,
+             reflectance: 0.34,
++            // Plank grooves are the deepest relief in the palette, and the sanded
++            // plank face between them is the smoothest — that spread IS the read.
++            relief: 0.75,
++            roughness_var: 0.16,
+             ..default()
+         },
+         BlockId::SAND | BlockId::RED_SAND => BlockSurface {
+             perceptual_roughness: 0.88,
+             reflectance: 0.14,
++            // Grain finer than a texel: relief here is sparkle, not shape.
++            relief: 0.35,
++            roughness_var: 0.06,
+             ..default()
+         },
+         BlockId::SNOW => BlockSurface {
+             perceptual_roughness: 0.72,
+             reflectance: 0.26,
++            // Nearly no shape, but a wide roughness spread: packed drifts next to
++            // crystalline flecks is the whole reason snow glitters.
++            relief: 0.25,
++            roughness_var: 0.18,
+             ..default()
+         },
+         BlockId::GRASS | BlockId::LEAVES | BlockId::MOSS => BlockSurface {
+             perceptual_roughness: 0.90,
+             reflectance: 0.12,
++            // Foliage is nothing but relief — the dark gaps in the tile are real
++            // holes between blades, so let them shade like holes.
++            relief: 0.85,
++            roughness_var: 0.08,
++            ..default()
++        },
++        BlockId::COBBLESTONE | BlockId::GRAVEL => BlockSurface {
++            // Loose rounded stones: the strongest relief we ship, because the
++            // whole block is a pile of separate objects.
++            relief: 1.0,
++            roughness_var: 0.12,
++            ..default()
++        },
++        BlockId::BRICK => BlockSurface {
++            // Recessed mortar joints, flat-ish faces.
++            relief: 0.80,
++            roughness_var: 0.12,
++            ..default()
++        },
++        BlockId::DIRT => BlockSurface {
++            relief: 0.70,
++            roughness_var: 0.08,
+             ..default()
+         },
+         BlockId::OBSIDIAN => BlockSurface {
+@@ -135,11 +204,18 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
+             reflectance: 0.92,
+             alpha: 0.66,
+             alpha_blend: true,
++            // Deliberately zero: the tile's diagonal sheen is a reflection, not a
++            // ridge. Bumping a pane only frosts it and kills the mirror.
++            relief: 0.0,
++            roughness_var: 0.03,
+             ..default()
+         },
+         BlockId::LIMESTONE => BlockSurface {
+             perceptual_roughness: 0.82,
+             reflectance: 0.16,
++            // Plaster: broad soft undulation, not detail.
++            relief: 0.45,
++            roughness_var: 0.10,
+             ..default()
+         },
+         LAMP => BlockSurface {
+@@ -148,23 +224,51 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
+             // Warm lantern, pushed past 1.0 so Flamingo's bloom actually catches
+             // it instead of merely tinting the texel.
+             emissive: LinearRgba::rgb(9.0, 4.6, 1.5),
++            // A glowing surface has no shading to modulate; relief on it just
++            // fights the emissive.
++            relief: 0.15,
++            roughness_var: 0.0,
+             ..default()
+         },
+-        // STONE, DIRT, COBBLESTONE, GRAVEL, BRICK, CLAY — matte mineral.
++        // STONE, CLAY — matte mineral, and the default relief is tuned on them.
+         _ => BlockSurface::default(),
+     }
+ }
+ 
+-/// The StandardMaterial for one block type, given its (repeating) tile texture.
++/// The full texture set one block type wears. `normal_map` / `metallic_roughness`
++/// are `None` for a block that genuinely has neither (see [`BlockSurface::relief`])
++/// and for the whole palette under [`flat_material_forced`].
++#[derive(Clone, Debug, Default)]
++pub struct BlockTextures {
++    pub base_color: Handle<Image>,
++    pub normal_map: Option<Handle<Image>>,
++    pub metallic_roughness: Option<Handle<Image>>,
++}
++
++/// The StandardMaterial for one block type, given its (repeating) tile textures.
+ ///
+ /// This is the per-type material the single shared atlas material can't be. Pair
+-/// it with [`greedy_mesh_chunk_split`], which produces one mesh per type.
+-pub fn block_material(id: BlockId, texture: Handle<Image>) -> StandardMaterial {
++/// it with [`greedy_mesh_chunk_split`], which produces one mesh per type — and
++/// which is also the only path that emits the tangents a normal map needs.
++///
++/// The roughness FACTOR moves when a roughness map is present: Bevy multiplies
++/// `perceptual_roughness` by the texture's green channel, so the factor has to be
++/// the top of the range and the map dips below it. Handing the same factor to
++/// both cases would make every mapped surface quietly smoother than the table
++/// says.
++pub fn block_material(id: BlockId, tex: BlockTextures) -> StandardMaterial {
+     let s = block_surface(id);
++    let perceptual_roughness = if tex.metallic_roughness.is_some() {
++        roughness_ceiling(&s)
++    } else {
++        s.perceptual_roughness
++    };
+     StandardMaterial {
+         base_color: Color::srgba(1.0, 1.0, 1.0, s.alpha),
+-        base_color_texture: Some(texture),
+-        perceptual_roughness: s.perceptual_roughness,
++        base_color_texture: Some(tex.base_color),
++        normal_map_texture: tex.normal_map,
++        metallic_roughness_texture: tex.metallic_roughness,
++        perceptual_roughness,
+         metallic: s.metallic,
+         reflectance: s.reflectance,
+         emissive: s.emissive,
+@@ -180,6 +284,73 @@ pub fn block_material(id: BlockId, texture: Handle<Image>) -> StandardMaterial {
+     }
+ }
+ 
++/// The top of a surface's roughness range — the factor the roughness map divides
++/// against. Bevy clamps `perceptual_roughness` at 1.0, so the spread is only ever
++/// allowed to reach down from there.
++#[inline]
++fn roughness_ceiling(s: &BlockSurface) -> f32 {
++    (s.perceptual_roughness + relief_knob(ROUGH_VAR_KNOB) * s.roughness_var).min(1.0)
++}
++
++const RELIEF_KNOB: &str = "VOXELFORGE_MAT_RELIEF";
++const ROUGH_VAR_KNOB: &str = "VOXELFORGE_MAT_ROUGH_VAR";
++
++/// Global multiplier on one of the two amplitude knobs, read once from the
++/// environment. Default `1.0` — the shipped grade in [`block_surface`].
++///
++/// Relief amplitude is the one number in this pass that can only be judged from a
++/// rendered frame, and this binary costs a fat-LTO link to rebuild. So the knob is
++/// a runtime scale, not a recompile: `VOXELFORGE_MAT_RELIEF=0.6` sweeps the whole
++/// palette down proportionally, keeping the per-material *grade* intact.
++/// `=0` is the same as having no normal map at all.
++///
++/// A negative or non-numeric value falls back to 1.0 rather than inverting every
++/// surface in the game on a typo.
++fn relief_knob(key: &'static str) -> f32 {
++    static KNOBS: std::sync::OnceLock<Vec<(&'static str, f32)>> = std::sync::OnceLock::new();
++    let knobs = KNOBS.get_or_init(|| {
++        [RELIEF_KNOB, ROUGH_VAR_KNOB]
++            .into_iter()
++            .map(|k| {
++                let v = std::env::var(k)
++                    .ok()
++                    .and_then(|v| v.trim().parse::<f32>().ok())
++                    .filter(|v| v.is_finite() && *v >= 0.0)
++                    .unwrap_or(1.0);
++                if v != 1.0 {
++                    println!("MATERIAL {k}={v}");
++                }
++                (k, v)
++            })
++            .collect()
++    });
++    knobs
++        .iter()
++        .find(|(k, _)| *k == key)
++        .map(|(_, v)| *v)
++        .unwrap_or(1.0)
++}
++
++/// The A/B lever for this material pass: `VOXELFORGE_FLAT_MATERIAL=1` builds the
++/// whole palette base-colour-only — no normal map, no roughness map — which is
++/// exactly what shipped before it.
++///
++/// It exists for the same reason `main::atlas_mesh_forced` does: so the fix can be
++/// photographed against itself out of ONE binary. Same exe, same map, same seed,
++/// same camera, one variable. `OnceLock` because the answer cannot change mid-run.
++pub fn flat_material_forced() -> bool {
++    static FORCED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *FORCED.get_or_init(|| {
++        let on = std::env::var("VOXELFORGE_FLAT_MATERIAL").is_ok_and(|v| v != "0");
++        if on {
++            println!("MATERIAL flat (VOXELFORGE_FLAT_MATERIAL) — base colour only, pre-fix reference render");
++        } else {
++            println!("MATERIAL response (per-block normal + roughness maps)");
++        }
++        on
++    })
++}
++
+ /// The single shared material for the atlas path ([`greedy_mesh_chunk`]).
+ ///
+ /// One material can only carry ONE surface response, so this is the average of
+@@ -211,11 +382,23 @@ pub fn build_block_materials(
+     images: &mut Assets<Image>,
+     materials: &mut Assets<StandardMaterial>,
+ ) -> Vec<Handle<StandardMaterial>> {
++    let flat = flat_material_forced();
+     (0..N_TILES as u8)
+         .map(|id| {
+             let id = BlockId(id);
+-            let tile = images.add(build_block_texture(id));
+-            materials.add(block_material(id, tile))
++            let s = block_surface(id);
++            let tex = BlockTextures {
++                base_color: images.add(build_block_texture(id)),
++                // A block with no relief / no spread would get an all-flat map:
++                // a texture fetch and a shader permutation that can only return
++                // the value the factor already carries.
++                normal_map: (!flat && s.relief * relief_knob(RELIEF_KNOB) > 0.0)
++                    .then(|| images.add(build_block_normal_map(id))),
++                metallic_roughness: (!flat
++                    && s.roughness_var * relief_knob(ROUGH_VAR_KNOB) > 0.0)
++                    .then(|| images.add(build_block_metallic_roughness(id))),
++            };
++            materials.add(block_material(id, tex))
+         })
+         .collect()
+ }
+@@ -258,6 +441,8 @@ struct Buffers {
+     positions: Vec<[f32; 3]>,
+     normals: Vec<[f32; 3]>,
+     uvs: Vec<[f32; 2]>,
++    /// Only filled on the split path — see the emit site for why.
++    tangents: Vec<[f32; 4]>,
+     colors: Vec<[f32; 4]>,
+     indices: Vec<u32>,
+     quads: usize,
+@@ -272,6 +457,9 @@ impl Buffers {
+         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
+         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
++        if !self.tangents.is_empty() {
++            mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, self.tangents);
++        }
+         // Bevy's PBR pipeline switches on `VERTEX_COLORS` purely from the mesh
+         // layout and multiplies it into base colour — which is how the AO term
+         // reaches the shipping StandardMaterial without a custom shader.
+@@ -440,6 +628,28 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
+                             let (fw, fh) = (w as f32, h as f32);
+                             buf.uvs
+                                 .extend_from_slice(&[[0.0, 0.0], [fw, 0.0], [fw, fh], [0.0, fh]]);
++
++                            // Bevy's PBR shader only applies a normal map under
++                            // `VERTEX_TANGENTS`; a mesh without this attribute
++                            // silently drops the whole map and looks exactly like
++                            // the flat version. These quads are axis-aligned and
++                            // their UVs run straight down (du, dv), so the frame
++                            // is exact — no `generate_tangents()` guesswork, and
++                            // no seam where a generated frame would flip.
++                            let mut t = [0f32; 3];
++                            t[u] = 1.0;
++                            // Handedness: Bevy reconstructs the bitangent as
++                            // cross(N, T) * w, and the back faces of a quad share
++                            // this UV layout with a flipped normal — so w flips
++                            // with them. Derived, not hard-coded per axis.
++                            let cross = [
++                                nrm[1] * t[2] - nrm[2] * t[1],
++                                nrm[2] * t[0] - nrm[0] * t[2],
++                                nrm[0] * t[1] - nrm[1] * t[0],
++                            ];
++                            let sign = if cross[v] >= 0.0 { 1.0 } else { -1.0 };
++                            buf.tangents
++                                .extend_from_slice(&[[t[0], t[1], t[2], sign]; 4]);
+                         } else {
+                             // Atlas UVs: one tile stretched across the merged
+                             // quad — the structural limitation of a shared-atlas
+@@ -596,6 +806,103 @@ fn tile_shade(id: BlockId, lx: usize, ly: usize) -> i32 {
+     }
+ }
+ 
++/// The shade amplitude [`tile_height`] normalises against.
++///
++/// `tile_shade` is written in sRGB steps and its deepest features (a brick joint
++/// at `-22`, a foliage gap at `-26+`, a plank groove at `-16` under its grain) sit
++/// inside ±40, so this maps "the darkest thing the tile paints" to roughly a full
++/// unit of depth.
++const SHADE_SPAN: f32 = 40.0;
++
++/// Texels of horizontal run per unit of height — the slope the relief maths is
++/// calibrated in. At `relief: 1.0` a full-unit step across one texel comes out
++/// around 68°, which is a rounded cobble edge, not a cliff.
++const RELIEF_GAIN: f32 = 2.5;
++
++/// Tile-local surface height in `-1.0..=1.0`, wrapped at the tile edge.
++///
++/// The height field IS the albedo pattern. `tile_shade` already paints a plank
++/// groove, a mortar joint and the gap between two cobbles darker — because that
++/// is what those things are — so deriving relief from it keeps normal and albedo
++/// in register by construction. A normal map that disagrees with its own albedo
++/// is precisely what reads as plastic.
++///
++/// Coordinates are wrapped (not clamped) because every `tile_shade` pattern is
++/// seamless and the tile is sampled in `Repeat`: a clamped edge would bake a
++/// one-texel ridge into every block boundary — the same class of bug as the old
++/// painted border, just in the normal instead of the colour.
++#[inline]
++fn tile_height(id: BlockId, x: i32, y: i32) -> f32 {
++    let p = TILE_PX as i32;
++    let shade = tile_shade(id, x.rem_euclid(p) as usize, y.rem_euclid(p) as usize);
++    (shade as f32 / SHADE_SPAN).clamp(-1.0, 1.0)
++}
++
++/// Build the tangent-space normal map for one block type, from its own tile
++/// pattern ([`tile_height`]).
++///
++/// This is the half of "material response" that a per-block `perceptual_roughness`
++/// cannot buy: without it every texel of a face shares one shading normal, so the
++/// sun answers a whole cobble wall with a single flat value and the painted stones
++/// stay a picture of stones. Requires [`greedy_mesh_chunk_split`]'s tangents.
++///
++/// `Rgba8Unorm`, NOT `Rgba8UnormSrgb`: a normal map is a vector, and running it
++/// through the sRGB transfer curve bends every normal toward the surface — the
++/// classic silently-wrong normal map.
++pub fn build_block_normal_map(id: BlockId) -> Image {
++    let strength = block_surface(id).relief * relief_knob(RELIEF_KNOB) * RELIEF_GAIN;
++    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
++    for ly in 0..TILE_PX as i32 {
++        for lx in 0..TILE_PX as i32 {
++            // Central difference over the wrapped height field.
++            let dhdu = 0.5 * (tile_height(id, lx + 1, ly) - tile_height(id, lx - 1, ly));
++            let dhdv = 0.5 * (tile_height(id, lx, ly + 1) - tile_height(id, lx, ly - 1));
++            // Surface normal of the height field: a hollow tilts its normals back
++            // toward its own centre, which is what makes it shade like a hollow.
++            let n = Vec3::new(-dhdu * strength, -dhdv * strength, 1.0).normalize();
++            let px = (ly as usize * TILE_PX + lx as usize) * 4;
++            for (c, v) in [n.x, n.y, n.z].into_iter().enumerate() {
++                data[px + c] = ((v * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8;
++            }
++            data[px + 3] = 255;
++        }
++    }
++    image_from_rgba_linear(TILE_PX, TILE_PX, data, voxel_sampler(true))
++}
++
++/// Build the metallic-roughness map for one block type: recesses rough, high
++/// points polished, plus a coarse patchiness so a long wall is not one uniform
++/// finish.
++///
++/// Channel layout is Bevy's (glTF's): **G = roughness, B = metallic**, each a
++/// MULTIPLIER on the material's factor. Nothing in this palette is metal, so B is
++/// pinned to neutral 255 and the material's `metallic: 0.0` does the deciding;
++/// G runs `roughness(x,y) / roughness_ceiling`, which is why
++/// [`block_material`] raises the factor to that ceiling.
++///
++/// Linear, like the normal map — these are numbers, not colours.
++pub fn build_block_metallic_roughness(id: BlockId) -> Image {
++    let s = block_surface(id);
++    let ceiling = roughness_ceiling(&s);
++    let spread = s.roughness_var * relief_knob(ROUGH_VAR_KNOB);
++    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
++    for ly in 0..TILE_PX {
++        for lx in 0..TILE_PX {
++            let h = tile_height(id, lx as i32, ly as i32);
++            // Coarse (4×4-texel) patches so the variation survives being seen
++            // from across the village, where the per-texel term is sub-pixel.
++            let patch = dither(lx as u32 / 4, ly as u32 / 4, 77, 100) as f32 / 100.0;
++            let r = s.perceptual_roughness + spread * (-h * 0.7 + patch * 0.3);
++            let px = (ly * TILE_PX + lx) * 4;
++            data[px] = 255; // R: unused by StandardMaterial (occlusion is its own map).
++            data[px + 1] = ((r / ceiling).clamp(0.0, 1.0) * 255.0).round() as u8;
++            data[px + 2] = 255; // B: neutral metallic multiplier.
++            data[px + 3] = 255;
++        }
++    }
++    image_from_rgba_linear(TILE_PX, TILE_PX, data, voxel_sampler(true))
++}
++
+ /// Base colour for a tile, including [`LAMP`] which the sim palette has no entry
+ /// for.
+ fn tile_base(id: BlockId) -> [u8; 3] {
+@@ -632,6 +939,23 @@ fn voxel_sampler(repeat: bool) -> ImageSampler {
+ }
+ 
+ fn image_from_rgba(w: usize, h: usize, data: Vec<u8>, sampler: ImageSampler) -> Image {
++    image_from_rgba_format(w, h, data, sampler, TextureFormat::Rgba8UnormSrgb)
++}
++
++/// Same, in a LINEAR format — for the maps that carry numbers (normals, roughness)
++/// rather than colour. Handing one of these to an sRGB view silently bends every
++/// value it holds.
++fn image_from_rgba_linear(w: usize, h: usize, data: Vec<u8>, sampler: ImageSampler) -> Image {
++    image_from_rgba_format(w, h, data, sampler, TextureFormat::Rgba8Unorm)
++}
++
++fn image_from_rgba_format(
++    w: usize,
++    h: usize,
++    data: Vec<u8>,
++    sampler: ImageSampler,
++    format: TextureFormat,
++) -> Image {
+     let mut image = Image::new(
+         Extent3d {
+             width: w as u32,
+@@ -640,7 +964,7 @@ fn image_from_rgba(w: usize, h: usize, data: Vec<u8>, sampler: ImageSampler) ->
+         },
+         TextureDimension::D2,
+         data,
+-        TextureFormat::Rgba8UnormSrgb,
++        format,
+         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+     );
+     image.sampler = sampler;
+@@ -719,6 +1043,32 @@ mod tests {
+         }
+     }
+ 
++    fn normals(mesh: &Mesh) -> Vec<[f32; 3]> {
++        match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
++            Some(VertexAttributeValues::Float32x3(v)) => v.clone(),
++            _ => panic!("mesh carries no Float32x3 NORMAL attribute"),
++        }
++    }
++
++    fn tangents(mesh: &Mesh) -> Option<Vec<[f32; 4]>> {
++        match mesh.attribute(Mesh::ATTRIBUTE_TANGENT) {
++            Some(VertexAttributeValues::Float32x4(v)) => Some(v.clone()),
++            Some(_) => panic!("TANGENT must be Float32x4"),
++            None => None,
++        }
++    }
++
++    /// Decode one texel of a tangent-space normal map back to a unit vector.
++    fn decoded_normal(img: &Image, lx: usize, ly: usize) -> Vec3 {
++        let d = img.data.as_ref().expect("map has pixel data");
++        let p = (ly * TILE_PX + lx) * 4;
++        Vec3::new(
++            d[p] as f32 / 255.0 * 2.0 - 1.0,
++            d[p + 1] as f32 / 255.0 * 2.0 - 1.0,
++            d[p + 2] as f32 / 255.0 * 2.0 - 1.0,
++        )
++    }
++
+     /// A 4×1×4 stone pad on the chunk floor, plus an optional wall, so AO has
+     /// something to be cast by.
+     fn pad(wall: bool) -> ChunkData {
+@@ -972,14 +1322,236 @@ mod tests {
+ 
+     #[test]
+     fn block_material_carries_the_surface_and_the_texture() {
+-        let m = block_material(LAMP, Handle::default());
++        let m = block_material(LAMP, BlockTextures::default());
+         assert_eq!(m.emissive, block_surface(LAMP).emissive);
+         assert!(m.base_color_texture.is_some());
+-        let pane = block_material(BlockId::OBSIDIAN, Handle::default());
++        let pane = block_material(BlockId::OBSIDIAN, BlockTextures::default());
+         assert!(matches!(pane.alpha_mode, AlphaMode::Blend));
+         assert!(pane.base_color.alpha() < 1.0);
+     }
+ 
++    // ---- material response: normal + roughness maps ----
++
++    /// Normals and roughness are numbers, not colours. An sRGB view of them bends
++    /// every value it holds — the classic silently-wrong normal map, and the one
++    /// failure mode here that looks *almost* right on screen.
++    #[test]
++    fn derived_maps_are_linear_and_the_albedo_is_srgb() {
++        for id in [BlockId::WOOD, BlockId::COBBLESTONE, BlockId::GRASS] {
++            assert_eq!(
++                build_block_normal_map(id).texture_descriptor.format,
++                TextureFormat::Rgba8Unorm,
++                "{} normal map must be linear",
++                id.name()
++            );
++            assert_eq!(
++                build_block_metallic_roughness(id).texture_descriptor.format,
++                TextureFormat::Rgba8Unorm,
++                "{} roughness map must be linear",
++                id.name()
++            );
++            assert_eq!(
++                build_block_texture(id).texture_descriptor.format,
++                TextureFormat::Rgba8UnormSrgb,
++                "{} albedo is a colour and must stay sRGB",
++                id.name()
++            );
++        }
++    }
++
++    /// Every derived map has to repeat with the albedo it belongs to — the split
++    /// path's UVs run 0..w blocks, so a clamped map would smear one texel of
++    /// relief across an entire merged wall.
++    #[test]
++    fn derived_maps_repeat_like_their_albedo() {
++        for img in [
++            build_block_normal_map(BlockId::BRICK),
++            build_block_metallic_roughness(BlockId::BRICK),
++        ] {
++            let ImageSampler::Descriptor(d) = &img.sampler else {
++                panic!("derived maps must pin an explicit sampler descriptor")
++            };
++            assert_eq!(d.address_mode_u, ImageAddressMode::Repeat);
++            assert_eq!(d.address_mode_v, ImageAddressMode::Repeat);
++            assert_eq!(d.mag_filter, ImageFilterMode::Nearest);
++        }
++    }
++
++    /// The height field is sampled wrapped, not clamped. Clamping would bake a
++    /// one-texel ridge into every block boundary — the old painted-border bug all
++    /// over again, just in the normal instead of the colour.
++    #[test]
++    fn tile_height_wraps_at_the_tile_edge() {
++        for id in [BlockId::WOOD, BlockId::BRICK, BlockId::COBBLESTONE] {
++            for k in 0..TILE_PX as i32 {
++                assert_eq!(tile_height(id, -1, k), tile_height(id, TILE_PX as i32 - 1, k));
++                assert_eq!(tile_height(id, k, TILE_PX as i32), tile_height(id, k, 0));
++            }
++        }
++    }
++
++    /// The whole point: the map must actually tilt. A map that decodes to a flat
++    /// +Z everywhere is a texture fetch that changes nothing — which is exactly
++    /// what "the materials still read flat" looked like.
++    #[test]
++    fn normal_maps_tilt_where_the_material_has_relief() {
++        // Wood: the plank groove sits on every 4th row, so it must tilt in v.
++        let wood = build_block_normal_map(BlockId::WOOD);
++        let tilt = (0..TILE_PX)
++            .flat_map(|y| (0..TILE_PX).map(move |x| (x, y)))
++            .map(|(x, y)| {
++                let n = decoded_normal(&wood, x, y);
++                n.truncate().length()
++            })
++            .fold(0.0f32, f32::max);
++        assert!(
++            tilt > 0.25,
++            "wood grooves barely move the normal (max xy tilt {tilt}) — the map is doing nothing"
++        );
++
++        // Every decoded normal must still be a unit vector pointing OUT of the
++        // surface; a negative z means the encode wrapped and the texel would
++        // light as if it faced backwards.
++        for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
++            if block_surface(id).relief <= 0.0 {
++                continue;
++            }
++            let img = build_block_normal_map(id);
++            for y in 0..TILE_PX {
++                for x in 0..TILE_PX {
++                    let n = decoded_normal(&img, x, y);
++                    assert!(n.z > 0.0, "{} texel ({x},{y}) faces backwards", id.name());
++                    assert!(
++                        (n.length() - 1.0).abs() < 0.02,
++                        "{} texel ({x},{y}) decodes to length {}",
++                        id.name(),
++                        n.length()
++                    );
++                }
++            }
++        }
++    }
++
++    /// Relief is a per-material decision, not a global filter: the pane is
++    /// deliberately flat and must get NO normal map, while loose cobbles get the
++    /// strongest one in the palette.
++    #[test]
++    fn relief_is_graded_per_material_and_the_pane_stays_flat() {
++        let mut images = Assets::<Image>::default();
++        let mut materials = Assets::<StandardMaterial>::default();
++        let table = build_block_materials(&mut images, &mut materials);
++
++        let pane = materials.get(&table[BlockId::OBSIDIAN.0 as usize]).unwrap();
++        assert!(
++            pane.normal_map_texture.is_none(),
++            "bumping a polished pane only frosts it"
++        );
++        for id in [BlockId::COBBLESTONE, BlockId::WOOD, BlockId::GRASS] {
++            let m = materials.get(&table[id.0 as usize]).unwrap();
++            assert!(
++                m.normal_map_texture.is_some() && m.metallic_roughness_texture.is_some(),
++                "{} should carry both derived maps",
++                id.name()
++            );
++        }
++        assert!(
++            block_surface(BlockId::COBBLESTONE).relief > block_surface(BlockId::LIMESTONE).relief,
++            "a pile of loose stones has more relief than a plaster wall"
++        );
++    }
++
++    /// Bevy MULTIPLIES `perceptual_roughness` by the map's green channel, so the
++    /// factor has to be the ceiling of the range and the map dips below it. Get
++    /// this backwards and every mapped surface is quietly smoother than the table
++    /// says — with no error anywhere.
++    #[test]
++    fn roughness_map_brackets_the_tables_value_instead_of_only_darkening_it() {
++        let id = BlockId::WOOD;
++        let s = block_surface(id);
++        let m = block_material(
++            id,
++            BlockTextures {
++                metallic_roughness: Some(Handle::default()),
++                ..default()
++            },
++        );
++        assert!(
++            m.perceptual_roughness > s.perceptual_roughness,
++            "factor must be raised to the ceiling when a roughness map is present"
++        );
++
++        let img = build_block_metallic_roughness(id);
++        let d = img.data.as_ref().unwrap();
++        let g: Vec<f32> = (0..TILE_PX * TILE_PX)
++            .map(|i| d[i * 4 + 1] as f32 / 255.0)
++            .collect();
++        let lo = g.iter().cloned().fold(f32::INFINITY, f32::min) * m.perceptual_roughness;
++        let hi = g.iter().cloned().fold(0.0f32, f32::max) * m.perceptual_roughness;
++        assert!(
++            lo < s.perceptual_roughness && hi > s.perceptual_roughness,
++            "effective roughness {lo}..{hi} must straddle the table's {}",
++            s.perceptual_roughness
++        );
++        // Nothing in this palette is metal, so B stays a neutral multiplier.
++        assert!((0..TILE_PX * TILE_PX).all(|i| d[i * 4 + 2] == 255));
++
++        // No map => the factor is the table value verbatim.
++        assert_eq!(
++            block_material(id, BlockTextures::default()).perceptual_roughness,
++            s.perceptual_roughness
++        );
++    }
++
++    /// Without a tangent frame Bevy's PBR shader drops the normal map on the
++    /// floor and renders exactly the flat version — no warning, no error. This is
++    /// the test that would have caught shipping the maps and seeing no change.
++    #[test]
++    fn split_meshes_carry_an_exact_tangent_frame() {
++        let parts = greedy_mesh_chunk_split(&pad(true));
++        assert!(!parts.is_empty());
++        for (_, mesh, _) in &parts {
++            let tans = tangents(mesh).expect("split meshes must carry TANGENT");
++            let norms = normals(mesh);
++            assert_eq!(tans.len(), norms.len());
++            for (t, n) in tans.iter().zip(&norms) {
++                let tv = Vec3::new(t[0], t[1], t[2]);
++                let nv = Vec3::from_array(*n);
++                assert!((tv.length() - 1.0).abs() < 1e-5, "tangent {tv:?} not unit");
++                assert!(tv.dot(nv).abs() < 1e-5, "tangent {tv:?} not ⟂ normal {nv:?}");
++                assert!(t[3] == 1.0 || t[3] == -1.0, "handedness {} is not ±1", t[3]);
++                // The reconstructed bitangent must be the +v axis of the quad's
++                // own UVs — that is what puts the map's green channel where the
++                // mesher said v goes.
++                let bitangent = nv.cross(tv) * t[3];
++                assert!(
++                    (bitangent.length() - 1.0).abs() < 1e-5,
++                    "bitangent {bitangent:?} not unit"
++                );
++            }
++        }
++
++        // The atlas/LOD path stretches one tile over a whole merged quad and wears
++        // no normal map, so it must not pay for the attribute either.
++        let (atlas_mesh, _) = greedy_mesh_chunk(&pad(true));
++        assert!(
++            tangents(&atlas_mesh).is_none(),
++            "the atlas path has no normal map to feed"
++        );
++    }
++
++    /// The A/B lever has to strip BOTH maps, or the "before" frame is not a
++    /// before frame.
++    #[test]
++    fn flat_textures_produce_the_pre_pass_material() {
++        let m = block_material(BlockId::COBBLESTONE, BlockTextures::default());
++        assert!(m.normal_map_texture.is_none());
++        assert!(m.metallic_roughness_texture.is_none());
++        assert_eq!(
++            m.perceptual_roughness,
++            block_surface(BlockId::COBBLESTONE).perceptual_roughness
++        );
++    }
++
+     /// Every palette entry — including the client-side lamp — must have a tile
+     /// in the atlas, or the shared-material path indexes past its own image.
+     #[test]
+diff --git a/sim/src/block.rs b/sim/src/block.rs
+index 66a9b04..4ee18d5 100644
+--- a/sim/src/block.rs
++++ b/sim/src/block.rs
+@@ -80,24 +80,32 @@ impl BlockId {
+ 
+     /// Base (unshaded) sRGB colour for the procedural atlas tile.
+     /// Client reads this to build its atlas row for each block.
++    ///
++    /// The five marked entries come from Monanisa's cottage-reference pass
++    /// (`docs/block-palette.md` §2, "Corrected/final hex"): sampled off the two
++    /// CEO reference photos as a per-channel median, then neutralised back out of
++    /// the photos' golden-hour grade — because this value is *unshaded* and the
++    /// engine lights it afterwards, so shipping the literal warm-lit pixel would
++    /// double-count the light. They replace the flat synthetic set the CEO
++    /// flagged (grass especially: `#46a042` reads neon once lit).
+     pub fn base_color(self) -> [u8; 3] {
+         match self {
+             Self::AIR         => [0, 0, 0],
+-            Self::GRASS       => [70, 160, 66],
++            Self::GRASS       => [91, 140, 70],   // #5b8c46 — was #46a042 (the "neon grass" note)
+             Self::DIRT        => [124, 88, 56],
+             Self::STONE       => [128, 128, 138],
+             Self::SAND        => [214, 202, 148],
+-            Self::WOOD        => [120, 86, 52],
++            Self::WOOD        => [156, 107, 58],  // #9c6b3a — warm oak, not the old cold brown
+             Self::LEAVES      => [48, 130, 48],
+             Self::SNOW        => [240, 245, 250],
+             Self::RED_SAND    => [200, 130, 70],
+             Self::CLAY        => [140, 150, 168],
+             Self::GRAVEL      => [110, 100, 94],
+-            Self::COBBLESTONE => [92, 92, 98],
++            Self::COBBLESTONE => [140, 138, 120], // #8c8a78 — mossy fieldstone, not blue-grey
+             Self::OBSIDIAN    => [20, 18, 28],
+             Self::BRICK       => [150, 90, 60],
+-            Self::MOSS        => [55, 100, 40],
+-            Self::LIMESTONE   => [200, 190, 160],
++            Self::MOSS        => [75, 110, 55],   // #4b6e37
++            Self::LIMESTONE   => [222, 204, 168], // #decca8 — cream limewash
+             _                 => [255, 0, 255], // error magenta
+         }
+     }

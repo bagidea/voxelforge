@@ -276,3 +276,13 @@ _*.patch
 /quest_save.json
 /client/src/settings.json
 /client/src/editor_config.json
+
+# ── Worktree rescue backup (2026-08-14) ─────────────────────────────────
+# `_*/` and `_*.patch` above are right for scratch, but this folder is the
+# committed safety net for four live worktrees' uncommitted diffs (plus one
+# worktree's untracked texture atlas) that must survive an accidental
+# `git worktree remove`. Un-ignored in place so the backup actually tracks —
+# the `_` names pair each .patch with its source worktree.
+!docs/evidence/worktree-rescue-2026-08-14/_*.patch
+!docs/evidence/worktree-rescue-2026-08-14/_vf_poppy_head_untracked/
+!docs/evidence/worktree-rescue-2026-08-14/_vf_poppy_head_untracked/**

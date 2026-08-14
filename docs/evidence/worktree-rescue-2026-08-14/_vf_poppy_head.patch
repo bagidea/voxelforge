@@ -1,0 +1,193 @@
+diff --git a/client/build.rs b/client/build.rs
+index de5317d..e67f03a 100644
+--- a/client/build.rs
++++ b/client/build.rs
+@@ -18,13 +18,18 @@ use std::path::Path;
+ use std::{fs, io};
+ 
+ fn main() {
+-    // Re-run if any file inside the source assets tree changes.
+-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("assets");
+-    println!("cargo:rerun-if-changed={}", src.display());
+-    // Also re-run if the src dir itself is created or deleted, which the
+-    // recursive glob above does not cover (it monitors children, not the dir).
++    // Re-run the build script whenever any source file in this package
++    // changes — not just when the asset tree changes. Without this, a
++    // code-only rebuild (e.g. after a fresh checkout or after someone wipes
++    // the target dir) would recompile the binary but skip the asset copy,
++    // leaving the exe deaf. Watching src/ + Cargo.toml closes that gap.
++    println!("cargo:rerun-if-changed=src/");
++    println!("cargo:rerun-if-changed=Cargo.toml");
++    // Re-run when the shared asset tree at the workspace root changes.
+     println!("cargo:rerun-if-changed=../assets/");
+ 
++    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("assets");
++
+     let out = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+     // OUT_DIR = <target>/<profile>/build/<crate>-<hash>/out
+     //   → .ancestors().nth(3) = <target>/<profile>
+diff --git a/client/src/anim.rs b/client/src/anim.rs
+index d874c0b..822a5aa 100644
+--- a/client/src/anim.rs
++++ b/client/src/anim.rs
+@@ -239,6 +239,17 @@ pub struct Rigged;
+ #[derive(Component)]
+ pub struct Joint;
+ 
++/// Marks the weapon mesh entity riding in a rig's `hand_r` joint — the blade
++/// that is actually drawn, as opposed to any other lane's own placeholder
++/// (e.g. `combat::HuskArm`, which `attach_rigs` hides the moment a rig lands
++/// on that actor). Other lanes (the VFX bridge) attach effects — a swing
++/// trail — to this entity so the ribbon follows the blade the player really
++/// sees, not a proxy with its own, slightly different arc.
++#[derive(Component, Clone, Copy)]
++pub struct RigWeapon {
++    pub actor: Actor,
++}
++
+ /// The rig root — one child entity per actor, holding the joint handles and all
+ /// the animation state. Everything below it is pure decoration.
+ #[derive(Component)]
+@@ -659,12 +670,13 @@ fn build_rig(
+         Actor::Player => 0.86,
+         Actor::Husk => 1.05,
+     };
+-    skin(
+-        &p.weapon,
+-        &p.steel,
++    commands.spawn((
++        Mesh3d(p.weapon.clone()),
++        MeshMaterial3d(p.steel.clone()),
+         Transform::from_xyz(0.0, -blade_len * 0.5 + 0.06, -0.04),
+-        hand_r,
+-    );
++        ChildOf(hand_r),
++        RigWeapon { actor },
++    ));
+ 
+     let rig = Rig {
+         actor,
+diff --git a/client/src/main.rs b/client/src/main.rs
+index d1cc8d7..c5f0b06 100644
+--- a/client/src/main.rs
++++ b/client/src/main.rs
+@@ -511,6 +511,7 @@ fn main() {
+                     // during Play — the player fights, not builds. EditorPlugin
+                     // owns the build loop in Editor state.
+                     fly_camera.run_if(editor::not_interactive_editor).run_if(settings_menu::settings_closed),
++                    boom_walk_demo.before(fly_camera),
+                     editor_controls,
+                     highlight_target,
+                     edit_demo,
+@@ -1412,7 +1413,7 @@ pub(crate) fn fly_camera(
+     let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
+     let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
+     let want = orbit.want_dist;
+-    let dist = match world.as_deref() {
++    let raw = match world.as_deref() {
+         Some(world) => camera_boom(world, pivot, back, want),
+         None => want,
+     };
+@@ -1425,16 +1426,61 @@ pub(crate) fn fly_camera(
+     // pull-in (closing), exponential ease on release (opening).
+     const BOOM_RELEASE_K: f32 = 8.0; // release time-constant: ~0.5s to near-full
+     let prev = orbit.dist;
+-    let dist = if dist <= prev {
+-        dist
++    let dist = if raw <= prev {
++        raw
+     } else {
+-        prev + (dist - prev) * (1.0 - (-BOOM_RELEASE_K * dt).exp())
++        prev + (raw - prev) * (1.0 - (-BOOM_RELEASE_K * dt).exp())
+     };
+     orbit.dist = dist;
++    // `VOXELFORGE_BOOM_TRACE=1` prints the boom every frame — `raw` straight out of
++    // `camera_boom` (quantized to its 0.1 march) next to the length actually used.
++    // The step-jitter is a *time* series; no single screenshot can show it, so this
++    // is the only way to check the smoothing against the real binary.
++    if boom_trace_on() {
++        println!(
++            "BOOM_TRACE dt={dt:.4} raw={raw:.3} used={dist:.3} \
++             pivot=({:.3},{:.3},{:.3})",
++            pivot.x, pivot.y, pivot.z
++        );
++    }
+     ctf.translation = pivot + back * dist;
+     ctf.rotation = cam_rot;
+ }
+ 
++/// Is the per-frame boom trace switched on? Read once — this sits in the camera's
++/// hot path.
++fn boom_trace_on() -> bool {
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ON.get_or_init(|| std::env::var("VOXELFORGE_BOOM_TRACE").is_ok())
++}
++
++/// `VOXELFORGE_BOOM_WALK=<secs>` holds W for `<secs>` and then quits, so the avatar
++/// really walks along a wall — the boom's step-jitter only appears while the pivot
++/// is moving. The key is pressed into `ButtonInput<KeyCode>` exactly the way the
++/// quest demo does it, so the input goes *through* the real controller, not around
++/// it.
++fn boom_walk_demo(
++    time: Res<Time>,
++    mut keys: ResMut<ButtonInput<KeyCode>>,
++    mut exit: MessageWriter<AppExit>,
++) {
++    let Some(secs) = std::env::var("VOXELFORGE_BOOM_WALK")
++        .ok()
++        .and_then(|v| v.parse::<f32>().ok())
++    else {
++        return;
++    };
++    let t = time.elapsed_secs();
++    if t < 0.5 {
++        return; // let the scene finish loading before the first step
++    }
++    if t > 0.5 + secs {
++        exit.write(AppExit::Success);
++        return;
++    }
++    keys.press(KeyCode::KeyW);
++}
++
+ // ---------------------------------------------------------------------------
+ // Voxel editing — raycast pick, then break (→AIR) or place (selected block).
+ // ---------------------------------------------------------------------------
+diff --git a/client/src/quest.rs b/client/src/quest.rs
+index cb08d36..da1b2ef 100644
+--- a/client/src/quest.rs
++++ b/client/src/quest.rs
+@@ -1250,6 +1250,15 @@ fn check_block_place_triggers(
+         all_jp.join(","),
+         demo_fid);
+ 
++    // INSTRUMENTATION: dump q4 state to see if it's even eligible
++    let q4 = journal.quests.get("q4_what_walls_remember");
++    let q4_status = q4.map(|p| format!("{:?}", p.status)).unwrap_or_else(|| "MISSING".into());
++    let q4_obj = q4.map(|p| p.current_objective).unwrap_or(999);
++    let q4_done = q4.map(|p| p.completed_objectives.join(",")).unwrap_or_default();
++    println!("QUEST_DEBUG_BLOCK q4_state status={} cur_obj={} done=[{}]",
++        q4_status, q4_obj, q4_done);
++
++    let mut found_any = false;
+     for qdef in &data.quests {
+         let Some(prog) = journal.quests.get_mut(&qdef.id) else { continue };
+         if prog.status != QuestStatus::Active { continue; }
+@@ -1264,6 +1273,7 @@ fn check_block_place_triggers(
+         println!("QUEST_DEBUG_BLOCK checking qid={} oid={} pos=({},{}) dist={:.1} radius={:.0}",
+             qdef.id, obj.id, pos.x, pos.z, dist, radius);
+         if dist <= radius {
++            found_any = true;
+             prog.completed_objectives.push(obj.id.clone());
+             prog.current_objective += 1;
+             println!("QUEST_STAGE_COMPLETE qid={} oid={} => PASS (place_block)", qdef.id, obj.id);
+@@ -1275,6 +1285,9 @@ fn check_block_place_triggers(
+                 qdef.id, obj.id, dist, radius);
+         }
+     }
++    if !found_any {
++        println!("QUEST_DEBUG_BLOCK NO place_block objective matched — q4 may be locked/wrong-obj/already-done");
++    }
+ }
+ 
+ // =============================================================================
