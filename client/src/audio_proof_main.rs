@@ -242,6 +242,7 @@ fn run_script(
         sfx.write(SfxEvent::HitBlock { position: pos });
         sfx.write(SfxEvent::HitParry { position: pos });
         sfx.write(SfxEvent::EnemyDeath { position: pos });
+        sfx.write(SfxEvent::EnemyGrowl { position: pos });
         sfx.write(SfxEvent::PlayerHurt);
         sfx.write(SfxEvent::PlayerDeath);
         sfx.write(SfxEvent::PlayerRespawn);

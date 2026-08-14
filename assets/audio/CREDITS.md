@@ -48,6 +48,24 @@ audio feature — see `client/Cargo.toml`'s comment on that — so `.wav` it is)
 Still a synthesized placeholder pad, not a composed theme — replace when a
 real track is delivered, same filename.
 
+## Weight + enemy-presence additions (2026-08-14, yamamoto — audio lane)
+
+Same `ffmpeg -f lavfi` synth basis as the row above.
+
+| File | Description | Duration |
+|---|---|---|
+| `hit_splatter.wav` | Wet impact burst ("blood splatter" cue) — bandpassed pink-noise transient | 0.20 s |
+| `enemy_growl.wav` | Low guttural threat bark — vibrato'd low sine + lowpassed brown noise | 0.60 s |
+
+`hit_splatter.wav` is mixed in as an `extra_layers()` layer on `HitLight`/
+`HitHeavy` only (a weapon landing on a body, not a shield/parry — see
+`extra_layers`'s doc). `enemy_growl.wav` backs a new `SfxEvent::EnemyGrowl`
+variant; routing/asset are proven via the real `sfx_proof_driver`
+(env-gated, `VOXELFORGE_AUDIO_PROOF=1`) and `audio_proof_main.rs`, but no
+real gameplay system fires it yet — the intended trigger (an enemy's
+Alert/Pursuit state transition) lives in `enemy_ai.rs`, rose's lane, and is
+not wired here.
+
 ## License
 
 All files: **CC0 1.0 Universal (Public Domain Dedication)**

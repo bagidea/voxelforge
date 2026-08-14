@@ -72,12 +72,13 @@
 //! | `HitBlock`     | `audio/hit_block.wav`     |
 //! | `HitParry`     | `audio/hit_parry.wav`     |
 //! | `EnemyDeath`   | `audio/enemy_death.wav`   |
+//! | `EnemyGrowl`   | `audio/enemy_growl.wav`   |
 //! | `PlayerHurt`   | `audio/player_hurt.wav`   |
 //! | `PlayerDeath`  | `audio/player_death.wav`  |
 //! | `PlayerRespawn`| `audio/player_respawn.wav`|
 //! | (ambient)      | `audio/ambient_wind.wav`, `audio/ambient_campfire.wav`, `audio/ambient_village.wav` |
 //! | (music)        | `audio/music_theme.wav` — synthesized placeholder pad, see [`AUDIO_MUSIC_THEME_PATH`] |
-//! | (layers, see [`extra_layers`]) | `audio/swing_whoosh.wav`, `audio/impact_thump.wav`, `audio/impact_tail.wav` |
+//! | (layers, see [`extra_layers`]) | `audio/swing_whoosh.wav`, `audio/impact_thump.wav`, `audio/impact_tail.wav`, `audio/hit_splatter.wav` |
 
 use std::collections::HashMap;
 
@@ -183,6 +184,14 @@ pub enum SfxEvent {
     },
     /// Enemy death crumble.
     EnemyDeath {
+        position: Vec3,
+    },
+    /// Enemy threat/alert bark — not yet fired by any real system (enemy_ai.rs
+    /// is rose's lane, see `docs/LANES.md`); routing + asset proven here via
+    /// the scripted `audio_proof_main.rs` driver, same pattern as the combat
+    /// events below. Real trigger point: rose's `Alert`/`Pursuit` state
+    /// transition in `enemy_ai.rs`.
+    EnemyGrowl {
         position: Vec3,
     },
     /// Player took damage.
@@ -381,18 +390,25 @@ fn attach_listener(
 /// offset from 1.0)`. This is what makes swings/hits read as *weighty*
 /// instead of one thin one-shot wav — a swing gets an air-cut whoosh under
 /// it, a heavy hit/block gets a low-end thump for punch plus a short tail for
-/// hang, matching the brief's "wind-cut + impact + tail" layering. Distinct
-/// combos per event (on top of each already having its own base wav) is also
-/// how flesh/block/parry/heavy read as different weights, not just different
-/// samples.
+/// hang, matching the brief's "wind-cut + impact + tail" layering. `HitLight`/
+/// `HitHeavy` also layer `hit_splatter.wav` (wet impact burst — the "blood
+/// splatter" cue) since both represent a weapon landing on an enemy's body,
+/// unlike `HitBlock`/`HitParry` which hit a shield/weapon and stay dry.
+/// Distinct combos per event (on top of each already having its own base wav)
+/// is also how flesh/block/parry/heavy read as different weights, not just
+/// different samples.
 fn extra_layers(ev: &SfxEvent) -> &'static [(&'static str, f32, f32)] {
     match ev {
         SfxEvent::SwingLight { .. } => &[("audio/swing_whoosh.wav", 0.55, 0.15)],
         SfxEvent::SwingHeavy { .. } => &[("audio/swing_whoosh.wav", 0.75, -0.10)],
-        SfxEvent::HitLight { .. } => &[("audio/impact_tail.wav", 0.35, 0.10)],
+        SfxEvent::HitLight { .. } => &[
+            ("audio/impact_tail.wav", 0.35, 0.10),
+            ("audio/hit_splatter.wav", 0.45, 0.10),
+        ],
         SfxEvent::HitHeavy { .. } => &[
             ("audio/impact_thump.wav", 0.9, -0.08),
             ("audio/impact_tail.wav", 0.55, -0.05),
+            ("audio/hit_splatter.wav", 0.7, -0.05),
         ],
         SfxEvent::HitBlock { .. } => &[("audio/impact_thump.wav", 0.6, 0.05)],
         SfxEvent::HitParry { .. } => &[("audio/impact_tail.wav", 0.5, 0.35)],
@@ -424,6 +440,7 @@ fn spawn_sfx_layer(
     pos: Vec3,
     base_volume: f64,
     base_speed: f32,
+    elapsed: f32,
 ) {
     let handle: Handle<AudioSource> = asset_server.load(path);
     let playback_volume = Volume::Linear(jitter_volume(base_volume) as f32);
@@ -441,9 +458,11 @@ fn spawn_sfx_layer(
         entity.insert(Transform::from_translation(pos));
     }
     // Diagnostic: the real audio system prints this line — grep for
-    // `AUDIO_PLAY:` to prove the game found its own sounds.
+    // `AUDIO_PLAY:` to prove the game found its own sounds. `t=`/`pos=` make
+    // each line a self-contained (timestamp, cue, world position) evidence
+    // triple instead of just a bare path.
     counter.bump(path);
-    println!("AUDIO_PLAY:{path}");
+    println!("AUDIO_PLAY:{path} t={elapsed:.2} pos=({:.1},{:.1},{:.1})", pos.x, pos.y, pos.z);
 }
 
 /// Read [`SfxEvent`] messages and spawn matching audio entities (primary +
@@ -455,7 +474,9 @@ fn play_sfx(
     settings: Res<AudioSettings>,
     mut events: MessageReader<SfxEvent>,
     mut counter: ResMut<SfxCounter>,
+    time: Res<Time>,
 ) {
+    let elapsed = time.elapsed_secs();
     let vol = (settings.master * settings.sfx) as f64;
     for ev in events.read() {
         let (path, pos, bus_vol) = match ev {
@@ -475,13 +496,14 @@ fn play_sfx(
             SfxEvent::HitBlock { position } => ("audio/hit_block.wav", *position, settings.sfx as f64),
             SfxEvent::HitParry { position } => ("audio/hit_parry.wav", *position, settings.sfx as f64),
             SfxEvent::EnemyDeath { position } => ("audio/enemy_death.wav", *position, settings.sfx as f64),
+            SfxEvent::EnemyGrowl { position } => ("audio/enemy_growl.wav", *position, settings.sfx as f64),
             // Player-centric sounds play at the camera (non-spatial fallback = full volume).
             SfxEvent::PlayerHurt => ("audio/player_hurt.wav", Vec3::ZERO, settings.sfx as f64),
             SfxEvent::PlayerDeath => ("audio/player_death.wav", Vec3::ZERO, settings.sfx as f64),
             SfxEvent::PlayerRespawn => ("audio/player_respawn.wav", Vec3::ZERO, settings.sfx as f64),
         };
         let base_volume = vol * bus_vol;
-        spawn_sfx_layer(&mut commands, &asset_server, &mut counter, path, pos, base_volume, 1.0);
+        spawn_sfx_layer(&mut commands, &asset_server, &mut counter, path, pos, base_volume, 1.0, elapsed);
         for &(layer_path, layer_mult, speed_offset) in extra_layers(ev) {
             spawn_sfx_layer(
                 &mut commands,
@@ -491,6 +513,7 @@ fn play_sfx(
                 pos,
                 base_volume * layer_mult as f64,
                 1.0 + speed_offset,
+                elapsed,
             );
         }
     }
@@ -540,7 +563,9 @@ fn spawn_ambient(
     camp: Option<Res<Campsite>>,
     player_q: Query<&Transform, With<FlyCam>>,
     mut counter: ResMut<SfxCounter>,
+    time: Res<Time>,
 ) {
+    let elapsed = time.elapsed_secs();
     let vol = (settings.master * settings.ambient) as f64;
     let player_pos = player_q.single().map(|t| t.translation).unwrap_or(Vec3::ZERO);
 
@@ -557,7 +582,7 @@ fn spawn_ambient(
     )).id();
     ents.wind = Some(wind);
     counter.bump(wind_path);
-    println!("AUDIO_PLAY:{wind_path}");
+    println!("AUDIO_PLAY:{wind_path} t={elapsed:.2} pos=(omnipresent)");
 
     // Campfire — placed at the actual campfire position from the scene.
     let fire_pos = camp.map(|c| c.fire).unwrap_or(player_pos + Vec3::new(0.0, 0.0, -3.0));
@@ -574,7 +599,7 @@ fn spawn_ambient(
     )).id();
     ents.campfire = Some(fire);
     counter.bump(fire_path);
-    println!("AUDIO_PLAY:{fire_path}");
+    println!("AUDIO_PLAY:{fire_path} t={elapsed:.2} pos=({:.1},{:.1},{:.1})", fire_pos.x, fire_pos.y, fire_pos.z);
 
     // Village murmur — distant, placed some distance from spawn.
     let village_pos = player_pos + Vec3::new(15.0, 0.0, -10.0);
@@ -591,7 +616,7 @@ fn spawn_ambient(
     )).id();
     ents.village = Some(village);
     counter.bump(village_path);
-    println!("AUDIO_PLAY:{village_path}");
+    println!("AUDIO_PLAY:{village_path} t={elapsed:.2} pos=({:.1},{:.1},{:.1})", village_pos.x, village_pos.y, village_pos.z);
 }
 
 /// Despawn all ambient sound entities when leaving Play.
@@ -615,7 +640,9 @@ fn spawn_music(
     settings: Res<AudioSettings>,
     mut music: ResMut<MusicEnt>,
     mut counter: ResMut<SfxCounter>,
+    time: Res<Time>,
 ) {
+    let elapsed = time.elapsed_secs();
     let vol = (settings.master * settings.music) as f64;
     let handle: Handle<AudioSource> = asset_server.load(AUDIO_MUSIC_THEME_PATH);
     let e = commands
@@ -631,7 +658,7 @@ fn spawn_music(
         .id();
     music.0 = Some(e);
     counter.bump(AUDIO_MUSIC_THEME_PATH);
-    println!("AUDIO_PLAY:{AUDIO_MUSIC_THEME_PATH}");
+    println!("AUDIO_PLAY:{AUDIO_MUSIC_THEME_PATH} t={elapsed:.2} pos=(non-spatial)");
 }
 
 /// Despawn the music track when leaving Play.
@@ -667,6 +694,7 @@ fn track_ambient_zone(
     story: Option<Res<StoryDataRes>>,
     player_q: Query<&Transform, With<FlyCam>>,
     mut current: ResMut<CurrentAmbientZone>,
+    time: Res<Time>,
 ) {
     let Ok(tf) = player_q.single() else { return };
     let pos = tf.translation;
@@ -690,7 +718,10 @@ fn track_ambient_zone(
         .unwrap_or(AmbientZone::Wilds);
     if zone != current.0 {
         current.0 = zone;
-        println!("AUDIO_ZONE:{zone:?}");
+        println!(
+            "AUDIO_ZONE:{zone:?} t={:.2} pos=({:.1},{:.1},{:.1})",
+            time.elapsed_secs(), pos.x, pos.y, pos.z
+        );
     }
 }
 
@@ -791,7 +822,7 @@ fn sfx_proof_driver(
         events.write(SfxEvent::Footstep { surface, position: pos });
     }
 
-    // ---- Combat positional: 7 events ----
+    // ---- Combat positional: 8 events ----
     events.write(SfxEvent::SwingLight { position: pos });
     events.write(SfxEvent::SwingHeavy { position: pos });
     events.write(SfxEvent::HitLight { position: pos });
@@ -799,6 +830,7 @@ fn sfx_proof_driver(
     events.write(SfxEvent::HitBlock { position: pos });
     events.write(SfxEvent::HitParry { position: pos });
     events.write(SfxEvent::EnemyDeath { position: pos });
+    events.write(SfxEvent::EnemyGrowl { position: pos });
 
     // ---- Player events: 3 that need no position ----
     events.write(SfxEvent::PlayerHurt);
