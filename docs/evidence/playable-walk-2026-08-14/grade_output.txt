@@ -1,0 +1,43 @@
+=== grade_gate.py ===
+# docs/assets/playable-walk-2026-08-14-nohud2.png = 1280x720
+
+## G3  bounce/shade not black, not blue
+   interior p05-L=20.9% (need >=8)  p50-L=34.1%
+   darkest shade @(532,142) RGB=(50,30,18) R-B=+32 warm=True
+   -> PASS
+
+## G5  window not blown-out (gradient survives, G/B roll off)
+   brightest px @(669,636) RGB=(189, 218, 168)  min(G,B)=168 (need <=245)
+   3-pt vertical L = [77.4, 81.7, 51.5]  spread=30.1 (need >=8)
+   -> PASS
+
+## G6  warm golden tone on sunlit wood (R>G>B, R-B 40..210, sunlit L>=55)
+   brightest golden patch @(662,564) RGB=(248,190,130) R-B=+118 L=77.6
+   -> PASS
+
+============================================
+MEASURABLE GATES: G3=P  G5=P  G6=P   => all measurable gates PASS
+(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)
+EXIT_grade_gate=0
+
+=== grade_g3.py ===
+# docs/assets/playable-walk-2026-08-14-nohud2.png = 1280x720  (interior = trim outer 8%)
+
+## interior luminance percentiles
+  p01 L =  15.1%
+  p05 L =  20.9%
+  p10 L =  24.1%
+  p50 L =  34.1%
+  p90 L =  66.4%
+  p99 L =  92.4%
+
+## darkest representative shade @(532,142)
+  RGB=(49.9,30.2,18.1)  L=13.15%  warm(R>=G>=B)=True  R-B=+31.8
+
+## frame means  R=145.2 G=101.2 B=44.2  (R-B=+101.0)
+
+## G3 GATE
+  p05-L >= 8% ? 20.9%  -> PASS
+  darkest shade warm (not blue, R>=B) ? R-B=+57.0 -> PASS
+  == G3: PASS ==
+EXIT_grade_g3=0
