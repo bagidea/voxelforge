@@ -174,12 +174,31 @@ impl quest_rules::ObjectiveLike for ObjectiveDef {
     fn optional(&self) -> bool { self.optional }
 }
 
+/// A reward may grant a single narrative flag or several at once. `q6` drops one
+/// Shaper Fragment; `q11` drops two in the same beat (docs/act2-script.md §7).
+/// Untagged so `"set_flag": "a"` and `"set_flag": ["a","b"]` both deserialize.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FlagSpec {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl FlagSpec {
+    pub fn names(&self) -> Vec<&str> {
+        match self {
+            FlagSpec::One(f) => vec![f.as_str()],
+            FlagSpec::Many(fs) => fs.iter().map(|s| s.as_str()).collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QuestRewardDef {
     #[serde(default)]
     pub heal: Option<String>,
     #[serde(default)]
-    pub set_flag: Option<String>,
+    pub set_flag: Option<FlagSpec>,
     #[serde(default)]
     pub unlock_dialogue: Option<String>,
     #[serde(default)]
@@ -718,8 +737,11 @@ fn story_data(story: &StoryDataRes) -> &StoryData { &story.data }
 // =============================================================================
 
 pub fn load_story_data() -> Option<StoryData> {
-    let path = "assets/story/act1.json";
-    match std::fs::read_to_string(path) {
+    // `VOXELFORGE_STORY` swaps the loaded act for proof/capture runs (e.g.
+    // `assets/story/act2.json`) without changing the default boot path.
+    let path = std::env::var("VOXELFORGE_STORY")
+        .unwrap_or_else(|_| "assets/story/act1.json".to_string());
+    match std::fs::read_to_string(&path) {
         Ok(text) => match serde_json::from_str::<StoryData>(&text) {
             Ok(data) => {
                 println!("STORY_LOAD ok path={path} quests={} npcs={} dialogues={} regions={}",
@@ -763,6 +785,9 @@ fn init_journal(mut journal: ResMut<QuestJournal>, story: Res<StoryDataRes>) {
 /// If a saved journal exists on disk, overwrite the freshly-initialised journal
 /// with it — the player continues from their last campfire rest.
 fn try_load_saved_journal(mut journal: ResMut<QuestJournal>) {
+    // A story-override proof/capture run boots a different act; a saved act1
+    // journal would overwrite the fresh init. Boot fresh in that mode.
+    if std::env::var("VOXELFORGE_STORY").is_ok() { return; }
     if let Some(saved) = load_quest_journal() {
         *journal = saved;
     }
@@ -1112,8 +1137,10 @@ fn complete_quest(journal: &mut QuestJournal, quest_id: &str, data: &StoryData) 
     let Some(qdef) = data.quests.iter().find(|q| q.id == quest_id) else { return };
 
     // Apply rewards.
-    if let Some(ref flag) = qdef.rewards.set_flag {
-        journal.flags.insert(flag.clone());
+    if let Some(ref spec) = qdef.rewards.set_flag {
+        for name in spec.names() {
+            journal.flags.insert(name.to_string());
+        }
     }
     // World-changing rewards: recorded here, performed by `apply_world_rewards`
     // (this function has no voxels to move). `open_door` is what unseals the
@@ -2593,8 +2620,10 @@ mod tests {
         // Complete the quest.
         prog.status = QuestStatus::Completed;
         // q1 rewards set campfire_anchored flag.
-        if let Some(ref flag) = qdef.rewards.set_flag {
-            j.flags.insert(flag.clone());
+        if let Some(ref spec) = qdef.rewards.set_flag {
+            for name in spec.names() {
+                j.flags.insert(name.to_string());
+            }
         }
         assert!(j.flags.contains("campfire_anchored"), "campfire_anchored flag should be set");
         assert_eq!(prog.status, QuestStatus::Completed);
@@ -2809,8 +2838,10 @@ mod tests {
             }
 
             // Apply rewards.
-            if let Some(ref flag) = qdef.rewards.set_flag {
-                j.flags.insert(flag.clone());
+            if let Some(ref spec) = qdef.rewards.set_flag {
+                for name in spec.names() {
+                    j.flags.insert(name.to_string());
+                }
             }
         }
 

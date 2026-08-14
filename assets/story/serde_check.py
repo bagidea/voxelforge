@@ -10,14 +10,14 @@ runtime actually reads (quest ids, Maren npc, the dlg_maren_gate hub, region
 bounds). If this passes, act1.json would deserialize into StoryData and drive
 the runtime without a parse/field error -- no engine build needed.
 
-Usage:  python assets/story/serde_check.py
+Usage:  python assets/story/serde_check.py [assets/story/act2.json]
 Exit 0 = the JSON is serde-faithful + engine-contract-clean.
 """
 import json, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ACT  = ROOT / "assets/story/act1.json"
+ACT  = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "assets/story/act1.json"
 
 errs, notes = [], []
 
@@ -44,6 +44,13 @@ def chk_type(val, t, path):
     elif t == "f32":
         if isinstance(val, bool) or not isinstance(val, (int, float)):
             errs.append(f"{path}: expected f32 (number), got {val!r}")
+    elif t == "flag":                       # quest.rs FlagSpec: String | [String]
+        if isinstance(val, list):
+            for i, s in enumerate(val):
+                if not isinstance(s, str):
+                    errs.append(f"{path}[{i}]: expected String in flag list, got {type(s).__name__}")
+        elif not isinstance(val, str):
+            errs.append(f"{path}: expected String or [String] (flag), got {val!r}")
 
 def chk_struct(obj, fields, path):
     """fields: list of (json_key, kind, rust_type_or_structname).
@@ -107,8 +114,8 @@ SCHEMAS = {
     ("id","req","String"),("kind","req","String"),("target","req","String"),
     ("position","opt","PositionDef"),("radius","opt","f32"),("count","default","u32"),
     ("hint","opt","String"),("optional","default","bool")],
- "QuestRewardDef":[                                                                      # quest.rs:158-176  (all Option<String>, all default)
-    ("heal","opt","String"),("set_flag","opt","String"),("unlock_dialogue","opt","String"),
+ "QuestRewardDef":[                                                                      # quest.rs:158-176  (all Option<>, all default)
+    ("heal","opt","String"),("set_flag","opt","flag"),("unlock_dialogue","opt","String"),
     ("advance_to","opt","String"),("reveal_path","opt","String"),("open_door","opt","String"),
     ("activate_campfire","opt","String"),("unlock_act","opt","String")],
  "QuestDef":    [                                                                        # quest.rs:107-121
@@ -151,7 +158,7 @@ except Exception as e:
     print(f"FATAL parse: {e}"); sys.exit(1)
 
 print("[A] serde-deserialize mirror (every quest.rs struct field, type, rename, optionality)")
-chk_struct(d, ROOT_FIELDS, "act1")
+chk_struct(d, ROOT_FIELDS, ACT.stem)
 print(f"    -> {'OK' if not errs else 'FAIL'} ({len(errs)} field/type errors)\n")
 
 # ---------------------------------------------------------------------------
@@ -163,59 +170,74 @@ def assert_(cond, msg):
     if not cond: E.append(msg); print(f"    X {msg}")
     return cond
 
+act     = d.get("act", 1)
 qids    = {q["id"] for q in d["quests"]}
 npc_ids = {n["id"] for n in d["npcs"]}
 regs    = {r["id"]: r for r in d["regions"]}
 dids    = {x["id"] for x in d["dialogue"]}
 Q = {q["id"]: q for q in d["quests"]}
 
-# init_journal (quest.rs:481) pushes data.start_quest to active_order
-assert_(d["start_quest"] == "q1_embers", f'start_quest={d["start_quest"]!r} (code expects q1_embers)')
-# init_journal (quest.rs:469): on_spawn OR start_quest => Active at boot
-assert_(Q["q1_embers"]["trigger"]["type"] == "on_spawn", "q1_embers.trigger.type must be on_spawn (init_journal)")
-# quest_demo / spawn_garren reference these quest ids verbatim
-for qid in ("q1_embers","q2_voice_in_stone","q3_gatekeeper","q4_what_walls_remember"):
-    assert_(qid in qids, f'code references quest {qid!r} but it is absent')
+# Common to every act: init_journal (quest.rs:481) pushes start_quest, and boots
+# it Active via on_spawn (quest.rs:743).
+if assert_(d["start_quest"] in qids, f'start_quest={d["start_quest"]!r} not in quests'):
+    assert_(Q[d["start_quest"]]["trigger"]["type"] == "on_spawn",
+            f'{d["start_quest"]}.trigger.type must be on_spawn (init_journal)')
 
-# spawn_npcs (quest.rs:494) hardcodes npc_id "maren"; open_npc_dialogue matches speaker=="maren"
-assert_("maren" in npc_ids, 'npc "maren" must exist (spawn_npcs hardcodes it)')
-# dlg_maren_gate hub -- demo (quest.rs:1185) expects 4 lines + 5 choices, Digit5->idx4 advances q3
-g = next((x for x in d["dialogue"] if x["id"] == "dlg_maren_gate"), None)
-assert_(g is not None, "dlg_maren_gate hub missing")
-if g:
-    assert_(g["speaker"] == "maren", 'dlg_maren_gate.speaker must be maren')
-    assert_(g["trigger"]["type"] == "enter_zone", 'dlg_maren_gate.trigger.type must be enter_zone (open_npc_dialogue)')
-    assert_(len(g["lines"]) == 4, f'dlg_maren_gate has {len(g["lines"])} lines (demo expects 4)')
-    ch = g.get("choices") or []
-    assert_(len(ch) == 5, f'dlg_maren_gate has {len(ch)} choices (demo Digit5 expects idx4 of 5)')
-    if len(ch) >= 5:
-        c4 = ch[4]
-        assert_(c4.get("advances_quest") == "q3_gatekeeper",
-                f'choice[4].advances_quest={c4.get("advances_quest")!r} (demo Digit5 must advance q3_gatekeeper)')
-
-# q3 objective shape: check_kill_triggers needs a 'defeat' obj; approach obj o2_observe; reach_zone o1_east
-q3 = Q.get("q3_gatekeeper", {})
-kinds = [o["kind"] for o in q3.get("objectives", [])]
-assert_("defeat" in kinds, "q3 needs a 'defeat' objective (check_kill_triggers)")
-assert_("approach_entity" in kinds, "q3 needs an 'approach_entity' obj (check_approach_triggers, o2_observe)")
-assert_("reach_zone" in kinds, "q3 needs a 'reach_zone' obj (check_area_triggers, o1_east)")
-
-# regions the runtime + demo read with exact bounds
-gs = regs.get("gate_square")
-assert_(gs and gs["bounds"] == {"x0":27,"z0":3,"x1":37,"z1":8}, f'gate_square bounds={gs and gs["bounds"]}')
-gp = regs.get("guard_post_east")
-assert_(gp and gp["bounds"] == {"x0":48,"z0":4,"x1":56,"z1":12}, f'guard_post_east bounds={gp and gp["bounds"]}')
-
-# q3 completion must unlock q4 (complete_quest uses qdef.next then rewards.advance_to)
-assert_(q3.get("next") == "q4_what_walls_remember" or
-        (q3.get("rewards",{}) or {}).get("advance_to") == "q4_what_walls_remember",
-        "q3 must unlock q4 via next or rewards.advance_to")
-
-# choices.next_dialogue / completes_objective / advances_quest resolve to real ids
+# choices.next_dialogue resolves to a real dialogue id (applies to both acts)
 for x in d["dialogue"]:
     for c in (x.get("choices") or []):
         if c.get("next_dialogue") and c["next_dialogue"] not in dids:
             assert_(False, f'{x["id"]}.{c["id"]}.next_dialogue -> {c["next_dialogue"]!r} not found')
+
+if act == 1:
+    # quest_demo / spawn_garren reference these quest ids verbatim
+    for qid in ("q1_embers","q2_voice_in_stone","q3_gatekeeper","q4_what_walls_remember"):
+        assert_(qid in qids, f'code references quest {qid!r} but it is absent')
+    # spawn_npcs (quest.rs:494) hardcodes npc_id "maren"; open_npc_dialogue matches speaker=="maren"
+    assert_("maren" in npc_ids, 'npc "maren" must exist (spawn_npcs hardcodes it)')
+    # dlg_maren_gate hub -- demo (quest.rs:1185) expects 4 lines + 5 choices, Digit5->idx4 advances q3
+    g = next((x for x in d["dialogue"] if x["id"] == "dlg_maren_gate"), None)
+    assert_(g is not None, "dlg_maren_gate hub missing")
+    if g:
+        assert_(g["speaker"] == "maren", 'dlg_maren_gate.speaker must be maren')
+        assert_(g["trigger"]["type"] == "enter_zone", 'dlg_maren_gate.trigger.type must be enter_zone (open_npc_dialogue)')
+        assert_(len(g["lines"]) == 4, f'dlg_maren_gate has {len(g["lines"])} lines (demo expects 4)')
+        ch = g.get("choices") or []
+        assert_(len(ch) == 5, f'dlg_maren_gate has {len(ch)} choices (demo Digit5 expects idx4 of 5)')
+        if len(ch) >= 5:
+            c4 = ch[4]
+            assert_(c4.get("advances_quest") == "q3_gatekeeper",
+                    f'choice[4].advances_quest={c4.get("advances_quest")!r} (demo Digit5 must advance q3_gatekeeper)')
+    # q3 objective shape: check_kill_triggers needs a 'defeat' obj; approach obj o2_observe; reach_zone o1_east
+    q3 = Q.get("q3_gatekeeper", {})
+    kinds = [o["kind"] for o in q3.get("objectives", [])]
+    assert_("defeat" in kinds, "q3 needs a 'defeat' objective (check_kill_triggers)")
+    assert_("approach_entity" in kinds, "q3 needs an 'approach_entity' obj (check_approach_triggers, o2_observe)")
+    assert_("reach_zone" in kinds, "q3 needs a 'reach_zone' obj (check_area_triggers, o1_east)")
+    # regions the runtime + demo read with exact bounds
+    gs = regs.get("gate_square")
+    assert_(gs and gs["bounds"] == {"x0":27,"z0":3,"x1":37,"z1":8}, f'gate_square bounds={gs and gs["bounds"]}')
+    gp = regs.get("guard_post_east")
+    assert_(gp and gp["bounds"] == {"x0":48,"z0":4,"x1":56,"z1":12}, f'guard_post_east bounds={gp and gp["bounds"]}')
+    # q3 completion must unlock q4 (complete_quest uses qdef.next then rewards.advance_to)
+    assert_(q3.get("next") == "q4_what_walls_remember" or
+            (q3.get("rewards",{}) or {}).get("advance_to") == "q4_what_walls_remember",
+            "q3 must unlock q4 via next or rewards.advance_to")
+
+elif act == 2:
+    assert_(d["start_quest"] == "q6_the_warden", f'start_quest={d["start_quest"]!r} (code expects q6_the_warden)')
+    for qid in ("q6_the_warden","q7_those_we_left_below","q8_the_rite_they_kept",
+                "q9_the_warm_thing","q10_the_cradle","q11_the_architect","q12_one_slow_breath"):
+        assert_(qid in qids, f'act2 quest {qid!r} is absent')
+    # every dialogue speaker resolves to the roster (open_npc_dialogue matches speaker==npc.id)
+    for x in d["dialogue"]:
+        assert_(x["speaker"] in npc_ids, f'{x["id"]}.speaker {x["speaker"]!r} not an npc')
+    # q11 drops two Shaper Fragments in one reward step — the reason set_flag became
+    # a FlagSpec (String | Vec<String>) in quest.rs.
+    q11 = Q.get("q11_the_architect", {})
+    sf = (q11.get("rewards") or {}).get("set_flag")
+    assert_(isinstance(sf, list) and len(sf) == 2, f'q11 set_flag={sf!r} (expects the 2-fragment list)')
+
 print(f"    -> {'OK' if not E else 'FAIL'} ({len(E)} engine-contract failures)\n")
 
 # ---------------------------------------------------------------------------

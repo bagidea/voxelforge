@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Standalone validator for assets/story/act1.json (Rose, Story data lane).
+"""Standalone validator for assets/story/act1.json + act2.json (Story data lane).
 
 Proves the act data is engine-consumable on its own — no engine build needed.
 Checks: JSON syntax, required-field structure, cross-reference integrity,
 quest-chain completeness, premature-trigger audit, coordinate-vs-map grounding,
 and English-only (no Thai/CJK script) for in-game text.
 
-Usage:  python assets/story/validate.py [act1.json] [edhari-map.json]
+Act 2 uses a different coordinate space (hollow_reach: a negative-y descent,
+negative-z deeper) and new code-spawned entities, so this validator is act-aware
+via the JSON's own `act` field and an optional top-level `entities` array.
+
+Usage:  python assets/story/validate.py assets/story/act1.json maps/edhari.json
+        python assets/story/validate.py assets/story/act2.json maps/hollow_reach.json
 Exit 0 = valid, 1 = errors. Writes assets/story/_validation.log.
 """
 import json, re, sys
@@ -16,6 +21,16 @@ ROOT = Path(__file__).resolve().parents[2]          # .../Voxelforge
 ACT  = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "assets/story/act1.json"
 MAP  = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "maps/edhari.json"
 LOG  = ACT.parent / "_validation.log"
+
+# World extents per act, for the coordinate-bounds check. Act 1 (edhari) is the
+# 64x32x64 village: every coordinate is non-negative. Act 2 (hollow_reach) is a
+# descent — y goes negative (down) and z goes negative (north/deeper) while x
+# stays 0-63. Act 2 has no real map file yet (maps/hollow_reach.json is pending),
+# so its bounds are derived from the authored extent rather than a shipped map.
+ACT_BOUNDS = {
+    1: {"x": (0, 63), "y": (0, 31), "z": (0, 63)},
+    2: {"x": (0, 63), "y": (-80, 0), "z": (-170, 0)},
+}
 
 errs, warns, out = [], [], []
 def say(s):
@@ -47,6 +62,10 @@ dids = {x["id"] for x in d["dialogue"]}
 lids = {x["id"] for x in d["lore_items"]}
 npcs = {n["id"] for n in d["npcs"]}
 regs = {r["id"] for r in d["regions"]}
+# Code-spawned entities that are neither roster NPCs, regions, nor lore items:
+# Act 1's garren_husk, plus any act that lists an explicit `entities` array
+# (Act 2's the_warden / the_architect / stasis_* pods).
+ents = {"garren_husk"} | {e["id"] for e in d.get("entities", [])}
 obj_by_q = {q["id"]: {o["id"] for o in q["objectives"]} for q in d["quests"]}
 choice_ids = set()
 
@@ -81,11 +100,11 @@ for q in d["quests"]:
         if o["kind"] == "reach_zone":
             ref(f'{q["id"]}.{o["id"]}.target', o.get("target"), regs)
         if o["kind"] == "interact":
-            ref(f'{q["id"]}.{o["id"]}.target', o.get("target"), lids)
+            ref(f'{q["id"]}.{o["id"]}.target', o.get("target"), lids | ents)
         if o["kind"] == "listen":
             ref(f'{q["id"]}.{o["id"]}.target', o.get("target"), dids)
         if o["kind"] == "approach_entity":
-            ref(f'{q["id"]}.{o["id"]}.target', o.get("target"), regs | {"garren_husk"})
+            ref(f'{q["id"]}.{o["id"]}.target', o.get("target"), regs | ents)
 
 for x in d["dialogue"]:
     ref(f'{x["id"]}.quest', x.get("quest"), qids)
@@ -98,9 +117,9 @@ for x in d["dialogue"]:
     if t.get("type") == "enter_zone":
         ref(f'{x["id"]}.trigger.zone', t.get("zone"), regs)
     if t.get("type") == "on_interact":
-        ref(f'{x["id"]}.trigger.entity', t.get("entity"), lids)
+        ref(f'{x["id"]}.trigger.entity', t.get("entity"), lids | ents)
     if t.get("type") == "on_defeat":
-        ref(f'{x["id"]}.trigger.entity', t.get("entity"), {"garren_husk"})
+        ref(f'{x["id"]}.trigger.entity', t.get("entity"), ents)
     for c in x.get("choices") or []:
         choice_ids.add(c["id"])
         ref(f'{x["id"]}.{c["id"]}.next_dialogue', c.get("next_dialogue"), dids | {None})
@@ -156,15 +175,18 @@ for q in d["quests"]:
     for o in q["objectives"]:
         if "position" in o:
             coords.append((f'{q["id"]}.{o["id"]}', o["position"]))
+b = ACT_BOUNDS.get(d.get("act", 1), ACT_BOUNDS[1])
 oob = 0
 for name, p in coords:
-    if not (0 <= p["x"] <= 63 and 0 <= p["y"] <= 31 and 0 <= p["z"] <= 63):
+    if not (b["x"][0] <= p["x"] <= b["x"][1]
+            and b["y"][0] <= p["y"] <= b["y"][1]
+            and b["z"][0] <= p["z"] <= b["z"][1]):
         errs.append(f"coord OOB: {name} {p}"); oob += 1; continue
     if solid:
         _, dist = nearest(p)
         if dist > 1.6:
             warns.append(f"coord floats (dist {dist:.1f}): {name} {p}")
-say(f"[4.coords] {len(coords)} positions checked vs maps/edhari.json ({len(mb)} blocks): {oob} OOB")
+say(f"[4.coords] {len(coords)} positions checked vs {MAP.name} ({len(mb)} blocks): {oob} OOB")
 
 # ---------- English-only (no Thai/CJK script) ----------
 thai = re.compile(r"[฀-๿]"); cjk = re.compile(r"[　-鿿]")
