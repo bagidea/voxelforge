@@ -34,27 +34,30 @@ use crate::scene::Campsite;
 use crate::vfx::{CampfireVfx, FootDust, HitFlavor, Impact, SwingTrail, Unravel};
 use crate::EYE_HEIGHT;
 
-/// Half-extents of a Guard Husk's torso+head silhouette. Mirrors the cuboids in
-/// `combat::spawn_guard_husk` (0.9 × 1.4 × 0.6 torso, head at y≈2.0) so the
-/// dissolve fills the volume the body actually occupied.
-const HUSK_HALF: Vec3 = Vec3::new(0.45, 1.15, 0.30);
+/// Half-extents of the Bone Sentinel's silhouette. Mirrors the authored boxes in
+/// `enemies.rs::SENTINEL` (via `combat::spawn_guard_husk`): legs from y=0, helm
+/// top at 21/8 ≈ 2.6 blocks, horn tip 22.2/8 ≈ 2.8, cuirass ±5/8 = 0.625 wide,
+/// pauldrons reaching ±6.8/8 ≈ 0.85 — so the dissolve fills the volume the body
+/// actually occupied.
+const HUSK_HALF: Vec3 = Vec3::new(0.80, 1.40, 0.47);
 /// Centre of that silhouette above the husk's feet.
-const HUSK_CENTRE_Y: f32 = 1.15;
-/// The husk's armour colour — must match the `armor` material in `spawn_guard_husk`
-/// or the blocks that come apart look like a different enemy.
-const HUSK_TINT: Color = Color::srgb(0.32, 0.34, 0.40);
+const HUSK_CENTRE_Y: f32 = 1.40;
+/// The Sentinel's armour colour — must match `Tone::Iron` (#23262B) in
+/// `enemies.rs` or the blocks that come apart look like a different enemy.
+const HUSK_TINT: Color = Color::srgb(0.137, 0.149, 0.169);
 /// Chest height on the player, so a blow that lands on them flashes at the torso
 /// rather than at their feet.
 const PLAYER_CHEST: f32 = -0.2;
 /// Half-extents of the player's silhouette, for the red wrap flash.
 const PLAYER_HALF: Vec3 = Vec3::new(0.40, 0.90, 0.40);
-/// Height above `combat::spawn_guard_husk`'s `feet` root that actually reads as the
-/// point of contact — the torso sits at y=1.0 there, the telegraph arm at y=1.1.
+/// Height above the enemy's `feet` root that actually reads as the point of
+/// contact — the Sentinel's cuirass spans y ≈ 1.08–2.03 and the eye-slits sit at
+/// ≈ 2.3, so a blade meeting its chest connects around 1.4.
 /// `SfxEvent::HitLight/HitHeavy/HitParry/HitBlock` all carry the husk's *root*
 /// transform (feet), so without this offset every spark/debris/flash burst was
 /// drawing centred on the ground, half of it clipped underground — see
 /// `contact_point` below.
-const HUSK_CONTACT_Y: f32 = 1.05;
+const HUSK_CONTACT_Y: f32 = 1.40;
 /// The husk blade's cross-section — matches the `weapon` cuboid `anim.rs` builds
 /// for `Actor::Husk` (0.10 × 1.05 × 0.26).
 const HUSK_BLADE_HALF: Vec3 = Vec3::new(0.05, 0.53, 0.13);

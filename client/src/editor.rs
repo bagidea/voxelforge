@@ -24,12 +24,16 @@ use crate::gizmo::GizmoState;
 use crate::settings_menu::{settings_closed, SettingsMenuSet};
 use crate::{paint_at_cursor, OrbitCam, PaintOp, World};
 
-/// Top-level mode. `Editor` builds the world (combat/physics AI held off); `Play`
-/// drops you into the scene with the hero + combat live. Enter → Play, Esc → Editor.
-/// Defaults to `Editor` so a fresh launch opens in build mode.
+/// Top-level mode. `MainMenu` is the game entrance (New Game / Continue / Settings /
+/// Quit) shown on a plain launch; `Editor` builds the world (combat/physics AI held
+/// off); `Play` drops you into the scene with the hero + combat live. Enter → Play,
+/// Esc → Editor. Defaults to `MainMenu` so the product opens on the menu, not the
+/// dev build tool — the scripted/bench/shot lanes still land in `Editor` explicitly
+/// (see `boot_state` in main.rs).
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AppState {
     #[default]
+    MainMenu,
     Editor,
     Play,
 }

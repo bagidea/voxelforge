@@ -23,8 +23,10 @@ mod hero;
 mod hud;
 mod import;
 mod look;
+mod main_menu;
 mod mapfile;
 mod quest;
+mod save_game;
 mod quest_chaos;
 mod quest_rules;
 mod scene;
@@ -85,6 +87,18 @@ pub(crate) struct Cfg {
     combat_demo: bool,
     /// Scripted quest demo (headless proof of accept→complete→reward→next quest opens).
     pub(crate) quest_demo: bool,
+    /// `menu` — the game entrance. True on a plain launch (no lane flags): boots to
+    /// [`AppState::MainMenu`] with the play scene pre-loaded behind it. False for
+    /// every scripted/bench/shot/play lane, which still lands in Editor/Play as before.
+    pub(crate) menu: bool,
+    /// `VOXELFORGE_SAVE_DEMO=save|continue` — the scripted end-to-end proof of the
+    /// save/load loop (menu → New Game → walk → save → exit, or menu → Continue).
+    pub(crate) save_demo: Option<String>,
+    /// `VOXELFORGE_MENUSHOT=before|after` — headless menu capture. `before` shoots
+    /// `docs/assets/menu/menu-a-before.png` (no save yet → Continue dimmed), `after`
+    /// shoots `menu-b-after.png` (save present → Continue lit + slot data). Both
+    /// boot to [`AppState::MainMenu`] and exit right after the frame lands.
+    pub(crate) menushot: Option<String>,
     /// `--strict-exit`: exit code ≠0 when any gate FAILs. Without this flag the
     /// process always exits 0 even when a gate prints FAIL — the caller grades the
     /// log line itself. With it, the exit code IS the verdict.
@@ -154,30 +168,62 @@ fn read_cfg() -> Cfg {
     // --quest-demo is the quest-loop proof (accept→complete→reward→next quest).
     // Also turns --play on — needs the full scene + NPCs + husk.
     let quest_demo = has_arg("--quest-demo") || std::env::var("VOXELFORGE_QUEST_DEMO").is_ok();
+
+    // Hoisted so `menu` below can ask "did any OTHER lane fire?".
+    let save_demo = std::env::var("VOXELFORGE_SAVE_DEMO").ok().filter(|s| !s.is_empty());
+    let menushot = std::env::var("VOXELFORGE_MENUSHOT").ok().filter(|s| !s.is_empty());
+    let bench = std::env::var("VOXELFORGE_BENCH").is_ok();
+    let hero = std::env::var("VOXELFORGE_HERO").is_ok();
+    let edit_demo = std::env::var("VOXELFORGE_EDIT_DEMO").is_ok();
+    let walk_demo = std::env::var("VOXELFORGE_WALK_DEMO").is_ok();
+    let editor_demo = std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok();
+    let shot = std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty());
+    let map_load = std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty());
+    let map_save = std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty());
+    let play = play_demo
+        || combat_demo
+        || quest_demo
+        || has_arg("--play")
+        || std::env::var("VOXELFORGE_PLAY").is_ok();
+
+    // The game entrance = a plain launch (no other lane). `save_demo` and `menushot`
+    // are themselves menu-mode lanes, so they force `menu` on regardless of the rest.
+    let menu = save_demo.is_some()
+        || menushot.is_some()
+        || !(play
+            || bench
+            || hero
+            || edit_demo
+            || walk_demo
+            || editor_demo
+            || shot.is_some()
+            || map_load.is_some()
+            || map_save.is_some());
+
     Cfg {
-        bench: std::env::var("VOXELFORGE_BENCH").is_ok(),
+        bench,
         grid: std::env::var("VOXELFORGE_GRID")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(6),
-        shot: std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty()),
-        play: play_demo || combat_demo || quest_demo || has_arg("--play") || std::env::var("VOXELFORGE_PLAY").is_ok(),
+        shot,
+        play,
         play_demo,
-        hero: std::env::var("VOXELFORGE_HERO").is_ok(),
+        hero,
         present: std::env::var("VOXELFORGE_PRESENT").ok().filter(|s| !s.is_empty()),
         start_side: std::env::var("VOXELFORGE_START_SIDE")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(1)
             .max(1),
-        edit_demo: std::env::var("VOXELFORGE_EDIT_DEMO").is_ok(),
-        walk_demo: std::env::var("VOXELFORGE_WALK_DEMO").is_ok(),
+        edit_demo,
+        walk_demo,
         combat_demo,
         quest_demo,
         strict_exit: has_arg("--strict-exit") || std::env::var("VOXELFORGE_STRICT_EXIT").is_ok(),
-        editor_demo: std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok(),
-        map_load: std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty()),
-        map_save: std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty()),
+        editor_demo,
+        map_load,
+        map_save,
         cam: env_floats("VOXELFORGE_CAM"),
         sun: env_floats("VOXELFORGE_SUN"),
         dof: env_floats("VOXELFORGE_DOF"),
@@ -200,6 +246,9 @@ fn read_cfg() -> Cfg {
         bounce2: std::env::var("VOXELFORGE_BOUNCE2").ok().and_then(|v| v.parse().ok()),
         shoulder: std::env::var("VOXELFORGE_SHOULDER").ok().and_then(|v| v.parse().ok()),
         ambcolor: env_floats("VOXELFORGE_AMBCOLOR"),
+        menu,
+        save_demo,
+        menushot,
     }
 }
 
@@ -351,8 +400,17 @@ fn main() -> AppExit {
     // `--play` boots the game, so the scene — not the caller — decides which world
     // that is: Shiba's hand-built village once `maps/edhari.json` lands, procedural
     // terrain until then. An explicit VOXELFORGE_MAP_LOAD still wins.
-    if cfg.play && cfg.map_load.is_none() {
+    //
+    // Menu mode (a plain launch, or the scripted save demo) pre-boots that same
+    // playable scene BEHIND the main menu, so New Game / Continue drop straight in
+    // instead of loading — the menu is an overlay on an already-ready world. `play`
+    // is set true so `scene::ScenePlugin` and `quest::QuestPlugin` (both gated on
+    // `cfg.play`) come alive; `boot_state` still routes the *state* to MainMenu.
+    if (cfg.play || cfg.menu) && cfg.map_load.is_none() {
         cfg.map_load = scene::play_map();
+    }
+    if cfg.menu {
+        cfg.play = true;
     }
     let cfg = cfg;
 
@@ -440,6 +498,7 @@ fn main() -> AppExit {
             || cfg.combat_demo
             || cfg.editor_demo
             || cfg.map_save.is_some()
+            || cfg.save_demo.is_some()
             || cfg.play_demo || cfg.quest_demo
             // A --play session is a human at the controls, so it is NOT scripted —
             // but it never sits in AppState::Editor either, so the editor camera
@@ -484,6 +543,12 @@ fn main() -> AppExit {
                 dodge_parry::DodgeParryPlugin,
             ))
             .add_plugins(look::LookPlugin)
+            // The game entrance (main menu + real save/load). MainMenuPlugin is the
+            // AppState::MainMenu overlay + action routing; SaveGamePlugin is the F6
+            // quick-save. Both gate on their own run conditions so the editor / bench
+            // / shot / play lanes are untouched.
+            .add_plugins(main_menu::MainMenuPlugin)
+            .add_plugins(save_game::SaveGamePlugin)
             .add_plugins(settings_menu::SettingsPlugin)
             .add_plugins(streaming::StreamingPlugin)
             // Combat HUD (Monanisa's lane, docs/hud-design.md Option A). Reads
@@ -536,16 +601,22 @@ fn main() -> AppExit {
                     // editor session, where the editor camera owns the view.
                     // edit_voxels (L-click break / R-click place) is gated OFF
                     // during Play — the player fights, not builds. EditorPlugin
-                    // owns the build loop in Editor state.
-                    fly_camera.run_if(editor::not_interactive_editor).run_if(settings_menu::settings_closed),
-                    editor_controls,
-                    highlight_target,
+                    // owns the build loop in Editor state. The interactive
+                    // systems below additionally gate off in MainMenu, so the
+                    // entrance shows a still world behind the menu (the player
+                    // body and camera are there, but nothing walks or draws HUD).
+                    fly_camera
+                        .run_if(editor::not_interactive_editor)
+                        .run_if(settings_menu::settings_closed)
+                        .run_if(main_menu::main_menu_closed),
+                    editor_controls.run_if(main_menu::main_menu_closed),
+                    highlight_target.run_if(main_menu::main_menu_closed),
                     edit_demo,
                     walk_demo,
                     map_save_demo,
                     editor_paint_demo,
-                    egui_save_load,
-                    hud,
+                    egui_save_load.run_if(main_menu::main_menu_closed),
+                    hud.run_if(main_menu::main_menu_closed),
                     bench_ramp,
                     screenshot_once,
                 ),
@@ -604,17 +675,26 @@ fn combat_demo_env_only(cfg: Res<Cfg>) -> bool {
     cfg.combat_demo && !cfg.play
 }
 
-/// The combat systems are gated to `AppState::Play`, so the scripted headless combat
-/// proof (`VOXELFORGE_COMBAT_DEMO`) must run *in Play*. Flip straight to Play at boot
-/// when that demo is on; the edit / walk / map-save demos stay in the default Editor
-/// state where the build loop and ungated physics carry them.
+/// Routes the boot state. Three doors, in priority order:
 ///
-/// `--play` takes the same door for the same reason, but as a product decision rather
-/// than a test one: "No menu. No loading screen text. Player wakes up directly in the
-/// world" (`docs/first-playable-loop.md`, Act 0) — no Enter press through the editor.
+/// * **MainMenu** — `Cfg::menu` (a plain launch, or the save demo). The play scene is
+///   already pre-loaded behind it (`main()` set `play`+`map_load`), so the menu is an
+///   overlay on a ready world and New Game / Continue drop straight in.
+/// * **Play** — combat/quest demos or `--play`. The combat systems are gated to
+///   `AppState::Play`, so the headless combat proof must run *in Play*; `--play` takes
+///   the same door as a product decision ("player wakes up directly in the world",
+///   `docs/first-playable-loop.md` Act 0) — no menu, no Enter press through the editor.
+/// * **Editor** — everything else: bench, shot, edit/walk/map-save/editor demos, and
+///   an explicit `VOXELFORGE_MAP_LOAD` without `--play`. These previously *relied on*
+///   `Editor` being the `#[default]` state; it no longer is (the product default is
+///   MainMenu), so they are set explicitly here to keep every existing lane unchanged.
 fn boot_state(cfg: Res<Cfg>, mut next: ResMut<NextState<AppState>>) {
-    if cfg.combat_demo || cfg.quest_demo || cfg.play {
+    if cfg.menu {
+        next.set(AppState::MainMenu);
+    } else if cfg.combat_demo || cfg.quest_demo || cfg.play {
         next.set(AppState::Play);
+    } else {
+        next.set(AppState::Editor);
     }
 }
 
@@ -2590,7 +2670,7 @@ fn hud(
             format!("  |  {}", editor.status)
         };
         format!(
-            "FPS {fps:.0}  |  chunks {chunks}  |  quads {quads}  |  [{editmode}/{movemode}] {ctrls}  |  Tab=mode G=fill F5=save F9=load{status}"
+            "FPS {fps:.0}  |  chunks {chunks}  |  quads {quads}  |  [{editmode}/{movemode}] {ctrls}  |  Tab=mode G=fill F5=map F6=save F9=load{status}"
         )
     };
     if let Ok(mut text) = q.single_mut() {
