@@ -126,3 +126,4 @@ allp = g3 and g5 and g6
 print(f"MEASURABLE GATES: G3={'P' if g3 else 'F'}  G5={'P' if g5 else 'F'}  G6={'P' if g6 else 'F'}"
       f"   => {'all measurable gates PASS' if allp else 'REGRESSION'}")
 print("(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)")
+sys.exit(0 if allp else 1)
