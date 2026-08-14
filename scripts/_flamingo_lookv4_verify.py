@@ -12,8 +12,10 @@ import sys
 import numpy as np
 from PIL import Image
 
-LOOK = os.path.join('docs', 'assets', 'look')
-SCENES = ['outdoor-noon', 'evening-raking', 'night-firelit']
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flamingo_lookv4_plates as plates  # noqa: E402
+
+SCENES = plates.SCENES
 W, PAD, GAP = 2560, 34, 26
 CW = (W - PAD * 2 - GAP * 2) // 3
 BIG_H = int(720 * CW / 1280)
@@ -28,8 +30,10 @@ def sig(im, n=48):
 
 def main(sheet_path):
     sheet = Image.open(sheet_path).convert('RGB')
-    cand = {'%s_%s' % (s, v): sig(Image.open(os.path.join(LOOK, '%s_%s.png' % (s, v))))
+    cand = {'%s_%s' % (s, v): sig(Image.open(plates.path(s, v)))
             for s in SCENES for v in ('before', 'after')}
+    print('plates pinned at %s; working tree differs on: %s\n'
+          % (plates.PLATE_REV, ', '.join(plates.drifted()) or '(nothing)'))
     ok = True
     for i, s in enumerate(SCENES):
         x = PAD + i * (CW + GAP)

@@ -31,7 +31,9 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-LOOK = os.path.join('docs', 'assets', 'look')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _flamingo_lookv4_plates as plates  # noqa: E402
+
 ASSETS = os.path.join('docs', 'assets')
 
 BG = (16, 16, 21)
@@ -158,6 +160,12 @@ The shoot that settles it: re-shoot the SCENE 1 camera at sun elevation 22 deg, 
 at 66 deg. If the shadow follows the elevation it is bias/cascade; if it follows the camera it is the
 vista frustum. Either answer is a one-line fix; guessing between them is not."""
 
+DRIFT = """SINCE THIS SHEET WAS CUT - all six plates were re-shot in the working tree at 2026-08-15 03:38, after b361a9d. This sheet is pinned to b361a9d and does not grade
+them; here is what changed, measured the same way. FIXED: night G3 is back over the line, p05-L 7.3% -> 8.8% (floor 8) - the "must fix" below is already done, do not
+re-raise it. UNCHANGED: the blocker. The re-shot noon plate's ground map still puts every dark pixel on a cube side face - no cast shadow. Evening G6 still FAILS at
+L 53.4 against a floor of 55, exactly as before. WORSE: the new grade buys its warmth by crushing blue - noon R-B +75.6 -> +87.1 with B clamped to 0 on 19.20% of the
+frame (was 9.43%), evening 4.77% -> 8.59%. A fifth of a frame with a dead channel is warmth you cannot grade back out, so that one wants a look before it settles."""
+
 CAVEAT = """CAVEAT ON THESE SCORES - read this before quoting them anywhere. Every threshold in look-acceptance-rubric.md was calibrated on an INDOOR window-lit kitchen
 (golden-beauty-shot-ref.png), and BOTH signed-off references are interiors. Two of the three frames graded here are open air. G2 literally asks for "window mullion bars on the
 floor" and G5 for "the window is not blown out"; outdoors I read those as "a readable cast-shadow pattern on the ground" and "sky and emissives are not blown out". That mapping
@@ -171,7 +179,8 @@ def lum(a):
 
 
 def load(scene, variant):
-    return Image.open(os.path.join(LOOK, '%s_%s.png' % (scene, variant))).convert('RGB')
+    """Always the PINNED plate - see _flamingo_lookv4_plates on why not the path."""
+    return Image.open(plates.path(scene, variant)).convert('RGB')
 
 
 def arrow(d, p0, p1, col, w=3):
@@ -274,7 +283,7 @@ def main():
     W, pad, gap = 2560, 34, 26
     cw = (W - pad * 2 - gap * 2) // 3
 
-    sheet = Image.new('RGB', (W, 2600), BG)
+    sheet = Image.new('RGB', (W, 3000), BG)  # generous; cropped to content at the end
     d = ImageDraw.Draw(sheet)
 
     d.text((pad, 20), 'VOXELFORGE \u2014 BEAUTY GAP v4 \u00b7 2026-08-15 \u00b7 Flamingo',
@@ -326,6 +335,8 @@ def main():
 
     d.rectangle([pad, ty2, pad + colw, ty2 + 118], fill=(40, 30, 22), outline=WARN)
     d.text((pad + 12, ty2 + 8), 'MUST FIX BEFORE THIS PASS MERGES', font=F_H, fill=WARN)
+    d.text((pad + 366, ty2 + 14), '— item 1 is already done in the working tree, '
+                                  'see the green band', font=F_S, fill=GOOD)
     d.text((pad + 12, ty2 + 42),
            'Scene 3 G3 went PASS \u2192 FAIL because of this pass: p05-L 10.1% \u2192 7.3% against a '
            'floor of 8. The ambient cut 42\u219214 is the cause,', font=F_S, fill=WARN)
@@ -336,7 +347,17 @@ def main():
            'as a net loss on a vista camera \u2014 it wants its own A/B before it stays in.',
            font=F_S, fill=WARN)
 
-    cy = max(ty2 + 138, by2)
+    # The plates moved under this sheet while it was being cut. Reporting the
+    # delta beats silently re-grading a target that is still moving.
+    dy = max(ty2 + 138, by2)
+    dlines = DRIFT.split('\n')
+    d.rectangle([pad, dy, W - pad, dy + 30 + len(dlines) * 21], fill=(20, 38, 26),
+                outline=GOOD)
+    for i, ln in enumerate(dlines):
+        d.text((pad + 14, dy + 12 + i * 21), ln, font=F_S,
+               fill=(190, 245, 205) if i else GOOD)
+
+    cy = dy + 30 + len(dlines) * 21 + 16
     clines = CAVEAT.split('\n')
     d.rectangle([pad, cy, W - pad, cy + 30 + len(clines) * 21], fill=(24, 28, 40),
                 outline=(96, 122, 176))
@@ -346,9 +367,12 @@ def main():
     fy = cy + 30 + len(clines) * 21 + 16
 
     d.text((pad, fy),
-           'Frames graded: docs/assets/look/*_{before,after}.png \u00b7 AFTER md5 outdoor 3907b6fc6f / '
-           'evening 98dc1c2107 / night 5fa847ae19 \u00b7 lighting config read from '
-           'docs/assets/look/_shoot.log, not from the filenames.', font=F_S, fill=(112, 112, 126))
+           'Frames graded: docs/assets/look/*_{before,after}.png PINNED AT %s '
+           '(git show %s:<path> reproduces them) \u00b7 AFTER md5 outdoor %s / evening %s / night %s \u00b7 '
+           'lighting config read from _shoot.log, not from the filenames.'
+           % (plates.PLATE_REV, plates.PLATE_REV, plates.md5('outdoor-noon', 'after'),
+              plates.md5('evening-raking', 'after'), plates.md5('night-firelit', 'after')),
+           font=F_S, fill=(112, 112, 126))
     d.text((pad, fy + 22),
            'Measured by scripts/_flamingo_lookv4_axes.py, _claims.py, _contact.py, _shadowmask.py '
            'and scripts/grade_gate.py \u00b7 sheet by scripts/_flamingo_lookv4_sheet.py',
