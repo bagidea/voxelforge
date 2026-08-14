@@ -45,12 +45,13 @@ use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{
-    CascadeShadowConfigBuilder, DirectionalLightShadowMap, FogVolume, NotShadowCaster,
-    ShadowFilteringMethod, VolumetricFog, VolumetricLight,
+    atmosphere::ScatteringMedium, Atmosphere, CascadeShadowConfigBuilder,
+    DirectionalLightShadowMap, FogVolume, NotShadowCaster, ShadowFilteringMethod, VolumetricFog,
+    VolumetricLight,
 };
 use bevy::pbr::{
-    ContactShadows, DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion,
-    ScreenSpaceAmbientOcclusionQualityLevel,
+    AtmosphereMode, AtmosphereSettings, ContactShadows, DistanceFog, FogFalloff,
+    ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
 };
 use bevy::post_process::bloom::{Bloom, BloomPrefilter};
 use bevy::post_process::dof::DepthOfField;
@@ -111,6 +112,19 @@ pub const FOG_START: f32 = 112.0;
 /// (`scripts/_flamingo_g7_probe.ps1` steps the fog through `FOG=S,S+0.5`, which
 /// makes alpha a hard step at S and turns the frame into a depth ruler), 20
 /// leaves half that band at exactly zero and the rest under 2.1 %.
+///
+/// RE-MEASURED AND HELD, 2026-08-14. The set the second paragraph's "~55 blocks
+/// deep" describes is gone — the depth ruler now reads p99 **47.7** on the
+/// deepest play framing and nothing above the capture noise floor past ~56
+/// (`scripts/_flamingo_depth_ruler.sh`; the table is in [`HAZE_FULL`], which is
+/// what moved). This const does NOT move with it, and the reason is that its
+/// bound was never the set: `combat::LOCK_RANGE` is 16 blocks from the avatar
+/// and [`crate::BOOM_DIST`] puts the camera 6.5 further back, so a locked-on
+/// target at maximum range is 22.5 from the lens. 20 keeps the whole fightable
+/// volume out of the haze at any orbit pose, and it already sits inside the
+/// measured range — on the `0,1,18` framing it leaves **31.9 %** of the frame
+/// receiving haze, which is a third of the picture doing aerial perspective
+/// rather than the 21 %-of-one-ramp the old [`HAZE_FULL`] allowed it.
 pub const HAZE_START: f32 = 20.0;
 
 /// Distance (blocks) at which the shipped haze is FULLY opaque — the `Linear`
@@ -190,11 +204,65 @@ pub const HAZE_START: f32 = 20.0;
 /// the signed-off look on margin.
 ///
 /// Note for the streaming lane: nothing between `HAZE_FULL` and
-/// [`RENDER_RADIUS`] is visible any more, so that shell — now **170 blocks**,
-/// grown from 70 by this change — is pure draw cost. Tightening `RENDER_RADIUS`
-/// toward `HAZE_FULL` is available and is Kevin's call, not this lane's, which is
-/// why this const does not make it. It is worth more now than it was.
-pub const HAZE_FULL: f32 = 150.0;
+/// [`RENDER_RADIUS`] is visible any more, so that shell — now **248 blocks**,
+/// grown from 70 and then from 170 by the two changes below — is pure draw cost.
+/// Tightening `RENDER_RADIUS` toward `HAZE_FULL` is available and is Kevin's
+/// call, not this lane's, which is why this const does not make it. It is worth
+/// a great deal more now than it was.
+///
+/// ─────────────────────────────────────────────────────────────────────────
+/// 150 → 72, 2026-08-14. THE SET MOVED OUT FROM UNDER THE FIT.
+///
+/// Every number above was fitted on the framing's "measured depth span (26–78
+/// blocks)". That span is no longer true of the world `--play` boots into.
+/// `--play` stopped meaning procedural terrain when Shiba's village landed:
+/// `main.rs:355` sets `cfg.map_load = scene::play_map()`, and `play_map`
+/// (`scene.rs:44`) returns `scene::PLAY_MAP` = `maps/edhari.json` whenever that
+/// file is on disk. Edhari is a tight village, not an open landscape. The fit
+/// was never re-run against it.
+///
+/// SO IT WAS RE-MEASURED, on the shipped binary, with the repo's own depth ruler
+/// — `VOXELFORGE_LOOK_FOG=S,S+0.5` makes the `Linear` falloff a hard step at S,
+/// so the pixels that move against a no-haze reference are exactly the pixels
+/// farther than S, and sweeping S reads the frame's depth CDF straight off the
+/// screen (`scripts/_flamingo_depth_ruler.sh` + `.py`, 22 rungs × 2 framings,
+/// one binary, env only). Depth percentiles over the fog-receiving geometry:
+///
+/// | framing | p50 | p75 | p90 | p95 | p99 | deepest above the noise floor |
+/// |---|---|---|---|---|---|---|
+/// | `35,-18,26` (the pinned gate framing) | 5.7 | 7.7 | 11.8 | 16.0 | — | 28 |
+/// | `0,1,18` (level, sees the ruins)      | 11.1 | 23.7 | 38.9 | 44.1 | 47.7 | ~56 |
+///
+/// THE RULER'S OWN NOISE FLOOR IS SUBTRACTED, and finding it is why the first
+/// read of these captures was wrong. Past S≈32 the moved-pixel count did not
+/// fall to zero, it went FLAT at ~1.0–1.2 % of frame across every remaining
+/// rung out to 320. Nothing in this map is 320 blocks away; that plateau is the
+/// capture's own frame-to-frame irreproducibility (TAA history + stochastic
+/// SSAO — every capture is a separate process). Read raw it invents a 320-block
+/// tail and inflates p95 by 12 %. The script now measures the plateau, subtracts
+/// it, and prints every rung inside it as UNMEASURABLE rather than as a number.
+///
+/// AGAINST THAT, 150 WAS 3.1x PAST THE DEEPEST GEOMETRY THAT EXISTS. The ramp
+/// reached `(47.7 - 20) / (150 - 20)` = **21.3 %** on the farthest surface in
+/// frame and never got further, because there is no farther surface. The haze
+/// was not too weak — it was a 130-block ramp with 28 blocks of world in it,
+/// which is the same failure [`FOG_START`] was retired for (first sample point
+/// past the back of the set), one order of magnitude in.
+///
+/// WHY 72 AND NOT 48. `1.5 x p99`, rounded. Ending the ramp AT the deepest
+/// geometry (48) makes the back of the set 100 % opaque — a fog wall, the exact
+/// failure mode [`HAZE_DENSITY`]'s own note calls out ("the numbers moved and
+/// the picture died"). 1.5x puts the deepest visible surface at **53 %** and
+/// p90 at 36 %, inside the band the approved curve was signed off in (its 63 %
+/// at 100 blocks is documented as still reading "ruins receding rather than
+/// fog"), and it leaves the ramp headroom for a scene edit that pushes the set
+/// deeper without going opaque the day it lands. [`HAZE_START`] does NOT move:
+/// it is bounded by gameplay, not by the set — `combat::LOCK_RANGE` is 16 from
+/// the avatar and `main::BOOM_DIST` puts the camera 6.5 further back, so a
+/// locked-on target at max range sits at 22.5 from the lens and 20 keeps
+/// essentially all of the fightable volume clean. It is also already inside the
+/// measured range, which is what it had to be.
+pub const HAZE_FULL: f32 = 72.0;
 
 const _: () = assert!(
     HAZE_FULL <= RENDER_RADIUS,
@@ -388,7 +456,305 @@ pub const CONTACT_SHADOW_THICKNESS: f32 = 0.2;
 /// cost is a short loop in the PBR shader rather than another full-screen pass.
 pub const CONTACT_SHADOW_STEPS: u32 = 16;
 
+// ---------------------------------------------------------------------------
+// V3 — the surface rig. Every constant below is reachable ONLY under
+// `LookGen::V3`, so `VOXELFORGE_LOOK_GEN=v2` reproduces the 2026-08-14 frame
+// byte-for-byte out of the same binary that shoots the new one.
+// ---------------------------------------------------------------------------
+
+/// Diffuse+specular luminance of the v3 hemispherical environment light, cd/m²,
+/// day. See [`ibl_env`] for what it is and why a voxel scene needs it.
+///
+/// THE NUMBER IS A BUDGET TRANSFER, NOT A LIFT. A uniform hemisphere of
+/// luminance `L` delivers irradiance `E = π·L` onto a surface facing it, so 260
+/// nits is ~817 lux — which is very close to the 770 lux this generation takes
+/// OUT of the flat term ([`AMBIENT_LUX_V3`], 1150 → 380). The frame keeps the
+/// irradiance it was graded with; what changes is that the fill now arrives
+/// FROM A DIRECTION, so a shaded ground face (facing the cool top of the map)
+/// and a shaded underside (facing the warm bottom) stop receiving the identical
+/// number. Rough budget on the four surfaces the v2 note tabulates, in lux:
+///
+///   surface (in shade)      v2 flat+sky+bounce      v3 flat+sky+bounce+IBL
+///   shaded ground           1150 + 1358 +   0       380 + 1358 +   0 + ~817
+///   wall, shadow side       1150 +  339 +   0       380 +  339 +   0 + ~735
+///   wall, sun side          1150 +    0 + 971       380 +    0 + 971 + ~735
+///   underside               1150 +    0 + 516       380 +    0 + 516 + ~817
+///
+/// i.e. 2508/1489/2121/1666 → 2555/1454/2086/1713. Every total lands within 3 %
+/// of the v2 value it replaces, which is the point: G3's shade floor was bought
+/// with that irradiance and this change is not allowed to spend it.
+///
+/// AND IT BUYS THE THING NO AMOUNT OF `AmbientLight` CAN. `AmbientLight` and a
+/// `DirectionalLight` both feed the DIFFUSE term only. An environment map feeds
+/// the SPECULAR one as well, which is the whole reason the reference shader
+/// packs read as lit surfaces and this frame read as painted ones: a smooth
+/// block, a blade, a helmet, wet stone all pick up a sky-coloured sheen that
+/// slides across them as the camera moves. Sweep with `VOXELFORGE_LOOK_IBL`.
+pub const IBL_NITS_DAY: f32 = 260.0;
+
+/// The same, night. Sized off [`AMBIENT_LUX_V3_NIGHT`] by the same `E = π·L`:
+/// 9 nits is ~28 lux, which is the 28 the flat night fill gives up (42 → 14).
+pub const IBL_NITS_NIGHT: f32 = 9.0;
+
+/// Where the environment map's HORIZON band sits between its cool top
+/// ([`Hour::sky_fill`]) and its warm bottom ([`Hour::bounce`]), 0 = all top.
+///
+/// 0.55, i.e. biased warm — the same bias and the same number the sky dome's own
+/// gradient uses for the same reason (see `build_sky_dome_mesh`): at a raking
+/// sun the band around the horizon is where the warm light is, and the deep cool
+/// sits high. Biasing it is what makes a vertical face — which integrates mostly
+/// the horizon band — read warmer than the ground face above it, which is the
+/// top/side split this whole rig exists to draw.
+pub const IBL_HORIZON_MIX: f32 = 0.55;
+
+/// The v3 FLAT fill floor, day, lux — what is left of `AmbientLight` once
+/// [`IBL_NITS_DAY`] carries the directional share. See that constant's table.
+///
+/// Not zero, deliberately: the environment map is a hemisphere, so a face
+/// pointing exactly at the horizon integrates the least of it, and a small
+/// flat term keeps that face off the floor without re-flattening the frame.
+pub const AMBIENT_LUX_V3: f32 = 380.0;
+
+/// The same, night (v2: 42).
+pub const AMBIENT_LUX_V3_NIGHT: f32 = 14.0;
+
+/// PCSS penumbra width, v3 (v2: [`PCSS_WIDTH`] 8.0, v1: [`PCSS_WIDTH_V1`] 16.0).
+///
+/// 8.0 was chosen under a constraint v3 removes. The v2 note on [`PCSS_WIDTH`]
+/// records it as "paired at 8.0 rather than 16.0 so the contact edges it now
+/// reaches stay sharp" — i.e. the width was held down because PCSS was the only
+/// thing drawing the near end of the shadow and a wide filter smeared it. In v3
+/// the near end is drawn by a contact march that is 47 % longer and steps 50 %
+/// finer ([`CONTACT_SHADOW_LENGTH_V3`]), so the two ends are no longer fighting
+/// over one knob: the march owns the first block, the penumbra owns everything
+/// past it. 12.0 sits between the two shipped widths — wide enough that canopy
+/// shadow on open ground grades visibly with blocker distance (the single
+/// clearest tell in `_poppy_lookv2/ref/complementary-style.png`), short of the
+/// 16.0 v1 ran without any contact layer under it at all.
+pub const PCSS_WIDTH_V3: f32 = 12.0;
+
+/// Contact-shadow march length, v3, blocks (v2: [`CONTACT_SHADOW_LENGTH`] 0.75).
+///
+/// 0.75 was bounded by "keep the groove inside a single block so it reads as
+/// contact and not as a second cast shadow". That bound was written when the
+/// march was the ONLY thing between a block and hovering. With PCSS now widened
+/// to [`PCSS_WIDTH_V3`], a groove that runs slightly past one block no longer
+/// competes with a hard cast edge next to it — it hands off to a soft one. 1.10
+/// is the longest march that still dies inside the near cascade
+/// ([`FIRST_CASCADE_FAR_BOUND_V3`] keeps that cascade tight), so the extra
+/// length is spent where the shadow map is densest.
+pub const CONTACT_SHADOW_LENGTH_V3: f32 = 1.10;
+
+/// Assumed fragment thickness for the v3 contact march, world units
+/// (v2: [`CONTACT_SHADOW_THICKNESS`] 0.2).
+///
+/// Thinner, because the march is longer: thickness is how solid the march
+/// assumes what it hits is, and a longer ray with the same generous thickness
+/// starts throwing halos from silhouettes onto ground behind them (the failure
+/// the v2 note names). 0.14 is ~1/7 of a block — still above the greedy
+/// mesher's smallest feature, and the pairing that keeps the longer march from
+/// buying occlusion it did not earn.
+pub const CONTACT_SHADOW_THICKNESS_V3: f32 = 0.14;
+
+/// Ray-march steps for the v3 contact shadow (v2: [`CONTACT_SHADOW_STEPS`] 16).
+///
+/// The march got 47 % longer; at 16 steps that is 0.069 blocks per step against
+/// v2's 0.047, i.e. the extra length would have been bought by making the ray
+/// coarser and it would have banded. 24 keeps the step at 0.046 — the density
+/// v2 shipped — so the length is real and not resampled.
+pub const CONTACT_SHADOW_STEPS_V3: u32 = 24;
+
+/// Near-cascade far bound, v3, blocks (v2 and earlier: 16.0).
+///
+/// One shadow map split across four cascades: the tighter the first bound, the
+/// more texels land on the volume the player is standing in. 16.0 was sized off
+/// `combat::LOCK_RANGE`; 10.0 is sized off what the near cascade is FOR under
+/// v3, which is holding the contact end crisp while a 12.0-wide penumbra
+/// softens everything beyond it. Nothing is lost past 10 blocks — cascade two
+/// picks it up, and it is exactly there that the wide filter wants to be soft.
+pub const FIRST_CASCADE_FAR_BOUND_V3: f32 = 10.0;
+
+/// Azimuth of the v3 kicker, degrees CCW from the direction the camera looks.
+///
+/// WHY IT IS CAMERA-RELATIVE AND EVERY OTHER LIGHT IN THIS FILE IS NOT. The key
+/// and the two fills describe the WORLD — the sun is where the sun is, and a
+/// fill that swung with the camera would make the world appear to rotate. This
+/// one describes the SHOT. Its whole job is the edge that separates a character
+/// from whatever is behind them, and "behind" is a fact about the camera, not
+/// about the world: a world-fixed rim lights the player's silhouette from one
+/// orbit angle and their face from the opposite one. Every reference frame in
+/// the set has this edge on the subject from whichever side the shot is taken.
+///
+/// 152° rather than 180°: dead behind puts the kicker exactly along the view
+/// axis, where it rims nothing (the lit sliver is hidden by the subject itself)
+/// and only lifts the background. Offset to one side and it draws a real edge
+/// down one flank.
+pub const RIM_AZIM_OFFSET: f32 = 152.0;
+
+/// Elevation of the v3 kicker, degrees above the horizon. Low, because it is
+/// standing in for light skimming off the far side of the scene; a high kicker
+/// duplicates the sky fill, which is already near-zenith at [`SKY_FILL_ELEV`].
+pub const RIM_ELEV: f32 = 14.0;
+
+/// Colour of the v3 kicker, sRGB — cool, and paler than [`Hour::sky_fill`].
+///
+/// Cool ON PURPOSE, against a warm key: the separation the eye reads on a
+/// character is as much hue as it is level, and a warm rim under a warm key is
+/// a brightness change nobody notices. This is the "cool/warm split by layer"
+/// half of the brief — key and bounce warm, sky fill and kicker cool.
+pub const RIM_COLOR: [f32; 3] = [0.78, 0.88, 1.00];
+
+/// Illuminance of the v3 kicker, lux, day.
+///
+/// Deliberately the smallest light in the rig. Against a 22 000-lux key it is
+/// under 3 % and cannot touch the sunlit wedge G6 grades; against the ~2 500 lux
+/// a shaded face receives it is ~24 %, which is an edge you can see and not a
+/// second fill. It casts no shadow map (see [`apply_fill_rig`]), so the cost is
+/// one more N·L term.
+pub const RIM_LUX: f32 = 600.0;
+
+/// The same, night. Held to the same ~24 %-of-shade ratio at night's scale.
+pub const RIM_LUX_NIGHT: f32 = 30.0;
+
+/// Bloom prefilter threshold, v3 (v2: 1.0 — emissive only).
+///
+/// 1.0 means "only things brighter than white", i.e. lanterns, the campfire and
+/// the sun's disc, and nothing else — which is correct and is also why the v2
+/// frame has no bloom at all in daylight while every reference shader pack does.
+/// The reference glow is not a veil over the whole frame (`Bloom::NATURAL`'s
+/// own 0.0 threshold, which the v2 note measured costing micro-contrast 5.2 →
+/// 3.8) — it is a tight halo on the few surfaces the sun has pushed to the top
+/// of the range. 0.85 selects exactly that band: at [`Hour::ev100`] 10.3 the
+/// brightest sunlit patch measures L 57 %, well under it, so ordinary sunlit
+/// ground still does NOT bloom; what crosses is specular — the new sheen
+/// [`IBL_NITS_DAY`] puts on smooth faces, sun on water, a blade's edge.
+pub const BLOOM_THRESHOLD_V3: f32 = 0.85;
+
+/// Bloom prefilter softness, v3 (v2: 0.4). Feathers the 0.85 cut so the halo
+/// ramps in over the band rather than switching on at a luminance line — with
+/// the threshold lowered, a hard knee would crawl visibly as the camera moves.
+pub const BLOOM_SOFTNESS_V3: f32 = 0.6;
+
+/// Bloom intensity, v3 (v2: 0.18).
+pub const BLOOM_INTENSITY_V3: f32 = 0.20;
+
+/// Bloom low-frequency boost, v3 (`Bloom::NATURAL`: 0.7).
+///
+/// This is the knob that decides tight glow versus veil, and it is the one the
+/// threshold change makes dangerous to leave alone: the boost weights the
+/// COARSEST mips, which is exactly the wide low-contrast wash that flattened the
+/// frame the last time this lane touched bloom. Halved to 0.35, so admitting a
+/// wider band of pixels buys a sharper halo instead of a bigger one.
+pub const BLOOM_LF_BOOST_V3: f32 = 0.35;
+
+// ===========================================================================
+// LOOK GENERATION — the v1/v2/v3 A/B switch
+// ===========================================================================
+
+/// Which generation of the light rig the process runs.
+///
+/// `VOXELFORGE_LOOK_GEN=v1` reproduces the light rig this lane shipped before
+/// 2026-08-14 — flat [`AMBIENT_LUX_V1`] fill, no sky/bounce lights, PCSS at Ultra
+/// only and [`PCSS_WIDTH_V1`] wide. `=v2` reproduces the rig that shipped ON
+/// 2026-08-14 (key + two directional fills). Unset (or `=v3`) is the shipped
+/// default.
+///
+/// It exists for ONE reason and it is the reason every honest look claim in this
+/// file has: a before/after pair has to come out of ONE binary, at one camera, or
+/// the difference being shown is "two builds" and not "this change". Every
+/// generation fork in this file reads this one function; there is no second switch.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LookGen {
+    /// The pre-2026-08-14 rig: one key + one flat ambient.
+    V1,
+    /// Key + directional sky fill + directional ground bounce, PCSS from High up.
+    V2,
+    /// V2 plus the SURFACE rig: hemispherical image-based light (diffuse AND
+    /// specular, so a face is lit by which way it points and a wet/smooth
+    /// material actually reflects something), a camera-relative kicker that
+    /// separates characters from the background, PCSS from Medium up at
+    /// [`PCSS_WIDTH_V3`], a longer contact-shadow march and a tight highlight
+    /// bloom. See [`ibl_env`] and [`LookFill::Rim`].
+    V3,
+}
+
+/// Read [`LookGen`] from the environment. Unset ⇒ [`LookGen::V3`].
+pub fn look_gen() -> LookGen {
+    match std::env::var("VOXELFORGE_LOOK_GEN")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "v1" | "1" | "legacy" => LookGen::V1,
+        "v2" | "2" | "before" => LookGen::V2,
+        _ => LookGen::V3,
+    }
+}
+
+/// True when the live generation carries the v3 surface rig. Every v3 fork in
+/// this file goes through here rather than re-matching the enum, so "what is in
+/// v3" is one predicate and adding a v4 does not mean auditing twenty matches.
+fn v3() -> bool {
+    matches!(look_gen(), LookGen::V3)
+}
+
+/// The FLAT fill v1 shipped, day. Kept as a constant rather than deleted so
+/// `VOXELFORGE_LOOK_GEN=v1` reproduces the old frame exactly instead of
+/// approximately — see [`Hour::ambient_lux`] for the history behind the number.
+pub const AMBIENT_LUX_V1: f32 = 2200.0;
+
+/// The same, night.
+pub const AMBIENT_LUX_V1_NIGHT: f32 = 90.0;
+
+/// Elevation of the sky fill, degrees above the horizon.
+///
+/// WHY A NEAR-ZENITH DIRECTIONAL AND NOT MORE `AmbientLight`. `AmbientLight` is a
+/// single flat term: every surface in open shade receives exactly the same
+/// irradiance regardless of which way it faces. On a VOXEL scene that is the
+/// worst possible fill, because a voxel scene is nothing but axis-aligned faces —
+/// the one cue that tells a block's top from its side is orientation, and a flat
+/// ambient erases it. That erasure is the "flat" the reference shaders do not
+/// have: in `_poppy_lookv2/ref/complementary-style.png` a grass block's top face
+/// is plainly brighter and cooler than its own side face, everywhere in frame,
+/// including deep in shadow where no sun reaches either of them.
+///
+/// 76°, not 90°: a perfectly vertical fill leaves every vertical face at exactly
+/// zero, and `Transform::looking_to` gets closer to a degenerate up-vector the
+/// nearer the direction gets to `Vec3::Y`. 76° keeps 0.24 of the fill on vertical
+/// faces (`cos 76°`) and 0.97 on horizontal ones — the top/side split without a
+/// black side.
+pub const SKY_FILL_ELEV: f32 = 76.0;
+
+/// Elevation of the ground bounce, degrees BELOW the horizon (it travels upward).
+///
+/// 28° is shallow on purpose: a bounce that comes straight up only reaches
+/// undersides, and undersides are a small share of a voxel frame. At 28° the
+/// horizontal term (`cos 28° = 0.88`) dominates, so what it actually lifts is the
+/// lower half of vertical faces on the sun side — the warm return light off the
+/// sunlit ground in front of them, which is the single most visible thing the
+/// flat fill was standing in for.
+pub const BOUNCE_ELEV: f32 = 28.0;
+
+/// PCSS penumbra width v1 shipped. Reachable via `VOXELFORGE_LOOK_GEN=v1`.
+pub const PCSS_WIDTH_V1: f32 = 16.0;
+
 /// PCSS penumbra width for the sun, where the tier turns it on.
+///
+/// 16.0 → 8.0 (2026-08-14), AND the tier that turns it on moved High-and-up.
+/// Those are one decision: the width was measured on the `s4` framing and shipped
+/// to a tier (`Ultra`) that the default session never runs, so what the player saw
+/// was a shadow with no penumbra at all, and what the ONE plate that did run Ultra
+/// saw was a penumbra so wide it read as blur. Both halves are the same mistake —
+/// the knob was never judged at the tier it ships at.
+///
+/// 8.0 comes off the ladder already recorded below: 7.5 px mean / 5.0 px MEDIAN,
+/// against 4.3/4.0 for PCSS off. A median that barely moves while the mean climbs
+/// is exactly the shape wanted here — most edges (the contact edges, where the
+/// blocker sits ON the receiver) stay as sharp as they were, and the few with a
+/// real blocker-to-receiver gap open up. That IS "sharp at contact, soft with
+/// distance"; 16.0 (11.2 mean / 9.0 median) moves the median too and softens
+/// edges that should have stayed crisp.
 ///
 /// 3.0 → 4.0 (2026-08-06), 4.0 → 16.0 (2026-08-08). The 08-06 move was the right
 /// knob turned far too little, and the reason is a floor in Bevy, not in us.
@@ -440,7 +806,9 @@ pub const CONTACT_SHADOW_STEPS: u32 = 16;
 /// (`grade-vista`). The other seven shoot High and take the Gaussian/Temporal
 /// path, where the shadow edge is whatever that filter gives and this number is
 /// not in the picture. Sweep with `VOXELFORGE_LOOK_PCSS=<width>` before moving it.
-pub const PCSS_WIDTH: f32 = 16.0;
+/// (That last paragraph's SCOPE claim is what the 2026-08-14 tier move fixes: PCSS
+/// is on at High now, so this constant reaches the tier the game actually ships.)
+pub const PCSS_WIDTH: f32 = 8.0;
 
 /// Post-grade constants.
 ///
@@ -669,8 +1037,21 @@ pub struct Hour {
     /// *midtone* numbers, since midtones are open shade and bounce, not the
     /// sunlit wedge.
     pub ambient: [f32; 3],
-    /// Bounce-fill brightness, lux.
+    /// Bounce-fill brightness, lux. In v2 this is the FLOOR only — the part of the
+    /// fill that has no direction and therefore no business being large. The rest
+    /// moved into [`Self::sky_fill_lux`] / [`Self::bounce_lux`], which do have one.
     pub ambient_lux: f32,
+    /// Sky-fill colour, sRGB — the cool half of the fill, coming down from near
+    /// zenith (see [`SKY_FILL_ELEV`]). This is what makes a block's top face read
+    /// as a different surface from its own side face while both are in shade.
+    pub sky_fill: [f32; 3],
+    /// Sky-fill illuminance, lux. Zeroed under [`LookGen::V1`].
+    pub sky_fill_lux: f32,
+    /// Ground-bounce colour, sRGB — the warm half, travelling UP off the sunlit
+    /// ground onto undersides and the lower half of sun-facing walls.
+    pub bounce: [f32; 3],
+    /// Ground-bounce illuminance, lux. Zeroed under [`LookGen::V1`].
+    pub bounce_lux: f32,
     /// Camera exposure. Bevy's implicit default is `Exposure::BLENDER`
     /// (ev100 9.7), which the gameplay camera was silently running because
     /// nothing ever gave it one.
@@ -792,7 +1173,32 @@ impl Hour {
         // moving again — the hero shot's own fill sits at 2800 lux, so 2200 is
         // deliberately short of that.
         ambient: [0.96, 0.90, 0.48],
-        ambient_lux: 2200.0,
+        // 2200 → 1150, and the missing 1050 did not go away — it went DIRECTIONAL
+        // (see `sky_fill_lux`/`bounce_lux` below and [`SKY_FILL_ELEV`] for why).
+        // The irradiance budget is roughly conserved on the surface that had the
+        // most of it, and deliberately NOT conserved on the ones that should never
+        // have had as much:
+        //
+        //   surface (in shade)      v1 flat    v2 flat + sky + bounce
+        //   shaded ground           2200       1150 + 1358 +    0  = 2508
+        //   wall, shadow side       2200       1150 +  339 +    0  = 1489
+        //   wall, sun side          2200       1150 +    0 +  971  = 2121
+        //   underside               2200       1150 +    0 +  516  = 1666
+        //
+        // Every one of those four used to be the SAME number, which is the whole
+        // reason a voxel scene under this rig read flat: orientation is the only
+        // shape cue a cube has, and a flat fill spends it.
+        ambient_lux: 1150.0,
+        // Cool, because it stands in for the sky and the sky is blue even at 22°
+        // sun — `Hour::sky` is [0.36, 0.60, 0.90]. Held a little paler than the sky
+        // itself so the shaded top faces read as "lit by sky", not "painted blue".
+        sky_fill: [0.62, 0.76, 1.00],
+        sky_fill_lux: 1400.0,
+        // Warm, because it is the sun's own light returning off ground the sun has
+        // already tinted — bounce is always the colour of what it bounced off, and
+        // at this hour that is amber grass and dirt.
+        bounce: [1.00, 0.78, 0.50],
+        bounce_lux: 1100.0,
         // 11.0 was this lane's own value and it cost 1.3 stops against Bevy's
         // implicit `Exposure::BLENDER` (9.7): measured on the vista frame it
         // held the brightest sunlit patch at RGB(209,124,55), L=53.9, under
@@ -858,7 +1264,19 @@ impl Hour {
         // around the skyline and undo it.
         sky_gain: 1.0,
         ambient: [0.42, 0.52, 0.78],
-        ambient_lux: 90.0,
+        // Same split as GOLDEN, at night's scale. The BSL night reference
+        // (`_poppy_lookv2/ref/bsl-01.jpeg`) is the clearest case for it in the whole
+        // set: the sandstone rooftops there catch a cold sky while the wall faces
+        // below them fall away into near-black, and the ONLY warm light in frame is
+        // the torches. A flat 90-lux fill cannot draw that — it lifts the roof and
+        // the wall by the same amount.
+        ambient_lux: 42.0,
+        sky_fill: [0.44, 0.58, 0.98],
+        sky_fill_lux: 62.0,
+        // Barely there: at night there is no sunlit ground to bounce off. It exists
+        // to keep undersides from going to pure fill-black, nothing more.
+        bounce: [0.55, 0.56, 0.68],
+        bounce_lux: 16.0,
         ev100: 7.5,
         fog: FOG_COLOR_NIGHT,
     };
@@ -870,18 +1288,78 @@ impl Hour {
         let a = self.azim_deg.to_radians();
         Vec3::new(a.sin() * e.cos(), -e.sin(), a.cos() * e.cos()).normalize()
     }
+
+    /// Travel direction of the sky fill — near-zenith, leaning in from the side of
+    /// the sky OPPOSITE the sun (`azim + 180`).
+    ///
+    /// Opposite, not with: the faces that need a fill are the ones the key cannot
+    /// reach, and those face away from the sun. Putting the fill on the sun's own
+    /// side would pile a second light onto the faces that are already the brightest
+    /// in frame and leave the dark ones exactly as dark.
+    fn sky_fill_dir(&self) -> Vec3 {
+        let e = SKY_FILL_ELEV.to_radians();
+        let a = (self.azim_deg + 180.0).to_radians();
+        Vec3::new(a.sin() * e.cos(), -e.sin(), a.cos() * e.cos()).normalize()
+    }
+
+    /// Travel direction of the ground bounce — UPWARD (`+Y`), horizontally along
+    /// the sun's own heading.
+    ///
+    /// Sharing the sun's azimuth is what puts it on the opposite side to
+    /// [`Self::sky_fill_dir`]: the two fills then split the frame's shaded faces
+    /// between them by orientation, warm on the sun side and cool on the shadow
+    /// side, instead of stacking on one side and leaving the other on the flat
+    /// floor alone.
+    fn bounce_dir(&self) -> Vec3 {
+        let e = BOUNCE_ELEV.to_radians();
+        let a = self.azim_deg.to_radians();
+        // `+e.sin()` on Y, where `sun_dir` has `-e.sin()`: this one goes up.
+        Vec3::new(a.sin() * e.cos(), e.sin(), a.cos() * e.cos()).normalize()
+    }
 }
 
 /// The live hour, plus the env overrides used to sweep it without a rebuild.
 ///
 /// Unset env ⇒ the constants byte-for-byte, which is what every gate run and the
 /// shipped binary get.
+/// `VOXELFORGE_LOOK_NIGHT` — which of the two [`Hour`] constants is live.
+///
+/// Hoisted out of [`hour`] because the v3 rig sizes two of its own numbers off
+/// the same switch ([`IBL_NITS_DAY`], [`RIM_LUX`]) and reading the variable in
+/// three places is three places for the spelling to drift.
+fn is_night() -> bool {
+    std::env::var_os("VOXELFORGE_LOOK_NIGHT").is_some()
+}
+
 fn hour() -> Hour {
-    let mut h = if std::env::var_os("VOXELFORGE_LOOK_NIGHT").is_some() {
-        Hour::NIGHT
-    } else {
-        Hour::GOLDEN
-    };
+    let night = is_night();
+    let mut h = if night { Hour::NIGHT } else { Hour::GOLDEN };
+    // The generation fork, applied BEFORE the env overrides below so
+    // `_LOOK_AMBIENT` still wins over it — a sweep hook that a generation switch
+    // could silently override would be worse than no hook.
+    match look_gen() {
+        LookGen::V1 => {
+            h.ambient_lux = if night {
+                AMBIENT_LUX_V1_NIGHT
+            } else {
+                AMBIENT_LUX_V1
+            };
+            h.sky_fill_lux = 0.0;
+            h.bounce_lux = 0.0;
+        }
+        LookGen::V2 => {}
+        // v3 moves most of what is left of the FLAT term into the hemispherical
+        // environment light — same irradiance, now arriving from a direction.
+        // The two directional fills are untouched: they are already directional,
+        // and the budget table on [`IBL_NITS_DAY`] is written against them.
+        LookGen::V3 => {
+            h.ambient_lux = if night {
+                AMBIENT_LUX_V3_NIGHT
+            } else {
+                AMBIENT_LUX_V3
+            };
+        }
+    }
     if let Some([elev, azim, illum]) = env_floats::<3>("VOXELFORGE_LOOK_SUN") {
         h.elev_deg = elev;
         h.azim_deg = azim;
@@ -912,6 +1390,14 @@ fn hour() -> Hour {
         .and_then(|v| v.trim().parse().ok())
     {
         h.ambient_lux = lux;
+    }
+    // `VOXELFORGE_LOOK_FILL=<sky_lux>,<bounce_lux>` — the same sweep-without-relink
+    // hook `_LOOK_AMBIENT` is for the flat term, for the two directional ones. The
+    // fill rig's whole claim is a RATIO between three numbers, and a ratio that can
+    // only be re-tried by rebuilding is a ratio nobody re-tries.
+    if let Some([sky, bounce]) = env_floats::<2>("VOXELFORGE_LOOK_FILL") {
+        h.sky_fill_lux = sky;
+        h.bounce_lux = bounce;
     }
     h
 }
@@ -1103,7 +1589,23 @@ impl Plugin for LookPlugin {
                 (
                     apply_look_to_cameras,
                     apply_look_to_sun,
+                    // The directional half of the fill (see `apply_fill_rig`).
+                    // Ordered BEFORE the sun so the `Without<LookFill>` filter over
+                    // there is never the thing standing between a freshly spawned
+                    // fill light and being mistaken for the key.
+                    apply_fill_rig.before(apply_look_to_sun),
+                    // v3's surface rig. `aim_rim_light` is ordered AFTER the
+                    // spawn for the obvious reason (nothing to point otherwise —
+                    // it would idle one frame and the very first captured frame
+                    // is one frame), and `apply_ibl` is independent of both.
+                    aim_rim_light.after(apply_fill_rig),
+                    apply_ibl,
                     cycle_look_quality,
+                    // A0 (docs/sky-research-2026-08-14.md): Bevy 0.19's own
+                    // physical atmosphere. `AtmospherePlugin` is NOT added here
+                    // — `PbrPlugin` already did (`bevy_pbr-0.19.0/src/lib.rs:252`)
+                    // and adding it twice panics; see the A0 section note.
+                    atmosphere_sky.run_if(atmos_enabled),
                     // A1/A2 (art-order-2026-08-09-composition): the gradient sky
                     // dome and the play-scene fog volume that turns the already
                     // installed `VolumetricFog`/`VolumetricLight` into actual god
@@ -1352,13 +1854,31 @@ pub fn base_camera_look() -> impl Bundle {
         // `Bloom` carries `#[require(Hdr)]`, so this is also what puts the camera
         // on an HDR target at all — without it there is no >1.0 signal for a
         // threshold to select on.
-        Bloom {
-            intensity: 0.18,
-            prefilter: BloomPrefilter {
-                threshold: 1.0,
-                threshold_softness: 0.4,
-            },
-            ..Bloom::NATURAL
+        //
+        // v3 drops the threshold to [`BLOOM_THRESHOLD_V3`] so the specular the
+        // environment light puts on smooth faces can glow, and halves the
+        // low-frequency boost so admitting that band buys a sharper halo rather
+        // than the veil that measurement warns about. `VOXELFORGE_LOOK_GEN=v2`
+        // returns the four numbers above, byte-for-byte.
+        if v3() {
+            Bloom {
+                intensity: BLOOM_INTENSITY_V3,
+                low_frequency_boost: BLOOM_LF_BOOST_V3,
+                prefilter: BloomPrefilter {
+                    threshold: BLOOM_THRESHOLD_V3,
+                    threshold_softness: BLOOM_SOFTNESS_V3,
+                },
+                ..Bloom::NATURAL
+            }
+        } else {
+            Bloom {
+                intensity: 0.18,
+                prefilter: BloomPrefilter {
+                    threshold: 1.0,
+                    threshold_softness: 0.4,
+                },
+                ..Bloom::NATURAL
+            }
         },
         distance_fog(),
     )
@@ -1415,15 +1935,26 @@ fn contact_shadows() -> Option<ContactShadows> {
         return None;
     }
     let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    // The generation's own march. v3 runs longer, thinner and finer — see
+    // [`CONTACT_SHADOW_LENGTH_V3`] for why all three had to move together.
+    let shipped = if v3() {
+        (
+            CONTACT_SHADOW_LENGTH_V3,
+            CONTACT_SHADOW_THICKNESS_V3,
+            CONTACT_SHADOW_STEPS_V3,
+        )
+    } else {
+        (
+            CONTACT_SHADOW_LENGTH,
+            CONTACT_SHADOW_THICKNESS,
+            CONTACT_SHADOW_STEPS,
+        )
+    };
     let (length, thickness, steps) = match v[..] {
         [l, t, s] => (l, t, s.max(1.0) as u32),
         // Malformed input falls back to the constants rather than panicking
         // mid-frame: this is a sweep hook, not a config file.
-        _ => (
-            CONTACT_SHADOW_LENGTH,
-            CONTACT_SHADOW_THICKNESS,
-            CONTACT_SHADOW_STEPS,
-        ),
+        _ => shipped,
     };
     Some(ContactShadows {
         linear_steps: steps,
@@ -1436,10 +1967,15 @@ fn contact_shadows() -> Option<ContactShadows> {
 ///
 /// `VOXELFORGE_LOOK_PCSS=off|<width>`; unset ⇒ the tier's own call.
 fn pcss_width(tier_on: bool) -> Option<f32> {
+    let shipped = match look_gen() {
+        LookGen::V1 => PCSS_WIDTH_V1,
+        LookGen::V2 => PCSS_WIDTH,
+        LookGen::V3 => PCSS_WIDTH_V3,
+    };
     match std::env::var("VOXELFORGE_LOOK_PCSS") {
         Ok(v) if v.trim().eq_ignore_ascii_case("off") => None,
-        Ok(v) => v.trim().parse().ok().or(tier_on.then_some(PCSS_WIDTH)),
-        Err(_) => tier_on.then_some(PCSS_WIDTH),
+        Ok(v) => v.trim().parse().ok().or(tier_on.then_some(shipped)),
+        Err(_) => tier_on.then_some(shipped),
     }
 }
 
@@ -1466,6 +2002,12 @@ fn insert_stack(e: &mut EntityCommands, quality: LookQuality) {
     // "cut = dies"); only the sample count steps down, which is why it is hoisted
     // out of the `match` and only its quality argument comes from the tier.
     if let Some(ao) = ssao(match quality {
+        // v3 steps the two middle tiers up one rung each. The pass is a
+        // fixed-size compute dispatch over a depth buffer that SSAO has already
+        // paid for at every tier, so the step is sample count and nothing else —
+        // the same accounting the G7 note below makes for High.
+        LookQuality::Medium if v3() => ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+        LookQuality::High if v3() => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
         LookQuality::Low | LookQuality::Medium => ScreenSpaceAmbientOcclusionQualityLevel::Low,
         // High was `Medium` (8 spp) through G6. Raised to `High` (18 spp) for
         // G7: the AO signal the CEO could not find in the frame is worth more
@@ -1644,12 +2186,20 @@ fn apply_look_to_sun(
     mut commands: Commands,
     quality: Res<LookQuality>,
     shadow_map: Res<DirectionalLightShadowMap>,
-    mut q: Query<(
-        Entity,
-        &mut DirectionalLight,
-        &mut Transform,
-        Option<&LookLightApplied>,
-    )>,
+    // `Without<LookFill>` because this query is otherwise "every directional light
+    // in the world", and since 2026-08-14 two of those are this lane's OWN fill
+    // lights (see [`apply_fill_rig`]). Unfiltered, the first frame after the rig
+    // spawns would point all three at the sun's angle, hand all three the sun's
+    // 22 000 lux and its shadow map, and the "fill" would be three suns.
+    mut q: Query<
+        (
+            Entity,
+            &mut DirectionalLight,
+            &mut Transform,
+            Option<&LookLightApplied>,
+        ),
+        Without<LookFill>,
+    >,
 ) {
     for (light, mut dl, mut tf, applied) in &mut q {
         if applied.is_some_and(|a| a.0 == *quality) {
@@ -1681,10 +2231,28 @@ fn apply_look_to_sun(
         // camera's own layer so `VOXELFORGE_LOOK_CONTACT=off` really is off rather
         // than half-off.
         dl.contact_shadows_enabled = contact_shadows().is_some();
-        // PCSS penumbra is on only at Ultra: High cuts it first (spec §1 ranks it
-        // the cheapest thing to drop, before the volumetric ray-march it now keeps).
-        // High and Ultra opt the light into the volumetric pass; Medium/Low don't.
-        let pcss = matches!(*quality, LookQuality::Ultra);
+        // PCSS penumbra: Ultra-only under v1, High-and-up under v2.
+        //
+        // The cut used to be justified as a cost call (spec §1). The cost is real,
+        // but the accounting was wrong about what was being bought: High is the
+        // DEFAULT tier, so "PCSS at Ultra only" meant the shadow edge the game
+        // actually ships was whatever `ShadowFilteringMethod::Temporal` gives —
+        // one width, everywhere, regardless of how far the caster is from what it
+        // lands on. That is the single most visible thing separating this frame
+        // from the reference shaders, which grade the penumbra by blocker distance
+        // (`_poppy_lookv2/ref/complementary-style.png`: canopy shadow soft on open
+        // grass, block-on-block seams still hard). Paired with [`PCSS_WIDTH`] at
+        // 8.0 rather than 16.0 so the contact edges it now reaches stay sharp.
+        let pcss = match look_gen() {
+            LookGen::V1 => matches!(*quality, LookQuality::Ultra),
+            LookGen::V2 => matches!(*quality, LookQuality::High | LookQuality::Ultra),
+            // Medium and up under v3. Medium already runs TAA (see
+            // [`insert_stack`]), which is the accumulation a stochastic penumbra
+            // needs, so the tier that gets PCSS is the lowest tier that can
+            // resolve it — not the highest tier that can afford it. Low keeps its
+            // fixed Gaussian: no history buffer, nothing to resolve into.
+            LookGen::V3 => !matches!(*quality, LookQuality::Low),
+        };
         let volumetric = matches!(*quality, LookQuality::High | LookQuality::Ultra);
         // Golden-hour key. This is what makes sunlit surfaces order `R > G > B`
         // (gate G6) without a global matrix that would drag the sky along too.
@@ -1715,7 +2283,14 @@ fn apply_look_to_sun(
                 num_cascades: 4,
                 minimum_distance: 0.1,
                 maximum_distance: RENDER_RADIUS,
-                first_cascade_far_bound: 16.0,
+                // v3 tightens this — see [`FIRST_CASCADE_FAR_BOUND_V3`]: the near
+                // cascade is what keeps the contact end crisp under a penumbra
+                // half again as wide, so it gets more texels per block.
+                first_cascade_far_bound: if v3() {
+                    FIRST_CASCADE_FAR_BOUND_V3
+                } else {
+                    16.0
+                },
                 overlap_proportion: 0.2,
             }
             .build(),
@@ -1753,6 +2328,264 @@ fn apply_look_to_sun(
     }
 }
 
+/// Marker + kind for the two shadow-less fill lights [`apply_fill_rig`] spawns.
+///
+/// PUBLIC, and every query over `DirectionalLight` in this lane filters on it —
+/// see the `Without<LookFill>` on [`apply_look_to_sun`] for what happens otherwise.
+#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LookFill {
+    /// Cool, near-zenith, from the sky opposite the sun.
+    Sky,
+    /// Warm, travelling upward off the sunlit ground.
+    Bounce,
+    /// v3 only. Cool, low, and aimed FROM THE CAMERA rather than from the world —
+    /// the kicker that separates a character's silhouette from what is behind
+    /// them. Re-pointed every frame by [`aim_rim_light`]; see
+    /// [`RIM_AZIM_OFFSET`] for why this one light is allowed to know where the
+    /// camera is when no other light in this file is.
+    Rim,
+}
+
+/// Spawn the two directional fill lights, once, and point them for the live
+/// [`Hour`].
+///
+/// WHY TWO LIGHTS AND NOT A BIGGER `AmbientLight`. Written up on
+/// [`SKY_FILL_ELEV`]: `AmbientLight` gives every face the same irradiance, and a
+/// voxel scene is nothing but faces, so the flat term erases the only shape cue a
+/// cube has. Two directionals restore it for the price of two more N·L terms and
+/// no shadow map at all.
+///
+/// NEITHER CASTS A SHADOW MAP, ON PURPOSE. They are standing in for *ambient*:
+/// the whole job is to reach the surfaces the key does not, so an occlusion test
+/// against the key's own geometry would undo them. What they DO get is
+/// [`ContactShadows`] on the sky fill — the screen-space march is a per-light
+/// direct-term test, so it darkens the block-to-block creases *from above*, which
+/// is the crease the eye reads on a voxel wall and the one SSAO could only ever
+/// bite at the fill's own share of the light (see [`CONTACT_SHADOW_LENGTH`] for
+/// that measurement). The bounce is left without it: it is the dimmest of the
+/// three and a third depth march to shave ~1000 lux off a crease is not a trade.
+///
+/// SPAWN-ONCE, not per-frame: the query is empty exactly once (the frame the look
+/// lane comes up) and every frame after that this system is one empty-query check.
+/// Nothing here tiers, so unlike the camera and the sun there is no rebuild path.
+fn apply_fill_rig(mut commands: Commands, existing: Query<(), With<LookFill>>) {
+    if !existing.is_empty() {
+        return;
+    }
+    let h = hour();
+    let contact = contact_shadows().is_some();
+    let spawn = |commands: &mut Commands, kind: LookFill, rgb: [f32; 3], lux: f32, dir: Vec3| {
+        commands.spawn((
+            Name::new(match kind {
+                LookFill::Sky => "look sky fill",
+                LookFill::Bounce => "look ground bounce",
+                LookFill::Rim => "look rim fill",
+            }),
+            kind,
+            DirectionalLight {
+                color: Color::srgb(rgb[0], rgb[1], rgb[2]),
+                illuminance: lux,
+                shadow_maps_enabled: false,
+                contact_shadows_enabled: contact && matches!(kind, LookFill::Sky),
+                ..default()
+            },
+            // Only the rotation reaches the shader; the translation is kept
+            // off-scene for the same reason the sun's is (a debug gizmo should get
+            // a sane position out of it).
+            Transform::from_translation(-dir * 160.0).looking_to(dir, Vec3::Y),
+        ));
+    };
+    spawn(
+        &mut commands,
+        LookFill::Sky,
+        h.sky_fill,
+        h.sky_fill_lux,
+        h.sky_fill_dir(),
+    );
+    spawn(
+        &mut commands,
+        LookFill::Bounce,
+        h.bounce,
+        h.bounce_lux,
+        h.bounce_dir(),
+    );
+    // The v3 kicker. Spawned pointing off the SUN's azimuth so a session in which
+    // [`aim_rim_light`] never finds a camera still gets a sane light instead of a
+    // degenerate one; the very next frame that system re-points it off the camera,
+    // which is the pose that matters. Zero lux under v1/v2, and not spawned at
+    // all — an unlit `DirectionalLight` is still a cluster entry.
+    if v3() {
+        let e = RIM_ELEV.to_radians();
+        let a = (h.azim_deg + RIM_AZIM_OFFSET).to_radians();
+        spawn(
+            &mut commands,
+            LookFill::Rim,
+            RIM_COLOR,
+            rim_lux(),
+            Vec3::new(a.sin() * e.cos(), -e.sin(), a.cos() * e.cos()).normalize(),
+        );
+    }
+    // One provenance line, same rule as the `LOOK` line on the sun: a fill that is
+    // zeroed by `VOXELFORGE_LOOK_GEN=v1` and a fill that failed to spawn look
+    // identical in the frame, and only one of them is a bug.
+    println!(
+        "LOOK_FILL gen={:?} ambient={:.0} sky={:.0}lux@{:.0}deg bounce={:.0}lux@{:.0}deg rim={:.0}lux@{:.0}deg contact_sky={}",
+        look_gen(),
+        h.ambient_lux,
+        h.sky_fill_lux,
+        SKY_FILL_ELEV,
+        h.bounce_lux,
+        BOUNCE_ELEV,
+        if v3() { rim_lux() } else { 0.0 },
+        RIM_ELEV,
+        contact,
+    );
+}
+
+/// Illuminance of the v3 kicker for the live hour, with a sweep hook.
+///
+/// `VOXELFORGE_LOOK_RIM=off` zeroes it — the same one-binary A/B discipline
+/// `VOXELFORGE_LOOK_SSAO=off` exists for, and the only way to answer "is that
+/// edge the kicker or the sky fill?" without a relink. `=<lux>` sweeps it.
+fn rim_lux() -> f32 {
+    let raw = std::env::var("VOXELFORGE_LOOK_RIM").unwrap_or_default();
+    if raw.trim().eq_ignore_ascii_case("off") {
+        return 0.0;
+    }
+    let shipped = if is_night() { RIM_LUX_NIGHT } else { RIM_LUX };
+    raw.trim().parse().unwrap_or(shipped)
+}
+
+/// Re-point the v3 kicker off the CAMERA, every frame.
+///
+/// The direction is the camera's own heading flattened to the ground plane, spun
+/// [`RIM_AZIM_OFFSET`] degrees and tilted down to [`RIM_ELEV`] — so the light
+/// always travels roughly toward the lens, past one flank of whatever is being
+/// looked at. See [`RIM_AZIM_OFFSET`] for why this light, alone in this file, is
+/// allowed to be a property of the shot rather than of the world.
+///
+/// `Without<LookFill>` on the camera query is what proves the two `Transform`
+/// accesses are disjoint — the same thing `sky_dome` needs for the same reason.
+/// Cheap enough to run unconditionally: under v1/v2 no `LookFill::Rim` exists, so
+/// the inner loop never runs a single iteration.
+fn aim_rim_light(
+    cam: Query<&Transform, (With<crate::OrbitCam>, Without<LookFill>)>,
+    mut fills: Query<(&LookFill, &mut Transform)>,
+) {
+    let Ok(cam_tf) = cam.single() else {
+        return;
+    };
+    let fwd = *cam_tf.forward();
+    // Flattened to the ground plane: a camera pitched down at the player must not
+    // drag the kicker's elevation with it, or the edge it draws slides up and off
+    // the silhouette every time the boom tilts.
+    let cam_azim = fwd.x.atan2(fwd.z);
+    let e = RIM_ELEV.to_radians();
+    let a = cam_azim + RIM_AZIM_OFFSET.to_radians();
+    let dir = Vec3::new(a.sin() * e.cos(), -e.sin(), a.cos() * e.cos()).normalize();
+    for (kind, mut tf) in &mut fills {
+        if !matches!(*kind, LookFill::Rim) {
+            continue;
+        }
+        // Same convention as the sun and the two fills: only the rotation reaches
+        // the shader, the translation is kept off-scene so a debug gizmo gets a
+        // sane position out of it.
+        tf.translation = -dir * 160.0;
+        tf.look_to(dir, Vec3::Y);
+    }
+}
+
+/// The hemispherical image-based light, or `None` when this generation or this
+/// run does not carry one.
+///
+/// WHAT IT IS. Six 1×1 HDR texels — cool at the top, warm at the bottom, the
+/// horizon band between them at [`IBL_HORIZON_MIX`] — handed to Bevy as a
+/// cubemap. Bevy then lights the whole view from it: the DIFFUSE term reads it by
+/// surface normal, so a face is lit by which way it points instead of by a single
+/// flat number, and the SPECULAR term reads it by reflection vector, which is the
+/// half no `AmbientLight` and no `DirectionalLight` can supply at any brightness.
+///
+/// WHY IT IS BUILT IN CODE AND NOT LOADED. `EnvironmentMapLight::hemispherical_gradient`
+/// is Bevy's own constructor for exactly this. No `.ktx2` in `assets/`, nothing
+/// to keep in step with [`Hour`] by hand, and the map is rebuilt from the live
+/// hour's own colours — so `VOXELFORGE_LOOK_NIGHT` and every `_LOOK_SKY` sweep
+/// move the environment light with them for free.
+///
+/// `VOXELFORGE_LOOK_IBL=off` lifts it out; `=<nits>` sweeps its intensity. Unset
+/// ⇒ [`IBL_NITS_DAY`] / [`IBL_NITS_NIGHT`], byte-for-byte.
+fn ibl_env(images: &mut Assets<Image>) -> Option<EnvironmentMapLight> {
+    if !v3() {
+        return None;
+    }
+    let raw = std::env::var("VOXELFORGE_LOOK_IBL").unwrap_or_default();
+    if raw.trim().eq_ignore_ascii_case("off") {
+        return None;
+    }
+    let nits = raw.trim().parse().unwrap_or(if is_night() {
+        IBL_NITS_NIGHT
+    } else {
+        IBL_NITS_DAY
+    });
+    let h = hour();
+    // The map's own colours ARE the rig's: its top is what the sky fill is
+    // shining, its bottom is what the ground bounce is shining. Anything else
+    // would be a fourth opinion about what colour the sky is.
+    let top = Color::srgb(h.sky_fill[0], h.sky_fill[1], h.sky_fill[2]).to_linear();
+    let bottom = Color::srgb(h.bounce[0], h.bounce[1], h.bounce[2]).to_linear();
+    let mid = lerp_lin(top, bottom, IBL_HORIZON_MIX);
+    Some(EnvironmentMapLight {
+        intensity: nits,
+        ..EnvironmentMapLight::hemispherical_gradient(
+            images,
+            Color::from(top),
+            Color::from(mid),
+            Color::from(bottom),
+        )
+    })
+}
+
+/// Marker: this camera has already been offered the environment light.
+///
+/// Present even when [`ibl_env`] declined (v1/v2, or `_LOOK_IBL=off`), so the
+/// "did we try?" question is answered by the marker and the "did we insert?"
+/// question by the component — a system that re-asked every frame would rebuild
+/// a cubemap asset per frame and leak one per frame with it.
+#[derive(Component)]
+struct LookIbl;
+
+/// Give the gameplay camera its environment light, once.
+///
+/// Not folded into [`apply_look_to_cameras`]: that system rebuilds its whole
+/// stack on every tier change (`remove::<LookStack>` + re-insert), and the
+/// environment light does NOT tier — it is the hour's, not the quality's. Keeping
+/// it on its own marker means an F7 tier swap cannot drop it, and cannot rebuild
+/// the cubemap asset either.
+fn apply_ibl(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    q: Query<Entity, (With<crate::OrbitCam>, Without<LookIbl>)>,
+) {
+    for cam in &q {
+        let env = ibl_env(&mut images);
+        // Same provenance rule as `LOOK_FILL`: an environment light that was
+        // declined and one that failed to reach the camera look identical in the
+        // frame, and only one of them is a bug.
+        println!(
+            "LOOK_IBL gen={:?} nits={}",
+            look_gen(),
+            match &env {
+                Some(e) => format!("{:.0}", e.intensity),
+                None => String::from("off"),
+            },
+        );
+        let mut e = commands.entity(cam);
+        e.insert(LookIbl);
+        if let Some(env) = env {
+            e.insert(env);
+        }
+    }
+}
+
 /// Runtime tier swap: F7 steps Low → Medium → High → Ultra → Low.
 ///
 /// Mutating the resource is the whole change — [`apply_look_to_cameras`] and
@@ -1769,6 +2602,161 @@ fn cycle_look_quality(keys: Res<ButtonInput<KeyCode>>, mut quality: ResMut<LookQ
         LookQuality::Ultra => LookQuality::Low,
     };
     println!("LOOK_QUALITY -> {quality:?}");
+}
+
+// ===========================================================================
+// A0 · Bevy's built-in physical atmosphere  (docs/sky-research-2026-08-14.md)
+// ===========================================================================
+//
+// Sahara's research landed the fact this section is built on: `bevy = "0.19"`
+// ALREADY SHIPS the Hillaire LUT atmosphere. Nothing is ported here and no
+// dependency moves — `Atmosphere` is `bevy_light::atmosphere` (re-exported at
+// `bevy_light-0.19.0/src/lib.rs:44`) and the render pipeline is
+// `bevy_pbr::AtmospherePlugin` (`bevy_pbr-0.19.0/src/atmosphere/mod.rs:96`).
+//
+// AND THE PLUGIN IS NOT ADDED HERE, WHICH IS THE ONE CORRECTION TO THE WORK
+// ORDER. `docs/sky-research-2026-08-14.md:71` reads "Add `AtmospherePlugin` to
+// the app". It is already added: `PbrPlugin::build` adds it unconditionally at
+// `bevy_pbr-0.19.0/src/lib.rs:252`, and `PbrPlugin` is in `DefaultPlugins`,
+// which `main.rs` uses. `App::add_plugins` PANICS on a duplicate unique plugin
+// ("plugin was already added in application"), so writing that line would have
+// traded a missing sky for a boot crash. The plugin only builds its render
+// graph if the adapter supports compute shaders and Rgba16Float storage
+// textures (`mod.rs:137/146/155` warn and bail otherwise) — on a GPU that fails
+// those checks the `Atmosphere` entity is inert and the frame falls back to
+// `ClearColor`, which is why [`atmos_mode`] keeps the dome reachable.
+//
+// WHAT THIS BUYS AND WHAT IT DOES NOT, at Voxelforge's scale. The atmosphere is
+// authored in METRES against a 6 360 km planet, and one block is one unit. The
+// sky is therefore exactly right (it is a function of view direction and sun
+// angle, not of scene size) — but the AERIAL PERSPECTIVE is not: Rayleigh
+// scattering is 5.802e-6 per metre (`bevy_light-0.19.0/src/atmosphere.rs:203`),
+// so across the ~64 blocks this map is deep the built-in in-scatter integrates
+// to ~4e-4 of a unit — three orders of magnitude below one 8-bit level. So
+// `docs/sky-research-2026-08-14.md:36` is right that the two systems are one
+// physical family and wrong that this one "replaces the current `DistanceFog`
+// haze": at block scale it CANNOT, and deleting the haze would delete the
+// depth cue outright. The division of labour that ships here is
+//
+//     Atmosphere  -> the sky (everything at far depth)
+//     DistanceFog -> the aerial perspective (everything that is geometry)
+//
+// and [`HAZE_START`]/[`HAZE_FULL`] are refitted to the map's MEASURED depth
+// span (`scripts/_flamingo_depth_ruler.sh`) instead of to a guess, which is the
+// other half of this change.
+
+/// How far the aerial-view LUT is stretched, in metres — and metres are blocks.
+///
+/// Bevy's default is `3.2e4` (`bevy_pbr-0.19.0/src/atmosphere/mod.rs:350`): 32 km,
+/// for a scene the size of a landscape flight sim. The aerial-view LUT is a 3-D
+/// texture "fit to the view frustum" whose 32 z-slices are "distributed linearly
+/// from the camera to this value" (`mod.rs:322-328`), so on the default the
+/// ENTIRE playable map — every block of it inside the p99 measured by
+/// `_flamingo_depth_ruler.sh` — falls inside the first slice and gets one
+/// constant sample.
+///
+/// TIED TO [`HAZE_FULL`], NOT TO [`RENDER_RADIUS`] AND NOT TO A LITERAL. Past
+/// `HAZE_FULL` the `DistanceFog` ramp is 100% opaque, so no atmosphere value
+/// computed out there can reach a pixel — sampling to 320 would spend 4/5 of the
+/// slices on depths the haze has already buried, which is the same mistake at
+/// the same scale that `HAZE_FULL = 150` was. Tying the two means the LUT
+/// re-aims itself the next time the haze is refitted to a re-measured set,
+/// instead of drifting silently the way the old fit did.
+const ATMOS_AERIAL_MAX_DISTANCE: f32 = HAZE_FULL;
+
+/// Marks the single atmosphere entity so it is spawned exactly once.
+#[derive(Component)]
+struct AtmosphereAnchor;
+
+/// `VOXELFORGE_LOOK_ATMOS=off|lut|raymarched` — the single-binary A/B lever this
+/// lane requires of every look change, and the tier switch
+/// `docs/sky-research-2026-08-14.md:95` asks for, in one hook.
+///
+/// * unset / `lut` — `AtmosphereMode::LookupTexture`, the shipped default and
+///   Bevy's own (`mod.rs:416-422`): "high-performance … tailored to scenes that are
+///   mostly inside of the atmosphere", which is every frame this game renders.
+/// * `raymarched` — `AtmosphereMode::Raymarched`, the Ultra/cinematic toggle.
+///   Not tiered off [`LookQuality`] yet ON PURPOSE: the research asks for it
+///   "only if Poppy's profiling shows it is affordable", and wiring it to a tier
+///   before that profile exists would ship an unmeasured cost.
+/// * `off` — no atmosphere at all, which is also what re-enables the [`SkyDome`]
+///   (see [`sky_grad_enabled`]). That is the before/after pair out of ONE
+///   binary, same as `_SKYGRAD`, `_HAZE` and `_FOG` before it.
+fn atmos_mode() -> Option<AtmosphereMode> {
+    static MODE: std::sync::OnceLock<Option<AtmosphereMode>> = std::sync::OnceLock::new();
+    *MODE.get_or_init(|| {
+        match std::env::var("VOXELFORGE_LOOK_ATMOS")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "off" | "0" => None,
+            "raymarched" | "ray" => Some(AtmosphereMode::Raymarched),
+            // Unset and anything unrecognised => the shipped LUT mode.
+            _ => Some(AtmosphereMode::LookupTexture),
+        }
+    })
+}
+
+/// Run condition: is the built-in atmosphere the sky this session?
+fn atmos_enabled() -> bool {
+    atmos_mode().is_some()
+}
+
+/// Spawn the planet once, and dress the gameplay camera with the view settings.
+///
+/// TWO ENTITIES, AND NEITHER BELONGS TO ANOTHER LANE. The `Atmosphere` is a new
+/// entity of this lane's own; the `AtmosphereSettings` goes on the existing
+/// `OrbitCam` for the same reason [`apply_look_to_cameras`] filters on it —
+/// `With<Camera3d>` would also dress the VFX lane's stage camera.
+///
+/// NO TRANSFORM IS WRITTEN. `Atmosphere` carries
+/// `#[component(on_add = set_default_transform)]`
+/// (`bevy_light-0.19.0/src/atmosphere.rs:34,58-68`), which places the planet
+/// centre at `-Y * inner_radius` when the `GlobalTransform` is still `Default` —
+/// i.e. the ground plane lands at y=0 with the surface normal on `+Y`, exactly
+/// where this map's ground already is. `#[require(GlobalTransform)]` means that
+/// default is present, so the hook fires. Setting a transform by hand here would
+/// only be right if we also rescaled the planet, and we do not: see the section
+/// note above on why the metre-scale aerial term is left to `DistanceFog`.
+///
+/// `AtmosphereSettings` carries `#[require(Hdr)]` (`mod.rs:288`). The camera is
+/// already HDR because [`base_camera_look`]'s `Bloom` requires it, so this adds
+/// no target change — but it is why this insert must not be moved onto a camera
+/// that does not carry the base look.
+fn atmosphere_sky(
+    mut commands: Commands,
+    mut media: ResMut<Assets<ScatteringMedium>>,
+    anchor: Query<(), With<AtmosphereAnchor>>,
+    cams: Query<Entity, (With<crate::OrbitCam>, Without<AtmosphereSettings>)>,
+) {
+    let Some(rendering_method) = atmos_mode() else {
+        return;
+    };
+    if anchor.is_empty() {
+        // `ScatteringMedium::default()` IS `ScatteringMedium::earth(256, 256)`
+        // (`bevy_light-0.19.0/src/atmosphere.rs:148-152`) — Rayleigh + Mie +
+        // Ozone at the paper's scale heights. Written as `earth(256, 256)`
+        // rather than `default()` so the two LUT resolutions are visible at the
+        // call site instead of hidden behind a trait impl.
+        let medium = media.add(ScatteringMedium::earth(256, 256));
+        commands.spawn((AtmosphereAnchor, Atmosphere::earth(medium)));
+        println!(
+            "LOOK atmosphere spawned mode={} aerial_max={ATMOS_AERIAL_MAX_DISTANCE}",
+            match rendering_method {
+                AtmosphereMode::Raymarched => "raymarched",
+                _ => "lut",
+            }
+        );
+    }
+    for cam in &cams {
+        commands.entity(cam).insert(AtmosphereSettings {
+            aerial_view_lut_max_distance: ATMOS_AERIAL_MAX_DISTANCE,
+            rendering_method,
+            ..default()
+        });
+    }
 }
 
 // ===========================================================================
@@ -1806,11 +2794,25 @@ struct SkyDome;
 
 /// `VOXELFORGE_LOOK_SKYGRAD=off` reverts to the flat single-colour `ClearColor`
 /// sky. The dome/flat A/B therefore comes out of ONE binary — the same env-swap
-/// discipline every other `_LOOK_*` hook exists for. Default: dome on.
+/// discipline every other `_LOOK_*` hook exists for.
+///
+/// THE ATMOSPHERE TAKES PRECEDENCE, AND IT HAS TO. The dome is opaque geometry
+/// at [`SKY_DOME_RADIUS`] = 640 with `cull_mode: None`, so it writes depth
+/// across every pixel the sky would otherwise occupy. Bevy's `render_sky` pass
+/// only writes where the depth buffer is still at the far plane, so a live dome
+/// does not "fight" the atmosphere — it hides it completely, and the frame would
+/// come back looking exactly like today's while every atmosphere LUT was
+/// computed and thrown away. Hence: atmosphere on ⇒ dome off, unconditionally.
+/// `VOXELFORGE_LOOK_ATMOS=off` is what gets the dome back, which is also what
+/// makes the pair a ONE-BINARY A/B rather than two builds.
+///
+/// Default: atmosphere on, dome off.
 fn sky_grad_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // Unset (None) => dome on; only the literal "off" disables it.
-    *ON.get_or_init(|| std::env::var("VOXELFORGE_LOOK_SKYGRAD").ok().as_deref() != Some("off"))
+    *ON.get_or_init(|| {
+        !atmos_enabled() && std::env::var("VOXELFORGE_LOOK_SKYGRAD").ok().as_deref() != Some("off")
+    })
 }
 
 /// A linear colour scaled by `s` (componentwise). Kept explicit rather than
