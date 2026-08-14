@@ -85,6 +85,11 @@ const TRAIL_RATE: f32 = 180.0;
 /// Campfire embers: seconds between released embers, and how long one lives.
 const EMBER_EVERY: f32 = 0.085;
 const EMBER_TTL: (f32, f32) = (1.1, 2.0);
+/// Chance (per ember beat) of a smoke puff / a spark pop. Tuned so smoke drifts
+/// in a lazy trickle (~3/s) and sparks crackle only occasionally (~1/s) — the fire
+/// reads alive without a constant rain of particles.
+const SMOKE_CHANCE: f32 = 0.30;
+const SPARK_CHANCE: f32 = 0.06;
 
 // ===========================================================================
 // Public contract — messages
@@ -394,6 +399,15 @@ struct VfxAssets {
     parry: Handle<StandardMaterial>,
     trail: Handle<StandardMaterial>,
     coal: Handle<StandardMaterial>,
+    /// Deep wet red — the "damage landed" read on every non-parry hit and the
+    /// death burst (the CEO's pass: blood must read clearly on target).
+    blood: Handle<StandardMaterial>,
+    /// Flat dark red — the pool a corpse leaves on the ground; lingers longer.
+    blood_pool: Handle<StandardMaterial>,
+    /// Cool translucent grey — campfire smoke puffs and the soft impact dust.
+    smoke: Handle<StandardMaterial>,
+    /// Warm neutral translucent mote — the ambient dust that keeps a scene alive.
+    air_dust: Handle<StandardMaterial>,
 }
 
 // ===========================================================================
@@ -421,7 +435,7 @@ impl Plugin for VfxPlugin {
                     // tick_hitstop runs FIRST so an impact fired this frame freezes
                     // starting this frame, not one frame late.
                     tick_hitstop,
-                    (on_impact, on_unravel, on_footdust, emit_trail, campfire_build, campfire_pulse),
+                    (on_impact, on_unravel, on_footdust, emit_trail, campfire_build, campfire_pulse, ambient_dust),
                     (tick_particles, tick_ephemeral, tick_coals),
                     // The kick is a delta on the final camera transform, so it must
                     // land after any system that *sets* that transform.
@@ -521,6 +535,40 @@ fn load_vfx_assets(
         perceptual_roughness: 1.0,
         ..default()
     });
+    // Blood — deep red with a small vital emissive so droplets bloom against the
+    // husk's grey armour, wet (low roughness) so it reads as fluid, not cloth.
+    let blood = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.55, 0.04, 0.05),
+        emissive: LinearRgba::rgb(0.9, 0.05, 0.05),
+        perceptual_roughness: 0.35,
+        metallic: 0.1,
+        ..default()
+    });
+    // The pool a body leaves behind: darker, flatter, no bloom — a stain, not a light.
+    let blood_pool = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.30, 0.02, 0.03),
+        perceptual_roughness: 0.9,
+        ..default()
+    });
+    // Smoke — translucent grey, unlit so it reads as air catching the key light
+    // rather than as a solid cube drifting up out of a fire.
+    let smoke = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.45, 0.43, 0.42, 0.18),
+        alpha_mode: AlphaMode::Blend,
+        unlit: true,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    });
+    // Ambient dust — lit, faint warm grey, translucent, so motes drift through the
+    // key light without ever stealing the frame from the sparks and embers.
+    let air_dust = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.74, 0.71, 0.65, 0.16),
+        alpha_mode: AlphaMode::Blend,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
+    });
 
     commands.insert_resource(VfxAssets {
         cube,
@@ -532,6 +580,10 @@ fn load_vfx_assets(
         parry,
         trail,
         coal,
+        blood,
+        blood_pool,
+        smoke,
+        air_dust,
     });
 }
 
@@ -579,6 +631,7 @@ fn on_impact(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(tone),
+                Visibility::default(),
                 Transform::from_translation(hit.pos + rng.cone(Vec3::Y, 1.0) * 0.09)
                     .with_scale(born),
                 Particle {
@@ -608,6 +661,7 @@ fn on_impact(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(mat),
+                Visibility::default(),
                 Transform::from_translation(hit.pos + rng.cone(Vec3::Y, 1.0) * 0.14)
                     .with_scale(born),
                 Particle {
@@ -647,6 +701,7 @@ fn on_impact(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(mat),
+                Visibility::default(),
                 Transform::from_translation(hit.pos + rng.cone(Vec3::Y, 1.0) * 0.12)
                     .with_scale(born),
                 Particle {
@@ -661,6 +716,69 @@ fn on_impact(
                     delay: 0.0,
                 },
             ));
+        }
+
+        // ---- blood: the "damage landed" read (CEO's pass) ----------------
+        // A non-parry hit throws wet red droplets that arc and splatter DOWN,
+        // so a landed blow is unmistakable even against the husk's grey armour.
+        // The husk still sheds ash (it is being unmade), but the blood is the
+        // damage telegraph a player needs to read in the middle of a trade.
+        if hit.flavor != HitFlavor::Parry {
+            let drops = (6.0 * power) as usize + 4;
+            for _ in 0..drops {
+                let v = rng.cone(out, 0.9) * rng.range(2.0, 5.6) * power
+                    + Vec3::Y * rng.range(0.6, 1.8);
+                let born = Vec3::splat(rng.range(0.03, 0.075));
+                commands.spawn((
+                    Mesh3d(assets.cube.clone()),
+                    MeshMaterial3d(assets.blood.clone()),
+                    Visibility::default(),
+                    Transform::from_translation(hit.pos + rng.cone(Vec3::Y, 1.0) * 0.10)
+                        .with_scale(born),
+                    Particle {
+                        vel: v,
+                        gravity: 18.0, // blood is heavy fluid — it falls, it does not drift
+                        drag: 0.6,
+                        spin: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 7.0,
+                        age: 0.0,
+                        ttl: rng.range(0.45, 0.85),
+                        born,
+                        hold: 0.35,
+                        delay: 0.0,
+                    },
+                ));
+            }
+        }
+
+        // ---- soft dust cloud: the weight of the blow ----------------------
+        // Fast chips read as "broke something"; a slow, large dust puff reads as
+        // "hit something heavy". Together they make an impact feel like mass
+        // rather than a firework.
+        {
+            let puffs = (4.0 * power) as usize + 3;
+            for _ in 0..puffs {
+                let v = rng.cone(out, 0.8) * rng.range(0.7, 2.0) * power
+                    + Vec3::Y * rng.range(0.4, 1.2);
+                let born = Vec3::splat(rng.range(0.10, 0.22));
+                commands.spawn((
+                    Mesh3d(assets.cube.clone()),
+                    MeshMaterial3d(assets.smoke.clone()),
+                    Visibility::default(),
+                    Transform::from_translation(hit.pos + rng.cone(Vec3::Y, 1.0) * 0.16)
+                        .with_scale(born),
+                    Particle {
+                        vel: v,
+                        gravity: -0.3, // dust hangs, then disperses
+                        drag: 2.6,
+                        spin: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 1.5,
+                        age: 0.0,
+                        ttl: rng.range(0.5, 0.9),
+                        born,
+                        hold: 0.12,
+                        delay: 0.0,
+                    },
+                ));
+            }
         }
 
         // ---- ⑥ hit flash: a shell around the struck body ----------------
@@ -694,6 +812,7 @@ fn on_impact(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(flash_mat),
+                Visibility::default(),
                 Transform::from_translation(hit.pos).with_scale(born),
                 Ephemeral {
                     age: 0.0,
@@ -730,6 +849,7 @@ fn on_impact(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(ring_mat),
+                Visibility::default(),
                 Transform::from_translation(hit.pos).with_scale(born),
                 Ephemeral {
                     age: 0.0,
@@ -758,6 +878,7 @@ fn on_impact(
                 ..default()
             },
             Transform::from_translation(hit.pos),
+            Visibility::default(),
             Ephemeral {
                 age: 0.0,
                 ttl: 0.16,
@@ -799,6 +920,7 @@ fn on_footdust(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(assets.stone_dust.clone()),
+                Visibility::default(),
                 Transform::from_translation(step.pos + rng.cone(Vec3::Y, 1.0) * 0.06)
                     .with_scale(born),
                 Particle {
@@ -872,6 +994,7 @@ fn on_unravel(
                     commands.spawn((
                         Mesh3d(assets.cube.clone()),
                         MeshMaterial3d(body_mat.clone()),
+                        Visibility::default(),
                         Transform::from_translation(d.pos + local)
                             .with_scale(Vec3::splat(block)),
                         Particle {
@@ -902,6 +1025,7 @@ fn on_unravel(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(assets.ash.clone()),
+                Visibility::default(),
                 Transform::from_translation(p).with_scale(born),
                 Particle {
                     vel: Vec3::new(rng.signed() * 0.35, rng.range(0.5, 1.3), rng.signed() * 0.35),
@@ -917,6 +1041,65 @@ fn on_unravel(
             ));
         }
 
+        // ---- blood burst + pool: the death made visible --------------------
+        // The dissolve carries the form away; the blood is what stays. A burst of
+        // droplets at the moment of death plus a pool that lingers on the ground
+        // where the body stood — the two together are the "it is dead"
+        // punctuation the dissolve alone never quite delivered.
+        for _ in 0..26 {
+            let p = d.pos
+                + Vec3::new(
+                    rng.signed() * d.half.x * 0.6,
+                    rng.signed() * d.half.y * 0.4,
+                    rng.signed() * d.half.z * 0.6,
+                );
+            let born = Vec3::splat(rng.range(0.03, 0.08));
+            commands.spawn((
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(assets.blood.clone()),
+                Visibility::default(),
+                Transform::from_translation(p).with_scale(born),
+                Particle {
+                    vel: Vec3::new(
+                        rng.signed() * 1.6,
+                        rng.range(1.2, 3.4),
+                        rng.signed() * 1.6,
+                    ),
+                    gravity: 16.0,
+                    drag: 0.7,
+                    spin: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 8.0,
+                    age: 0.0,
+                    ttl: rng.range(0.5, 0.9),
+                    born,
+                    hold: 0.3,
+                    delay: rng.range(0.0, 0.12),
+                },
+            ));
+        }
+        // The pool: a flat disc of blood at the feet, holding long then drying up
+        // (shrinking) so the ground remembers the kill after the body has gone.
+        {
+            let pool_scale = Vec3::new(d.half.x * 1.7, 0.03, d.half.z * 1.7);
+            commands.spawn((
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(assets.blood_pool.clone()),
+                Visibility::default(),
+                Transform::from_translation(d.pos - Vec3::Y * d.half.y)
+                    .with_scale(pool_scale),
+                Particle {
+                    vel: Vec3::ZERO,
+                    gravity: 0.0,
+                    drag: 0.0,
+                    spin: Vec3::ZERO,
+                    age: 0.0,
+                    ttl: 5.0,
+                    born: pool_scale,
+                    hold: 0.7,
+                    delay: 0.0,
+                },
+            ));
+        }
+
         // A dim, cool pulse as the form lets go — reads as energy leaving, and it
         // separates the death beat from the hit beats that preceded it.
         commands.spawn((
@@ -928,6 +1111,7 @@ fn on_unravel(
                 ..default()
             },
             Transform::from_translation(d.pos),
+            Visibility::default(),
             Ephemeral {
                 age: 0.0,
                 ttl: 0.55,
@@ -986,6 +1170,7 @@ fn emit_trail(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(assets.trail.clone()),
+                Visibility::default(),
                 Transform {
                     translation: p0.lerp(pos, f),
                     rotation: r0.slerp(rot, f),
@@ -1037,6 +1222,7 @@ fn campfire_build(
                 p.spawn((
                     Mesh3d(assets.cube.clone()),
                     MeshMaterial3d(assets.coal.clone()),
+                    Visibility::default(),
                     Transform::from_xyz(a.cos() * r, rng.range(0.03, 0.09), a.sin() * r)
                         .with_scale(Vec3::new(
                             rng.range(0.10, 0.20),
@@ -1059,6 +1245,7 @@ fn campfire_build(
                     ..default()
                 },
                 Transform::from_xyz(0.0, 0.42, 0.0),
+                Visibility::default(),
                 FireFlicker { base: fire.light },
             ));
         });
@@ -1099,6 +1286,7 @@ fn campfire_pulse(
             commands.spawn((
                 Mesh3d(assets.cube.clone()),
                 MeshMaterial3d(assets.ember.clone()),
+                Visibility::default(),
                 Transform::from_translation(base).with_scale(born),
                 Particle {
                     // Embers rise, wander sideways, and fade — negative gravity plus
@@ -1115,6 +1303,53 @@ fn campfire_pulse(
                     delay: 0.0,
                 },
             ));
+
+            // Smoke: a cool grey puff every few embers, so the fire reads as
+            // breathing rather than a shower of sparks alone.
+            if rng.unit() < SMOKE_CHANCE {
+                let born = Vec3::splat(rng.range(0.12, 0.30));
+                commands.spawn((
+                    Mesh3d(assets.cube.clone()),
+                    MeshMaterial3d(assets.smoke.clone()),
+                    Visibility::default(),
+                    Transform::from_translation(base + Vec3::Y * 0.12).with_scale(born),
+                    Particle {
+                        vel: Vec3::new(rng.signed() * 0.5, rng.range(0.8, 1.5), rng.signed() * 0.5),
+                        gravity: -0.6,
+                        drag: 1.6,
+                        spin: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 0.6,
+                        age: 0.0,
+                        ttl: rng.range(1.4, 2.4),
+                        born,
+                        hold: 0.25,
+                        delay: 0.0,
+                    },
+                ));
+            }
+
+            // Spark pop: an occasional bright chip that jumps clear of the coals —
+            // the crackle that keeps a campfire from reading as a candle.
+            if rng.unit() < SPARK_CHANCE {
+                let tone = assets.spark[(rng.unit() * 3.0) as usize % 3].clone();
+                let born = Vec3::splat(rng.range(0.02, 0.045));
+                commands.spawn((
+                    Mesh3d(assets.cube.clone()),
+                    MeshMaterial3d(tone),
+                    Visibility::default(),
+                    Transform::from_translation(base).with_scale(born),
+                    Particle {
+                        vel: Vec3::new(rng.signed() * 1.8, rng.range(2.0, 3.6), rng.signed() * 1.8),
+                        gravity: 4.0,
+                        drag: 1.8,
+                        spin: Vec3::ZERO,
+                        age: 0.0,
+                        ttl: rng.range(0.25, 0.5),
+                        born,
+                        hold: 0.1,
+                        delay: 0.0,
+                    },
+                ));
+            }
         }
     }
 }
@@ -1138,6 +1373,79 @@ fn tick_coals(
     let t = time.elapsed_secs() * 2.4 + phase / n;
     let g = 0.78 + 0.22 * t.sin();
     mat.emissive = LinearRgba::rgb(4.2 * g, 1.1 * g, 0.15 * g);
+}
+
+// ===========================================================================
+// Ambient dust — the scene breathes even when nothing is fighting
+// ===========================================================================
+
+/// Seconds between ambient dust motes per camera, and how long one drifts.
+/// Tuned so dust is a faint texture in the air, never a cloud that draws the eye.
+const AMBIENT_EVERY: f32 = 0.14;
+const AMBIENT_TTL: (f32, f32) = (2.2, 4.0);
+
+/// One ambient-dust emitter per active camera. Spawned lazily by [`ambient_dust`]
+/// the first frame it sees a `Camera3d` without one; the mote field lives on the
+/// camera so dust always hangs where the player is looking.
+#[derive(Component)]
+struct AmbientEmitter {
+    accum: f32,
+}
+
+fn ambient_dust(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut rng: ResMut<VfxRng>,
+    assets: Option<Res<VfxAssets>>,
+    mut cams: Query<(&GlobalTransform, &mut AmbientEmitter)>,
+    cam_needs: Query<Entity, (With<Camera3d>, Without<AmbientEmitter>)>,
+) {
+    let Some(assets) = assets else { return };
+
+    // Lazy-attach one emitter per camera — dust hangs where the player looks, so it
+    // rides the camera rather than being a fixed cloud anchored in the world.
+    for e in &cam_needs {
+        commands.entity(e).insert(AmbientEmitter { accum: 0.0 });
+    }
+
+    let dt = time.delta_secs();
+    for (gtf, mut emitter) in &mut cams {
+        emitter.accum += dt;
+        while emitter.accum >= AMBIENT_EVERY {
+            emitter.accum -= AMBIENT_EVERY;
+
+            // A shell in front of the camera, never behind it — a mote behind the
+            // lens is a wasted draw on a frame the player can't see.
+            let cam = gtf.translation();
+            let p = cam
+                + *gtf.forward() * rng.range(1.0, 6.0)
+                + *gtf.right() * rng.signed() * 2.5
+                + *gtf.up() * rng.range(-0.5, 2.0);
+            let born = Vec3::splat(rng.range(0.02, 0.05));
+            commands.spawn((
+                Mesh3d(assets.cube.clone()),
+                MeshMaterial3d(assets.air_dust.clone()),
+                Visibility::default(),
+                Transform::from_translation(p).with_scale(born),
+                Particle {
+                    // Dust hangs and wanders; it does not travel.
+                    vel: Vec3::new(
+                        rng.signed() * 0.12,
+                        rng.range(-0.05, 0.15),
+                        rng.signed() * 0.12,
+                    ),
+                    gravity: 0.0,
+                    drag: 0.15,
+                    spin: Vec3::new(rng.signed(), rng.signed(), rng.signed()) * 0.5,
+                    age: 0.0,
+                    ttl: rng.range(AMBIENT_TTL.0, AMBIENT_TTL.1),
+                    born,
+                    hold: 0.85,
+                    delay: 0.0,
+                },
+            ));
+        }
+    }
 }
 
 // ===========================================================================
@@ -1446,6 +1754,7 @@ pub fn setup_showcase(
         c.spawn((
             Mesh3d(mesh.clone()),
             MeshMaterial3d(mat.clone()),
+            Visibility::default(),
             Transform::from_translation(pos).with_scale(scale),
         ));
     };
@@ -1521,6 +1830,7 @@ pub fn setup_showcase(
         commands.spawn((
             Mesh3d(cube.clone()),
             MeshMaterial3d(log_mat.clone()),
+            Visibility::default(),
             Transform::from_xyz(4.6, 0.16, 2.6)
                 .with_rotation(Quat::from_axis_angle(Vec3::Y, a))
                 .with_scale(Vec3::new(1.05, 0.18, 0.18)),
@@ -1553,6 +1863,7 @@ pub fn setup_showcase(
                 p.spawn((
                     Mesh3d(cube.clone()),
                     MeshMaterial3d(husk_armor.clone()),
+                    Visibility::default(),
                     Transform::from_translation(Vec3::Y * dy)
                         .with_scale(Vec3::new(sx, sy, sz)),
                 ));
@@ -1569,6 +1880,7 @@ pub fn setup_showcase(
     commands.spawn((
         Mesh3d(cube.clone()),
         MeshMaterial3d(steel.clone()),
+        Visibility::default(),
         Transform::from_translation(hero_feet + Vec3::new(0.95, 1.45, -0.65))
             .with_rotation(Quat::from_rotation_z(-0.9) * Quat::from_rotation_y(0.5))
             .with_scale(Vec3::new(0.10, 1.5, 0.16)),
