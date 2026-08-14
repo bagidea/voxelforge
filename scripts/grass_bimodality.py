@@ -517,7 +517,7 @@ def main(argv=None):
     nfail = sum(1 for _, _, v in rows if v == "FAIL")
     nunk = len(rows) - npass - nfail
     print(f"\n  {npass} PASS / {nfail} FAIL / {nunk} UNRELIABLE   artifacts -> {a.out}/")
-    return 0
+    return 1 if nfail else 0
 
 
 if __name__ == "__main__":

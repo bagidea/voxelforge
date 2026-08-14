@@ -286,6 +286,7 @@ def main():
 
     im.save(out)
     print(f"wrote {out}  — verdict: {headline}")
+    sys.exit(0 if colour_ok else 1)
 
 
 if __name__ == "__main__":
