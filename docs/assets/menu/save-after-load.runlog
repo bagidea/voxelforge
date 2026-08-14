@@ -1,23 +1,12 @@
-﻿voxelforge.exe : 2026-08-14T15:19:54.974324Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: 
-SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", 
-memory: "15.8 GiB" }
-At line:20 char:1
-+ & $exe *> docs\assets\menu\save-after-load.runlog
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (2026-08-14T15:1...y: "15.8 GiB" }:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-2026-08-14T15:19:55.273943Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 
-4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: 
-"560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+2026-08-14T20:26:03.448095Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+2026-08-14T20:26:03.813271Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
 EDITOR_CONFIG loaded editor_config.json — 16 actions, grid_snap=1
 AI_MODE tactics (perception + squad pass)
 SETTINGS loaded settings.json
-2026-08-14T15:19:55.408336Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
-2026-08-14T15:19:55.408410Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on 
-this device.
-2026-08-14T15:19:55.409177Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
-2026-08-14T15:19:55.409474Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
+2026-08-14T20:26:04.093119Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
+2026-08-14T20:26:04.093193Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on this device.
+2026-08-14T20:26:04.093716Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
+2026-08-14T20:26:04.093918Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
 STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
 MAP_LOAD ok path=maps/edhari.json name="edhari" blocks=9537 size=2x2 chunks
 MESH_PATH split (one mesh + material per block type)
@@ -29,18 +18,18 @@ HUSK2_SPAWN kind=sentinel at (32.0,1.0,25.0)
 SPAWN_ENCOUNTER husk at (32.0,_,25.0) on Edhari surface
 SPAWN_GROUND col=(32,32) top=0 feet=1 => PASS
 SCENE_READY source=maps/edhari.json spawn=(32.5,2.6,32.5) surface=0 campfire=(32.5,1.0,29.5)
-QUEST_LOAD ok path=quest_save.json flags=5 quests=1
 SPAWN_NPC id=maren name="Elder Maren" pos=(32,2,4)
 SPAWN_NPC id=toma name="Toma" pos=(16,1.5,24)
+QUEST_LOAD ok path=quest_save.json flags=5 quests=1
 LOOK_FILL gen=V3 ambient=380 sky=1400lux@76deg bounce=1100lux@28deg rim=600lux@14deg contact_sky=true
 ANIM_RIG_WEAPON spawn actor=Player entity=652v0
+CAST_SPAWN who=maren root=654v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
+CAST_WEAR who=maren head=- torso=- legs=- hands=- weapon=- back=-
 LOOK atmosphere spawned mode=lut aerial_max=72
 LOOK_IBL gen=V3 nits=260
 VFX campfire lit at (32.5,1.0,29.5)
 ANIM_RIG_NPC dressed entity=608v0 look=Villager
 ANIM_RIG_NPC dressed entity=609v0 look=Villager
-CAST_SPAWN who=maren root=684v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
-CAST_WEAR who=maren head=- torso=- legs=- hands=- weapon=- back=-
 CAST_MATERIALS who=maren total=24 cloth=11 hair=4 skin=3 metal=2 wood=2 leather=1 glow=1
 CAST_DRESSED id=maren placeholder_mesh=removed body=maren feet=(32.0,13.0,4.0)
 CAST_SPAWN who=toma root=744v0 body_boxes=17 gear_boxes=0 slots_filled=0/6 height=1.34b feet=(16.0,3.0,24.0) yaw=3.14
@@ -56,22 +45,24 @@ LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/205deg illum=22000 con
 VFX_RIG_WEAPON_TRAIL attach actor=Player entity=652v0
 ANIM_RIG_NPC dressed entity=792v0 look=Villager
 DEMO_SHOT menu-continue.png
-2026-08-14T15:19:56.312923Z  INFO bevy_render::view::window::screenshot: Screenshot saved to menu-continue.png
+2026-08-14T20:26:04.974454Z  INFO bevy_render::view::window::screenshot: Screenshot saved to menu-continue.png
 DEMO_ACTION Continue
 QUEST_LOAD ok path=quest_save.json flags=5 quests=1
-GAME_LOAD flags={"entered_campfire_square", "campfire_anchored", "entered_village_road", "demo_kevin_item", "entered_spawn_shelter"}
-GAME_LOAD ok pos=(32.50,2.63,23.45) yaw=0.00 hp=78 stamina=100
+GAME_LOAD flags={"entered_spawn_shelter", "campfire_anchored", "entered_village_road", "demo_kevin_item", "entered_campfire_square"}
+GAME_LOAD ok pos=(32.50,2.62,23.57) yaw=0.00 hp=78 stamina=100
 ENTER_PLAY
 AUDIO_PLAY:audio/music_theme.wav t=1.07 pos=(non-spatial)
 AUDIO_PLAY:audio/ambient_wind.wav t=1.07 pos=(omnipresent)
 AUDIO_PLAY:audio/ambient_campfire.wav t=1.07 pos=(32.5,1.0,29.5)
-AUDIO_PLAY:audio/ambient_village.wav t=1.07 pos=(47.5,2.6,13.4)
+AUDIO_PLAY:audio/ambient_village.wav t=1.07 pos=(47.5,2.6,13.6)
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_ZONE:Village t=1.07 pos=(32.5,2.6,23.4)
 QUEST_FEEDBACK q1_embers complete → text + sound
-QUEST_DIALOGUE fire id=dlg_maren_first_call trigger=on_objective
+AUDIO_ZONE:Village t=1.07 pos=(32.5,2.6,23.6)
 AUDIO_PLAY:audio/player_respawn.wav t=1.07 pos=(0.0,0.0,0.0)
-QUEST_AREA enter=village_road player=(32.5,23.4)
+QUEST_AREA enter=village_road player=(32.5,23.6)
+QUEST_DIALOGUE fire id=dlg_maren_first_call trigger=on_objective
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -195,8 +186,7 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-2026-08-14T15:19:58.109200Z  INFO bevy_render::view::window::screenshot: Screenshot saved to 
-docs/assets/menu/save-after-load.png
+2026-08-14T20:26:07.227155Z  INFO bevy_render::view::window::screenshot: Screenshot saved to docs/assets/menu/save-after-load.png
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -235,33 +225,11 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/swing_light.wav t=3.44 pos=(32.0,1.0,25.0)
+AUDIO_PLAY:audio/swing_whoosh.wav t=3.44 pos=(32.0,1.0,25.0)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/swing_light.wav t=3.39 pos=(32.0,1.0,25.0)
-AUDIO_PLAY:audio/swing_whoosh.wav t=3.39 pos=(32.0,1.0,25.0)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/player_hurt.wav t=3.41 pos=(0.0,0.0,0.0)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/player_hurt.wav t=3.47 pos=(0.0,0.0,0.0)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -294,19 +262,6 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/swing_heavy.wav t=3.97 pos=(32.0,1.0,25.0)
-AUDIO_PLAY:audio/swing_whoosh.wav t=3.97 pos=(32.0,1.0,25.0)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/player_hurt.wav t=4.00 pos=(0.0,0.0,0.0)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 DEMO_DONE continue

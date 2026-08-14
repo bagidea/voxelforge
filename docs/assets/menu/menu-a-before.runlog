@@ -1,23 +1,12 @@
-﻿voxelforge.exe : 2026-08-14T15:19:23.612811Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: 
-SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", 
-memory: "15.8 GiB" }
-At line:10 char:1
-+ & $exe *> docs\assets\menu\menu-a-before.runlog
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (2026-08-14T15:1...y: "15.8 GiB" }:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-2026-08-14T15:19:23.958367Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 
-4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: 
-"560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+2026-08-14T20:25:39.758700Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+2026-08-14T20:25:41.629184Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
 EDITOR_CONFIG loaded editor_config.json — 16 actions, grid_snap=1
 AI_MODE tactics (perception + squad pass)
 SETTINGS loaded settings.json
-2026-08-14T15:19:24.096161Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
-2026-08-14T15:19:24.096213Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on 
-this device.
-2026-08-14T15:19:24.096898Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
-2026-08-14T15:19:24.097151Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
+2026-08-14T20:25:43.175154Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
+2026-08-14T20:25:43.175215Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on this device.
+2026-08-14T20:25:43.210867Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
+2026-08-14T20:25:43.221080Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
 STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
 MAP_LOAD ok path=maps/edhari.json name="edhari" blocks=9537 size=2x2 chunks
 MESH_PATH split (one mesh + material per block type)
@@ -32,17 +21,17 @@ SCENE_READY source=maps/edhari.json spawn=(32.5,2.6,32.5) surface=0 campfire=(32
 SPAWN_NPC id=maren name="Elder Maren" pos=(32,2,4)
 SPAWN_NPC id=toma name="Toma" pos=(16,1.5,24)
 LOOK_FILL gen=V3 ambient=380 sky=1400lux@76deg bounce=1100lux@28deg rim=600lux@14deg contact_sky=true
-LOOK_IBL gen=V3 nits=260
-LOOK atmosphere spawned mode=lut aerial_max=72
-ANIM_RIG_WEAPON spawn actor=Player entity=654v0
 VFX campfire lit at (32.5,1.0,29.5)
-CAST_SPAWN who=maren root=655v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
+LOOK atmosphere spawned mode=lut aerial_max=72
+CAST_SPAWN who=maren root=617v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
+LOOK_IBL gen=V3 nits=260
 CAST_WEAR who=maren head=- torso=- legs=- hands=- weapon=- back=-
-ANIM_RIG_NPC dressed entity=608v0 look=Villager
 CAST_MATERIALS who=maren total=24 cloth=11 hair=4 skin=3 metal=2 wood=2 leather=1 glow=1
-ANIM_RIG_NPC dressed entity=609v0 look=Villager
 CAST_DRESSED id=maren placeholder_mesh=removed body=maren feet=(32.0,13.0,4.0)
-CAST_SPAWN who=toma root=744v0 body_boxes=17 gear_boxes=0 slots_filled=0/6 height=1.34b feet=(16.0,3.0,24.0) yaw=3.14
+ANIM_RIG_WEAPON spawn actor=Player entity=686v0
+ANIM_RIG_NPC dressed entity=608v0 look=Villager
+CAST_SPAWN who=toma root=682v0 body_boxes=17 gear_boxes=0 slots_filled=0/6 height=1.34b feet=(16.0,3.0,24.0) yaw=3.14
+ANIM_RIG_NPC dressed entity=609v0 look=Villager
 CAST_WEAR who=toma head=- torso=- legs=- hands=- weapon=- back=-
 CAST_MATERIALS who=toma total=17 cloth=8 skin=3 hair=3 wood=3
 CAST_DRESSED id=toma placeholder_mesh=removed body=toma feet=(16.0,3.0,24.0)
@@ -52,10 +41,9 @@ CAST_MATERIALS who=toma total=17 cloth=8 skin=3 hair=3 wood=3
 CAST_SPAWN_NPC id=toma feet=(16.5,3.0,24.5) region=west_house
 LOOK play FogVolume spawned density=0.030 (god-ray medium)
 LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/205deg illum=22000 contact=true
-VFX_RIG_WEAPON_TRAIL attach actor=Player entity=654v0
+VFX_RIG_WEAPON_TRAIL attach actor=Player entity=686v0
 ANIM_RIG_NPC dressed entity=792v0 look=Villager
 DEMO_SHOT docs/assets/menu/menu-a-before.png
 MENUSHOT before -> docs/assets/menu/menu-a-before.png
-2026-08-14T15:19:25.795599Z  INFO bevy_render::view::window::screenshot: Screenshot saved to 
-docs/assets/menu/menu-a-before.png
+2026-08-14T20:25:46.949145Z  INFO bevy_render::view::window::screenshot: Screenshot saved to docs/assets/menu/menu-a-before.png
 MENUSHOT_DONE before

@@ -1,23 +1,12 @@
-﻿voxelforge.exe : 2026-08-14T15:19:42.588414Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: 
-SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", 
-memory: "15.8 GiB" }
-At line:8 char:1
-+ & $exe *> docs\assets\menu\save-before-load.runlog
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (2026-08-14T15:1...y: "15.8 GiB" }:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-2026-08-14T15:19:42.918647Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 
-4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: 
-"560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+2026-08-14T20:25:50.549601Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+2026-08-14T20:25:50.971079Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
 EDITOR_CONFIG loaded editor_config.json — 16 actions, grid_snap=1
 AI_MODE tactics (perception + squad pass)
 SETTINGS loaded settings.json
-2026-08-14T15:19:43.080413Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
-2026-08-14T15:19:43.080475Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on 
-this device.
-2026-08-14T15:19:43.080993Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
-2026-08-14T15:19:43.081185Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
+2026-08-14T20:25:51.181869Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
+2026-08-14T20:25:51.181932Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on this device.
+2026-08-14T20:25:51.182357Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
+2026-08-14T20:25:51.182574Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
 STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
 MAP_LOAD ok path=maps/edhari.json name="edhari" blocks=9537 size=2x2 chunks
 MESH_PATH split (one mesh + material per block type)
@@ -32,14 +21,14 @@ SCENE_READY source=maps/edhari.json spawn=(32.5,2.6,32.5) surface=0 campfire=(32
 SPAWN_NPC id=maren name="Elder Maren" pos=(32,2,4)
 SPAWN_NPC id=toma name="Toma" pos=(16,1.5,24)
 LOOK_FILL gen=V3 ambient=380 sky=1400lux@76deg bounce=1100lux@28deg rim=600lux@14deg contact_sky=true
-VFX campfire lit at (32.5,1.0,29.5)
-ANIM_RIG_WEAPON spawn actor=Player entity=656v0
-CAST_SPAWN who=maren root=629v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
 LOOK_IBL gen=V3 nits=260
+ANIM_RIG_WEAPON spawn actor=Player entity=653v0
 LOOK atmosphere spawned mode=lut aerial_max=72
+VFX campfire lit at (32.5,1.0,29.5)
 ANIM_RIG_NPC dressed entity=608v0 look=Villager
-CAST_WEAR who=maren head=- torso=- legs=- hands=- weapon=- back=-
 ANIM_RIG_NPC dressed entity=609v0 look=Villager
+CAST_SPAWN who=maren root=655v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
+CAST_WEAR who=maren head=- torso=- legs=- hands=- weapon=- back=-
 CAST_MATERIALS who=maren total=24 cloth=11 hair=4 skin=3 metal=2 wood=2 leather=1 glow=1
 CAST_DRESSED id=maren placeholder_mesh=removed body=maren feet=(32.0,13.0,4.0)
 CAST_SPAWN who=toma root=744v0 body_boxes=17 gear_boxes=0 slots_filled=0/6 height=1.34b feet=(16.0,3.0,24.0) yaw=3.14
@@ -52,33 +41,75 @@ CAST_MATERIALS who=toma total=17 cloth=8 skin=3 hair=3 wood=3
 CAST_SPAWN_NPC id=toma feet=(16.5,3.0,24.5) region=west_house
 LOOK play FogVolume spawned density=0.030 (god-ray medium)
 LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/205deg illum=22000 contact=true
-VFX_RIG_WEAPON_TRAIL attach actor=Player entity=656v0
+VFX_RIG_WEAPON_TRAIL attach actor=Player entity=653v0
 ANIM_RIG_NPC dressed entity=792v0 look=Villager
 DEMO_SHOT menu.png
-2026-08-14T15:19:43.986901Z  INFO bevy_render::view::window::screenshot: Screenshot saved to menu.png
+2026-08-14T20:25:52.080647Z  INFO bevy_render::view::window::screenshot: Screenshot saved to menu.png
 DEMO_ACTION NewGame
 GAME_NEW cleared savegame.json + quest_save.json
 STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
 GAME_NEW quest start=q1_embers
 GAME_NEW ok spawn=(32.50,2.62,32.50) hp=100 stamina=100
 ENTER_PLAY
-AUDIO_PLAY:audio/music_theme.wav t=1.06 pos=(non-spatial)
-AUDIO_PLAY:audio/ambient_wind.wav t=1.06 pos=(omnipresent)
-AUDIO_PLAY:audio/ambient_campfire.wav t=1.06 pos=(32.5,1.0,29.5)
-AUDIO_PLAY:audio/ambient_village.wav t=1.06 pos=(47.5,2.6,22.5)
-AUDIO_ZONE:Campfire t=1.06 pos=(32.5,2.6,32.5)
+AUDIO_PLAY:audio/music_theme.wav t=1.08 pos=(non-spatial)
+AUDIO_PLAY:audio/ambient_wind.wav t=1.08 pos=(omnipresent)
+AUDIO_PLAY:audio/ambient_campfire.wav t=1.08 pos=(32.5,1.0,29.5)
+AUDIO_PLAY:audio/ambient_village.wav t=1.08 pos=(47.5,2.6,22.5)
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_ZONE:Campfire t=1.08 pos=(32.5,2.6,32.5)
 QUEST_STAGE_COMPLETE qid=q1_embers oid=o1_campfire => PASS (approach dist=3.5)
 QUEST_COMPLETE id=q1_embers => PASS
 QUEST_ACCEPT id=q2_voice_in_stone => PASS (from Locked)
 QUEST_NEXT_OPEN next=q2_voice_in_stone => PASS
-QUEST_DIALOGUE fire id=dlg_maren_first_call trigger=on_objective
 QUEST_AREA enter=spawn_shelter player=(32.5,32.5)
 QUEST_FLAG set=entered_spawn_shelter
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 QUEST_FEEDBACK q1_embers complete → text + sound
+QUEST_DIALOGUE fire id=dlg_maren_first_call trigger=on_objective
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/player_respawn.wav t=1.09 pos=(0.0,0.0,0.0)
+AUDIO_PLAY:audio/player_respawn.wav t=1.10 pos=(0.0,0.0,0.0)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -116,107 +147,53 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-QUEST_AREA enter=campfire_square player=(32.5,30.7)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.10 pos=(32.5,2.6,32.0)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=2.18 pos=(32.5,2.6,31.6)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=2.26 pos=(32.5,2.6,31.1)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+QUEST_AREA enter=campfire_square player=(32.5,31.0)
 QUEST_FLAG set=entered_campfire_square
-QUEST_AREA enter=village_road player=(32.5,30.7)
+QUEST_AREA enter=village_road player=(32.5,31.0)
 QUEST_FLAG set=entered_village_road
-AUDIO_PLAY:audio/footstep_stone.wav t=2.29 pos=(32.5,2.6,30.7)
-AUDIO_PLAY:audio/footstep_stone.wav t=2.29 pos=(32.5,2.6,30.7)
-AUDIO_PLAY:audio/footstep_stone.wav t=2.29 pos=(32.5,2.6,30.7)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.32 pos=(32.5,2.6,30.7)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.39 pos=(32.5,2.6,30.2)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.33 pos=(32.5,2.6,30.6)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.51 pos=(32.5,2.6,29.4)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.41 pos=(32.5,2.6,30.2)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.55 pos=(32.5,2.6,29.3)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.49 pos=(32.5,2.6,29.7)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.62 pos=(32.5,2.6,28.9)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.70 pos=(32.5,2.6,28.4)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.77 pos=(32.5,2.6,27.9)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.85 pos=(32.5,2.6,27.5)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=2.92 pos=(32.5,2.6,27.1)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_ZONE:Village t=2.95 pos=(32.5,2.6,26.9)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.00 pos=(32.5,2.6,26.6)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.07 pos=(32.5,3.6,26.1)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/swing_heavy.wav t=3.10 pos=(33.5,1.0,25.0)
-AUDIO_PLAY:audio/swing_whoosh.wav t=3.10 pos=(33.5,1.0,25.0)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/player_hurt.wav t=3.13 pos=(0.0,0.0,0.0)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.15 pos=(32.5,3.6,25.7)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.27 pos=(32.5,3.6,24.9)
-INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.27 pos=(32.5,3.6,24.8)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.56 pos=(32.5,2.6,29.3)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -225,21 +202,86 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.37 pos=(32.5,3.5,24.4)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.67 pos=(32.5,2.6,28.8)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=2.72 pos=(32.5,2.6,28.3)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.45 pos=(32.5,3.2,23.9)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.79 pos=(32.5,2.6,27.9)
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_PLAY:audio/footstep_stone.wav t=3.53 pos=(32.5,2.8,23.4)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.87 pos=(32.5,2.6,27.4)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_ZONE:Village t=2.95 pos=(32.5,2.6,27.0)
+AUDIO_PLAY:audio/footstep_stone.wav t=2.95 pos=(32.5,2.6,27.0)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.02 pos=(32.5,2.6,26.5)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.10 pos=(32.5,3.6,26.2)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/swing_heavy.wav t=3.12 pos=(33.5,1.0,25.0)
+AUDIO_PLAY:audio/swing_whoosh.wav t=3.12 pos=(33.5,1.0,25.0)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/player_hurt.wav t=3.15 pos=(0.0,0.0,0.0)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.17 pos=(32.5,3.6,25.7)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.27 pos=(32.5,3.6,25.2)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.31 pos=(32.5,3.6,24.8)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.40 pos=(32.5,3.5,24.2)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_PLAY:audio/footstep_stone.wav t=3.46 pos=(32.5,3.3,23.9)
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 DEMO_SHOT docs/assets/menu/walk.png
 DEMO_WALK end
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -252,7 +294,13 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-2026-08-14T15:19:47.297604Z  INFO bevy_render::view::window::screenshot: Screenshot saved to docs/assets/menu/walk.png
+2026-08-14T20:25:54.911871Z  INFO bevy_render::view::window::screenshot: Screenshot saved to docs/assets/menu/walk.png
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -282,9 +330,49 @@ INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 QUEST_SAVE ok path=quest_save.json flags=5 quests=1
-GAME_SAVE flags={"entered_village_road", "entered_campfire_square", "demo_kevin_item", "campfire_anchored", "entered_spawn_shelter"}
-GAME_SAVE ok path=savegame.json pos=(32.50,2.63,23.45) yaw=0.00 hp=78 stamina=100
-DEMO_SAVE pos=(32.50,2.63,23.45) yaw=0.00 hp=78 stamina=100
+GAME_SAVE flags={"demo_kevin_item", "entered_spawn_shelter", "entered_campfire_square", "entered_village_road", "campfire_anchored"}
+GAME_SAVE ok path=savegame.json pos=(32.50,2.62,23.57) yaw=0.00 hp=78 stamina=100
+DEMO_SAVE pos=(32.50,2.62,23.57) yaw=0.00 hp=78 stamina=100
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -378,8 +466,7 @@ INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
-2026-08-14T15:19:48.981143Z  INFO bevy_render::view::window::screenshot: Screenshot saved to 
-docs/assets/menu/save-before-load.png
+2026-08-14T20:25:56.547686Z  INFO bevy_render::view::window::screenshot: Screenshot saved to docs/assets/menu/save-before-load.png
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
@@ -435,7 +522,43 @@ INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
-AUDIO_SUMMARY:total=28 | audio/ambient_campfire.wav=1 audio/ambient_village.wav=1 audio/ambient_wind.wav=1 audio/footstep_stone.wav=20 audio/music_theme.wav=1 audio/player_hurt.wav=1 audio/player_respawn.wav=1 audio/swing_heavy.wav=1 audio/swing_whoosh.wav=1
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+AUDIO_SUMMARY:total=27 | audio/ambient_campfire.wav=1 audio/ambient_village.wav=1 audio/ambient_wind.wav=1 audio/footstep_stone.wav=19 audio/music_theme.wav=1 audio/player_hurt.wav=1 audio/player_respawn.wav=1 audio/swing_heavy.wav=1 audio/swing_whoosh.wav=1
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
 INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
