@@ -1,0 +1,24 @@
+docs/evidence/sky-verify-2026-08-14/playable-walk-after.png  1280x720  N=921600
+  %R>=250 (whole frame)        = 5.79%
+  %true burnout (R,G,B>=250)   = 0.16%
+  sky-band(y46..324) %R>=250     = 14.33%
+  sky-band %true burnout       = 0.00%
+
+docs/evidence/sky-verify-2026-08-14/playable-walk-after-nohud2.png  1280x640  N=819200
+  %R>=250 (whole frame)        = 5.68%
+  %true burnout (R,G,B>=250)   = 0.00%
+  sky-band(y46..288) %R>=250     = 9.31%
+  sky-band %true burnout       = 0.00%
+
+docs/evidence/sky-verify-2026-08-14/edhari-load.png  1280x720  N=921600
+  %R>=250 (whole frame)        = 3.03%
+  %true burnout (R,G,B>=250)   = 0.16%
+  sky-band(y46..324) %R>=250     = 5.33%
+  sky-band %true burnout       = 0.00%
+
+docs/evidence/sky-verify-2026-08-14/edhari-load-nohud2.png  1280x640  N=819200
+  %R>=250 (whole frame)        = 0.96%
+  %true burnout (R,G,B>=250)   = 0.00%
+  sky-band(y46..288) %R>=250     = 0.00%
+  sky-band %true burnout       = 0.00%
+

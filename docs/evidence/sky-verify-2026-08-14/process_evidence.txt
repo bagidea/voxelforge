@@ -1,0 +1,54 @@
+=== target/release/voxelforge.exe present? ===
+ls: cannot access 'target/release/voxelforge.exe': No such file or directory
+
+=== in-flight cargo/rustc processes at report time ===
+
+ProcessId Name      CreationDate         CommandLine                                                                   
+--------- ----      ------------         -----------                                                                   
+    22624 cargo.exe 8/14/2026 1:14:45 PM "C:\Users\BagIdea\.cargo\bin\cargo.exe" build --release --bin voxelforge -j 2 
+     4704 cargo.exe 8/14/2026 1:14:45 PM "C:\Users\BagIdea\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.e
+                                         xe" build --release --bin voxelforge -j 2                                     
+    23376 rustc.exe 8/14/2026 1:14:50 PM "C:\Users\BagIdea\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.e
+                                         xe" --crate-name voxelforge --edition=2021 client\src\main.rs                 
+                                         --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat 
+                                         --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=fat -C            
+                                         codegen-units=1 --cfg feature=\"default\" --cfg                               
+                                         feature=\"experimental_pbr_pcss\" --check-cfg cfg(docsrs,test) --check-cfg    
+                                         "cfg(feature, values(\"default\", \"experimental_pbr_pcss\"))" -C             
+                                         metadata=08463d40eae66c61 --out-dir E:\Projects\bagidea-ai-agents-office\works
+                                         pace\projects\Voxelforge\target\release\deps -C strip=debuginfo -L dependency=
+                                         E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target\rele
+                                         ase\deps --extern bevy=E:\Projects\bagidea-ai-agents-office\workspace\projects
+                                         \Voxelforge\target\release\deps\libbevy-33cb1db9cf6ea7d5.rlib --extern bevy_ca
+                                         mera=E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target
+                                         \release\deps\libbevy_camera-d60304782e836e63.rlib --extern bevy_egui=E:\Proje
+                                         cts\bagidea-ai-agents-office\workspace\projects\Voxelforge\target\release\deps
+                                         \libbevy_egui-65d74a72e8ad75d2.rlib --extern dot_vox=E:\Projects\bagidea-ai-ag
+                                         ents-office\workspace\projects\Voxelforge\target\release\deps\libdot_vox-fe968
+                                         0d772b9417e.rlib --extern serde=E:\Projects\bagidea-ai-agents-office\workspace
+                                         \projects\Voxelforge\target\release\deps\libserde-af3c17ab64803a3a.rlib       
+                                         --extern serde_json=E:\Projects\bagidea-ai-agents-office\workspace\projects\Vo
+                                         xelforge\target\release\deps\libserde_json-cc814d8b5fa2ee6c.rlib --extern voxe
+                                         lforge_sim=E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\
+                                         target\release\deps\libvoxelforge_sim-e4b3ad49bf3840ee.rlib -L native=E:\Proje
+                                         cts\bagidea-ai-agents-office\workspace\projects\Voxelforge\target\release\buil
+                                         d\blake3-53eeeeb0ed6b6e4d\out -L native=E:\Projects\bagidea-ai-agents-office\w
+                                         orkspace\projects\Voxelforge\target\release\build\blake3-53eeeeb0ed6b6e4d\out 
+                                         -L native=C:\Users\BagIdea\.cargo\registry\src\index.crates.io-1949cf8c6b5b557
+                                         f\windows_x86_64_msvc-0.52.6\lib                                              
+    19992 cargo.exe 8/14/2026 1:15:06 PM "C:\Users\BagIdea\.cargo\bin\cargo.exe" build --release --bin voxelforge -j 2 
+    21648 cargo.exe 8/14/2026 1:15:06 PM "C:\Users\BagIdea\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.e
+                                         xe" build --release --bin voxelforge -j 2                                     
+
+
+
+=== Build Sentinel: last GREEN run that included the fix (started after 5eba1e8's commit time 2026-08-14 05:53:05) ===
+{"ok":true,"found":true,"run":{"id":1786662166672,"cmd":"cargo build --release --bin voxelforge -j 2","cwd":"E:/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge","artifacts":[{"path":"target/release/voxelforge.exe","exists":true,"mtimeMs":1786662921139.305,"created":false,"moved":true}],"errorPattern":"^error","startedAt":1786662166672,"finishedAt":1786662923439,"durationMs":756767,"verdict":"green","exitCode":0,"errorLines":[],"reasons":["[exit-code] pass — exit code 0 (read from the real process, not a pipe)","[error-scan] pass — no errorPattern match across 331 line(s) (whole output, not the last line)","[artifact-mtime] pass — 1/1 artifact(s) fresh"]}}
+
+=== frame mtimes vs fix commit / vs proven-good build finish ===
+fix commit 5eba1e8: 2026-08-14 05:53:05 +0700
+proven post-fix build finished: 2026-08-14 06:15:23 +0700
+  File: docs/assets/playable-walk-after.png
+Modify: 2026-08-14 06:36:41.997055000 +0700
+  File: docs/assets/edhari-load.png
+Modify: 2026-08-14 06:36:41.981030200 +0700

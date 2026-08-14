@@ -1,0 +1,84 @@
+=== playable-walk-after-nohud2.png : grade_gate.py ===
+# docs/evidence/sky-verify-2026-08-14/playable-walk-after-nohud2.png = 1280x640
+
+## G3  bounce/shade not black, not blue
+   interior p05-L=16.9% (need >=8)  p50-L=31.9%
+   darkest shade @(312,532) RGB=(19,14,19) R-B=+0 warm=True
+   -> PASS
+
+## G5  window not blown-out (gradient survives, G/B roll off)
+   brightest px @(642,279) RGB=(243, 240, 237)  min(G,B)=237 (need <=245)
+   3-pt vertical L = [32.7, 94.3, 29.1]  spread=65.2 (need >=8)
+   -> PASS
+
+## G6  warm golden tone on sunlit wood (R>G>B, R-B 40..210, sunlit L>=55)
+   brightest golden patch @(582,448) RGB=(247,188,128) R-B=+120 L=76.9
+   -> PASS
+
+============================================
+MEASURABLE GATES: G3=P  G5=P  G6=P   => all measurable gates PASS
+(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)
+EXIT_GATE=0
+=== playable-walk-after-nohud2.png : grade_g3.py ===
+# docs/evidence/sky-verify-2026-08-14/playable-walk-after-nohud2.png = 1280x640  (interior = trim outer 8%)
+
+## interior luminance percentiles
+  p01 L =   7.5%
+  p05 L =  16.9%
+  p10 L =  21.8%
+  p50 L =  31.9%
+  p90 L =  60.3%
+  p99 L =  70.6%
+
+## darkest representative shade @(312,532)
+  RGB=(18.6,13.9,18.5)  L=5.97%  warm(R>=G>=B)=False  R-B=+0.1
+
+## frame means  R=127.0 G=90.3 B=42.3  (R-B=+84.7)
+
+## G3 GATE
+  p05-L >= 8% ? 16.9%  -> PASS
+  darkest shade warm (not blue, R>=B) ? R-B=+61.0 -> PASS
+  == G3: PASS ==
+EXIT_G3=0
+=== edhari-load-nohud2.png : grade_gate.py ===
+# docs/evidence/sky-verify-2026-08-14/edhari-load-nohud2.png = 1280x640
+
+## G3  bounce/shade not black, not blue
+   interior p05-L=18.0% (need >=8)  p50-L=28.1%
+   darkest shade @(792,532) RGB=(23,15,19) R-B=+4 warm=True
+   -> PASS
+
+## G5  window not blown-out (gradient survives, G/B roll off)
+   brightest px @(639,279) RGB=(241, 239, 237)  min(G,B)=237 (need <=245)
+   3-pt vertical L = [29.1, 93.8, 23.4]  spread=70.4 (need >=8)
+   -> PASS
+
+## G6  warm golden tone on sunlit wood (R>G>B, R-B 40..210, sunlit L>=55)
+   brightest golden patch @(558,344) RGB=(253,198,142) R-B=+110 L=80.6
+   -> PASS
+
+============================================
+MEASURABLE GATES: G3=P  G5=P  G6=P   => all measurable gates PASS
+(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)
+EXIT_GATE=0
+=== edhari-load-nohud2.png : grade_g3.py ===
+# docs/evidence/sky-verify-2026-08-14/edhari-load-nohud2.png = 1280x640  (interior = trim outer 8%)
+
+## interior luminance percentiles
+  p01 L =   7.9%
+  p05 L =  18.0%
+  p10 L =  21.1%
+  p50 L =  28.1%
+  p90 L =  60.1%
+  p99 L =  68.7%
+
+## darkest representative shade @(792,532)
+  RGB=(22.8,14.5,19.0)  L=6.51%  warm(R>=G>=B)=False  R-B=+3.7
+
+## frame means  R=114.7 G=73.4 B=27.4  (R-B=+87.4)
+
+## G3 GATE
+  p05-L >= 8% ? 18.0%  -> PASS
+  darkest shade warm (not blue, R>=B) ? R-B=+62.0 -> PASS
+  == G3: PASS ==
+EXIT_G3=0

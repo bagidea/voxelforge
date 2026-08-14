@@ -1,0 +1,40 @@
+== 1. exposure compensation ==
+  ev100                     = 10.3
+  Exposure::exposure()      = 6.610127e-04
+  exp_comp = 1/exposure()   = 1512.8x
+
+  zenith radiance written into the HDR target:
+    flat ClearColor (correct)  = [0.256, 0.765, 1.890]
+    sky dome as shipped        = [386.8, 1156.6, 2858.9]
+  -> the dome is 1513x over. Anything past ~16.0 linear
+     tonemaps to 255 under TonyMcMapface, so the whole dome clips
+     to white and the gradient is unmeasurable.
+
+== 2. playable-walk-after.png (1280x720) ==
+  upper-band pixels sampled : 363520
+  sky candidates (R>=250)   : 51368  (14.1% of band)
+  of those, R clipped at 255: 22  (0.0%)
+    R: min 250  mean  252.9  max 255
+    G: min 208  mean  229.9  max 255
+    B: min 160  mean  196.0  max 255
+  sky rows detected: 178  (y 46..223)
+    y= 46  mean sky RGB = [252.8, 228.8, 194.8]
+    y=135  mean sky RGB = [252.9, 230.1, 196.4]
+    y=223  mean sky RGB = [253.3, 232.1, 199.6]
+    top-to-bottom span   = R 0.7  G 4.8  B 7.3
+    -> the sky moves 7.3 levels over 177 rows of elevation.
+
+== 2. edhari-load.png (1280x720) ==
+  upper-band pixels sampled : 363520
+  sky candidates (R>=250)   : 20707  (5.7% of band)
+  of those, R clipped at 255: 9  (0.0%)
+    R: min 250  mean  252.1  max 255
+    G: min 208  mean  224.2  max 255
+    B: min 160  mean  186.3  max 255
+  sky rows detected: 63  (y 46..108)
+    y= 46  mean sky RGB = [252.3, 225.8, 188.9]
+    y= 77  mean sky RGB = [252.0, 224.0, 185.9]
+    y=108  mean sky RGB = [251.4, 220.0, 179.2]
+    top-to-bottom span   = R 0.9  G 5.8  B 9.7
+    -> the sky moves 9.7 levels over 62 rows of elevation.
+
