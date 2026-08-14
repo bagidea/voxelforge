@@ -7,6 +7,7 @@ Two questions the size table alone can't answer:
 Both are answered by re-deriving the crop from the master and diffing.
 """
 import os
+import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -42,6 +43,7 @@ print("=" * 92)
 print("DERIVATION PROOF — shipped file vs the crop re-derived from the master in this repo")
 print("=" * 92)
 rows = []
+all_ok = True
 for f, sw, sh, src, kind, band in BANDS:
     p = os.path.join(D, f)
     shipped = Image.open(p).convert("RGB")
@@ -58,6 +60,8 @@ for f, sw, sh, src, kind, band in BANDS:
     print(f"  {f:32} {w}x{h} spec {sw}x{sh} {'PASS' if ok else 'FAIL':4} | "
           f"maxdiff={maxd:3} mean={meand:5.3f} -> {verdict}")
     rows.append((f, w, h, sw, sh, ok, changed))
+    if not ok or changed >= 0.05:
+        all_ok = False
 
 print()
 print("=" * 92)
@@ -107,3 +111,5 @@ for f, sw, sh in MISSING:
 p = os.path.join(OUT, "capsule-set-confirmation.png")
 canvas.save(p)
 print("  wrote", p)
+
+sys.exit(0 if all_ok else 1)

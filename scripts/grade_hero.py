@@ -328,9 +328,19 @@ def verdict(ok, flags):
     return f"{'PASS' if ok else 'FAIL'}" if not flags else f"UNRELIABLE ({','.join(flags)})"
 
 
+g3_verdict = verdict(g3_ok, g3_flags)
+g5_verdict = verdict(g5_ok, g5_flags)
+g6_verdict = verdict(g6_ok, g6_flags)
+
 print("\n== SUMMARY ==")
-print(f"  G3 bounce   : {verdict(g3_ok, g3_flags)}")
-print(f"  G5 no-clip  : {verdict(g5_ok, g5_flags)}")
-print(f"  G6 warm     : {verdict(g6_ok, g6_flags)}")
+print(f"  G3 bounce   : {g3_verdict}")
+print(f"  G5 no-clip  : {g5_verdict}")
+print(f"  G6 warm     : {g6_verdict}")
 print(f"  veg share   : {share:.2f}%")
 print("  (advisory - grade_gate.py is canonical for G3/G5/G6)")
+
+# Exit code matches PASS/FAIL: an actual FAIL gate is a failed advisory read.
+# UNRELIABLE means "the frame doesn't let us read this gate here", not FAIL.
+if any(v == "FAIL" for v in (g3_verdict, g5_verdict, g6_verdict)):
+    sys.exit(1)
+sys.exit(0)
