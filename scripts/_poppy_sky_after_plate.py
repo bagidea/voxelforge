@@ -306,7 +306,7 @@ def main() -> int:
         d.text((PAD, y), name, fill=FG)
         d.text((PAD + 220, y),
                f"angle guard (non-sky mean abs diff) {drift:.2f} levels",
-               fill=GOOD if drift < 3.0 else BAD)
+               fill=GOOD if drift < DRIFT_MAX else BAD)
         labels = [
             "BEFORE -- magenta = the pixels measured on both sides",
             "AFTER -- same shot, fixed dome",

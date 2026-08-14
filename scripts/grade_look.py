@@ -11,6 +11,10 @@ we didn't measure. The point of this file is to stop over-claiming: every line s
 whether it is MEASURED or a VISUAL check.
 
 Usage: grade_look.py <frame>-nohud2.png
+
+Exit code: 0 only when every MEASURED gate (G2/G3/G4a/G5/G6) passes, 1 when any
+of them fails. G1/G4b are eyeball calls and never vote — a gate we did not score
+must not decide a build either way.
 """
 import os
 import sys
@@ -227,3 +231,20 @@ print(f"  G5 window   [M] = {'PASS' if g5 else 'FAIL'}")
 print(f"  G6 warm     [M] = {'PASS' if g6 else 'FAIL'}")
 print(f"  G1 voxel    [V] = eyeball at 100%")
 print("  => G4/G1 are visual determinations; G2/G3/G4a/G5/G6 objective above.")
+
+# ---------- VERDICT (the exit code) ----------
+# Every PASS/FAIL above used to be printed and then dropped on the floor: the
+# script exited 0 whatever it measured, so a frame with three red gates read as
+# green to CI and to anyone who checks the status instead of the text. The five
+# MEASURED gates are the verdict. G1/G4b deliberately do NOT vote — a gate this
+# script never scored must not decide a build in either direction.
+measured = [("G2", g2), ("G3", g3), ("G4a", g4a), ("G5", g5), ("G6", g6)]
+failed = [name for name, ok in measured if not ok]
+print()
+if failed:
+    print(f"VERDICT: FAIL — {len(failed)} of {len(measured)} measured gates red: "
+          f"{', '.join(failed)}")
+    sys.exit(1)
+print(f"VERDICT: PASS — all {len(measured)} measured gates green "
+      f"(G1/G4b still eyeball, not scored)")
+sys.exit(0)
