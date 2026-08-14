@@ -484,17 +484,76 @@ pub const CONTACT_SHADOW_STEPS: u32 = 16;
 /// of the v2 value it replaces, which is the point: G3's shade floor was bought
 /// with that irradiance and this change is not allowed to spend it.
 ///
+/// 260 → 440, 2026-08-15. THE TABLE ABOVE WAS WRONG, AND THE FRAME PAID FOR IT.
+/// `E = π·L` is the irradiance from a hemisphere whose radiance IS `L`. But
+/// `EnvironmentMapLight::hemispherical_gradient` does not build a hemisphere of
+/// luminance `L` — it builds one of `L × the map's own colour`, and the colours
+/// handed to it are [`Hour::sky_fill`] and [`Hour::bounce`], neither of which is
+/// white. GOLDEN's are sRGB [0.62,0.76,1.00] and [1.00,0.78,0.50]; in LINEAR
+/// space, which is where the multiply happens, their channel means are 0.62 and
+/// 0.59. So the map delivered ~0.60 × 817 = **490 lux**, not 817 — the transfer
+/// was 327 lux short on every surface in the table, on a budget the note itself
+/// says is "not allowed to spend".
+///
+/// The measurement agrees, and agrees in the right ORDER. Shot from one binary
+/// on the v4 plates (`docs/assets/look/`, gen=v2 vs gen=v3), shadow p05 went
+/// 49.70 → 48.47 outdoor-noon, 21.56 → 18.68 evening-raking, 25.76 → 19.63
+/// night-firelit. Day loses ~2 %, night loses 24 %, because the deficit scales
+/// with how dark the map's own colours are and NIGHT's are much darker (see
+/// [`IBL_NITS_NIGHT`]). A term that was supposed to be neutral was the largest
+/// single subtraction in the generation.
+///
+/// 440 = 260 / 0.60, i.e. the same 817 lux the table budgeted, now actually
+/// delivered. Nothing else in the transfer moves: [`AMBIENT_LUX_V3`] stays 380,
+/// so the flat/directional split this generation exists to make is unchanged.
+///
 /// AND IT BUYS THE THING NO AMOUNT OF `AmbientLight` CAN. `AmbientLight` and a
 /// `DirectionalLight` both feed the DIFFUSE term only. An environment map feeds
 /// the SPECULAR one as well, which is the whole reason the reference shader
 /// packs read as lit surfaces and this frame read as painted ones: a smooth
 /// block, a blade, a helmet, wet stone all pick up a sky-coloured sheen that
 /// slides across them as the camera moves. Sweep with `VOXELFORGE_LOOK_IBL`.
-pub const IBL_NITS_DAY: f32 = 260.0;
+/// 440 → 330, one round later, PAIRED WITH [`AMBIENT_LUX_V3`] 380 → 620 and to
+/// be read as one move. 440 fixed the level and left the frame cold: evening
+/// warmth came out 73.23 against a v2 baseline of 79.07. Cause below, on
+/// `AMBIENT_LUX_V3` — the term v3 drained is the warmest light in the rig, and
+/// no size of a cool-topped environment map replaces it in the right channel.
+/// So ~210 lux moves back out of here and ~240 lux of warm flat fill moves in:
+/// total irradiance on a shaded face is held, the HUE of it shifts warm.
+pub const IBL_NITS_DAY: f32 = 330.0;
 
 /// The same, night. Sized off [`AMBIENT_LUX_V3_NIGHT`] by the same `E = π·L`:
 /// 9 nits is ~28 lux, which is the 28 the flat night fill gives up (42 → 14).
-pub const IBL_NITS_NIGHT: f32 = 9.0;
+///
+/// 9 → 23, 2026-08-15, same correction as [`IBL_NITS_DAY`] and a larger one,
+/// because NIGHT's map is darker than GOLDEN's: sRGB [0.44,0.58,0.98] and
+/// [0.55,0.56,0.68] are linear means 0.47 and 0.32, so the hemisphere's own
+/// albedo is ~0.40 and 9 nits delivered ~11 lux against the 28 it was budgeted
+/// for. That 17-lux hole is 17 lux out of a night shade budget of ~120 total,
+/// which is why night-firelit lost 24 % of its p05 where noon lost 2 %.
+/// 23 = 9 / 0.40.
+///
+/// 23 → 14, SAME DAY, AFTER SHOOTING IT. 23 did what it was sized to do — the
+/// night shade floor went p05 19.63 → 23.41, clear of the 20.40 bar — and it
+/// cost more warmth than the bug it fixed: midtone R−B 37.50 → 30.79, against a
+/// v2 baseline of 43.04. The arithmetic above is still right; the CHANNEL it
+/// was spent in was wrong.
+///
+/// WHY THIS TERM CANNOT BUY NIGHT FLOOR AT ANY SIZE. The map is built from
+/// [`Hour::sky_fill`] and [`Hour::bounce`], and at NIGHT those are sRGB
+/// [0.44,0.58,0.98] and [0.55,0.56,0.68] — B > G > R in BOTH halves. The night
+/// hemisphere is blue top to bottom by construction, so scaling it scales blue,
+/// and no value of this constant adds level without adding cast. That is a
+/// property of the map, not a tuning miss. (The day map's lower half is
+/// [1.00,0.78,0.50] and warm, which is why [`IBL_NITS_DAY`] does not have this
+/// problem and is left at 440.)
+///
+/// So the night floor is bought from the terms that are NOT blue-dominant —
+/// [`CONTACT_SHADOW_LENGTH_V3`] giving back its over-long bite, and
+/// `grade::SHADOW_GAIN_V3` lifting the toe — and this one is pulled back to 14,
+/// half the corrected transfer. That spends ~1.5 of the ~3 points of headroom
+/// night p05 now has over the bar, which is what there is to spend.
+pub const IBL_NITS_NIGHT: f32 = 14.0;
 
 /// Where the environment map's HORIZON band sits between its cool top
 /// ([`Hour::sky_fill`]) and its warm bottom ([`Hour::bounce`]), 0 = all top.
@@ -505,7 +564,26 @@ pub const IBL_NITS_NIGHT: f32 = 9.0;
 /// sits high. Biasing it is what makes a vertical face — which integrates mostly
 /// the horizon band — read warmer than the ground face above it, which is the
 /// top/side split this whole rig exists to draw.
-pub const IBL_HORIZON_MIX: f32 = 0.55;
+///
+/// 0.55 → 0.68, 2026-08-15. The paragraph above is the right argument and 0.55
+/// was not enough of it. Once [`IBL_NITS_DAY`] delivers the irradiance it was
+/// always supposed to, this constant decides what COLOUR that irradiance is,
+/// and at 0.55 the horizon band still sits nearer the cool top than the warm
+/// bottom — so correcting the level cooled the frame: evening-raking midtone
+/// R−B came out 72.36 against its own v2 baseline of 78.91, i.e. the warmth
+/// clause failed on the plate the whole rig is graded on.
+///
+/// 0.68 leans the band on [`Hour::bounce`] ([1.00,0.78,0.50] at GOLDEN), which
+/// is the honest physical reading of a raking hour anyway: most of what a
+/// vertical wall sees is not zenith, it is warm ground and warm horizon. It is
+/// also gap 3 of the reference read (`docs/look-v5-gap-vs-golden-ref.md`) —
+/// "sky-to-ground colour bleed" — expressed as the one number that controls it.
+///
+/// Bounded by the top/side split above: the map's TOP is still pure
+/// [`Hour::sky_fill`] at any mix, so a shaded ground face keeps reading cool
+/// against a shaded wall. Past ~0.8 the band would converge on the bottom and
+/// the split would collapse; 0.68 is well inside that.
+pub const IBL_HORIZON_MIX: f32 = 0.68;
 
 /// The v3 FLAT fill floor, day, lux — what is left of `AmbientLight` once
 /// [`IBL_NITS_DAY`] carries the directional share. See that constant's table.
@@ -513,7 +591,30 @@ pub const IBL_HORIZON_MIX: f32 = 0.55;
 /// Not zero, deliberately: the environment map is a hemisphere, so a face
 /// pointing exactly at the horizon integrates the least of it, and a small
 /// flat term keeps that face off the floor without re-flattening the frame.
-pub const AMBIENT_LUX_V3: f32 = 380.0;
+///
+/// 380 → 620, 2026-08-15. THE V3 TRANSFER WAS WARMTH-NEGATIVE BY CONSTRUCTION
+/// AND NOBODY PRICED THAT. `AmbientLight`'s colour is [`Hour::ambient`], and at
+/// GOLDEN that is sRGB **[0.96, 0.90, 0.48]** — R−B +0.48, the warmest light in
+/// the entire rig. v3 drained 770 lux out of it and replaced them with an
+/// environment map whose TOP is [`Hour::sky_fill`] (cool) and a kicker that is
+/// cool on purpose. Even after [`IBL_NITS_DAY`] was corrected to deliver the
+/// full budgeted irradiance, evening-raking's midtone R−B came out 73.23
+/// against v2's 79.07, and the shadow sides of the ruins read grey in the plate
+/// rather than the warm brown v2 gives them. The level was restored in the
+/// wrong channel.
+///
+/// 620 puts ~240 of those lux back, and [`IBL_NITS_DAY`] gives up ~210 in the
+/// same move, so a shaded face keeps the irradiance the v3 table budgeted for
+/// it — this buys HUE, not brightness, and the shade-floor clause it must not
+/// spend is unaffected.
+///
+/// STILL 620 AND NOT 1150. The generation's thesis — a flat term gives every
+/// face the same number and a voxel scene is nothing but faces — is right, and
+/// the measurement backs it: v3's top-vs-side spread beats v2's on the plates
+/// (72.30 vs 65.54 at noon). 620 is a little over half of v2's flat fill, so
+/// the directional rig still carries the majority of the fill and still draws
+/// the shape. What it stops doing is carrying ALL of it in the wrong colour.
+pub const AMBIENT_LUX_V3: f32 = 620.0;
 
 /// The same, night (v2: 42).
 pub const AMBIENT_LUX_V3_NIGHT: f32 = 14.0;
@@ -543,7 +644,22 @@ pub const PCSS_WIDTH_V3: f32 = 12.0;
 /// is the longest march that still dies inside the near cascade
 /// ([`FIRST_CASCADE_FAR_BOUND_V3`] keeps that cascade tight), so the extra
 /// length is spent where the shadow map is densest.
-pub const CONTACT_SHADOW_LENGTH_V3: f32 = 1.10;
+///
+/// 1.10 → 0.85, 2026-08-15. The paragraph above prices the length against PCSS
+/// and never against the SHADE FLOOR, and the shade floor is what pays: the
+/// note on [`ssao`] states the rule this generation broke — "an in-shade face
+/// is ~100 % fill and takes the full bite" — so a march 47 % longer subtracts
+/// 47 % more from exactly the pixels p05 is measured on. It landed in the same
+/// generation as the [`IBL_NITS_DAY`] shortfall, and the two together are the
+/// whole 21.56 → 18.68 evening-raking regression. The IBL fix restores the
+/// light; this gives back the part of the bite that was bought on credit.
+///
+/// 0.85 and not back to v2's 0.75: the hand-off argument above is still true
+/// and the groove still wants to be longer than v2's under a 12.0 penumbra.
+/// 0.85 is +13 % over v2 instead of +47 % — the direction v3 argued for, at a
+/// third of the price. [`CONTACT_SHADOW_STEPS_V3`] stays 24, so the step gets
+/// finer (0.035 blocks) rather than coarser; nothing is resampled.
+pub const CONTACT_SHADOW_LENGTH_V3: f32 = 0.85;
 
 /// Assumed fragment thickness for the v3 contact march, world units
 /// (v2: [`CONTACT_SHADOW_THICKNESS`] 0.2).
@@ -602,7 +718,21 @@ pub const RIM_ELEV: f32 = 14.0;
 /// character is as much hue as it is level, and a warm rim under a warm key is
 /// a brightness change nobody notices. This is the "cool/warm split by layer"
 /// half of the brief — key and bounce warm, sky fill and kicker cool.
-pub const RIM_COLOR: [f32; 3] = [0.78, 0.88, 1.00];
+///
+/// R 0.78 → 0.86, 2026-08-15 — STILL COOL, and the cool is the point, but this
+/// kicker was measured taking warmth out of the whole frame and not just off
+/// the edge it draws. Same v4 plates as [`IBL_NITS_DAY`]: warmth (R−B over the
+/// midtone band) went 79.15 → 73.26 evening-raking and 43.10 → 37.50
+/// night-firelit going v2 → v3, and the kicker is the only cool light v3 adds.
+/// It is a directional light with no shadow map, so it does not stop at the
+/// silhouette — every face turned within 90° of it takes the blue.
+///
+/// The FIX IS NOT TO DIM IT. The brief is "brighter rim AND warmth not lower",
+/// so the lever is the hue, not the level: 0.78 → 0.86 halves the red deficit
+/// against blue (R−B −0.22 → −0.14) while keeping the ordering B > G > R that
+/// makes the edge read as a different light from the key. The day level
+/// ([`RIM_LUX`] 600) is untouched.
+pub const RIM_COLOR: [f32; 3] = [0.86, 0.90, 1.00];
 
 /// Illuminance of the v3 kicker, lux, day.
 ///
@@ -614,7 +744,16 @@ pub const RIM_COLOR: [f32; 3] = [0.78, 0.88, 1.00];
 pub const RIM_LUX: f32 = 600.0;
 
 /// The same, night. Held to the same ~24 %-of-shade ratio at night's scale.
-pub const RIM_LUX_NIGHT: f32 = 30.0;
+///
+/// 30 → 20, 2026-08-15. The ~24 % was computed against the night shade budget
+/// the v3 table CLAIMED (42 + 62 + 16 + 28 ≈ 148 lux). What the frame actually
+/// received was ~131, because [`IBL_NITS_NIGHT`] delivered 11 of its 28 — so
+/// the ratio shipped nearer 30 %, and it shipped as the only saturated light
+/// in a frame whose one warm source is a campfire. That is the 43.10 → 37.50
+/// warmth drop on `night-firelit`. With the IBL correction the budget is back
+/// to ~148 and 20 lux is 13.5 %: still an edge, no longer a second key. Day is
+/// left at [`RIM_LUX`] 600 — nothing was wrong with it.
+pub const RIM_LUX_NIGHT: f32 = 20.0;
 
 /// Bloom prefilter threshold, v3 (v2: 1.0 — emissive only).
 ///
@@ -972,6 +1111,104 @@ mod grade {
     /// clipped, and holding 0.64 turns the sky into grey-blue putty instead of
     /// the reference's deep saturated blue.
     pub const HIGHLIGHT_GAIN: f32 = 0.86;
+
+    // ── v3-only tonal ramp — 2026-08-15 ────────────────────────────────────
+    // The four constants above are shared by BOTH generations, which is why
+    // they have never been the lever for a v2/v3 A/B: moving one moves the
+    // "before" plate too and the pair stops being a pair. These three are
+    // reached only through `v3()` in [`base_camera_look`], so `gen=v2` still
+    // reproduces the 2026-08-14 frame byte-for-byte.
+
+    /// Shadow-section GAIN, v3 (shared default: 1.0, i.e. untouched).
+    ///
+    /// THE SECTION THAT WAS NEVER ALLOWED TO MOVE. The note on the
+    /// `ColorGrading` literal records shadows being held neutral because
+    /// *contrast* on this section crushed open shade to black (13.7 % → 3.3 %
+    /// on the hero plate). That measurement is about CONTRAST, which pivots
+    /// about the section midpoint and therefore drags the bottom down. `gain`
+    /// is a multiply: it can only move the toe UP.
+    ///
+    /// Which is what the frame needs. Against `docs/assets/golden-beauty-shot-ref.png`
+    /// the single loudest difference is not that this lane's shadows are too
+    /// soft or too hard — it is that they bottom out. The reference's darkest
+    /// cabinet recess still carries hue and readable edges; `night-firelit_after`
+    /// has a whole wall at effectively zero and both day plates have unlit
+    /// faces reading as holes in the frame. 1.08 lifts the toe 8 % after the
+    /// tonemap, on top of the ~330 lux [`super::IBL_NITS_DAY`] puts back into
+    /// the same pixels before it — light first, curve second.
+    pub const SHADOW_GAIN_V3: f32 = 1.08;
+
+    // THE MEASUREMENT THE NEXT THREE CONSTANTS ARE SIZED OFF.
+    //
+    // Luminance percentiles, `docs/assets/golden-beauty-shot-ref.png` against
+    // the three v4 after-plates, same grader, same `Rec.709` luma:
+    //
+    //   plate                  p05     p50     p95    p95/p05   L<8    ch>=250
+    //   golden-beauty-ref     21.86   55.51  165.83     7.59    0.00%   4.89%
+    //   outdoor-noon_after    48.47   93.01  141.75     2.92    0.27%   0.28%
+    //   evening-raking_after  18.68   71.96  120.60     6.45    1.89%   0.36%
+    //   night-firelit_after   19.63   39.27  155.49     7.92    0.08%   3.48%
+    //
+    // TWO THINGS IN THAT TABLE ARE NOT WHAT LOOKING AT THE FRAMES SUGGESTED.
+    //
+    // First, NOTHING IN THIS LANE CLIPS. The scattered flat-white blocks on
+    // `outdoor-noon_after` and the campfire core on `night-firelit_after` read
+    // as blown, and they are not: 0.28 % and 3.48 % of pixels have any channel
+    // at ≥250, against the reference's own 4.89 %. The reference clips MORE.
+    // A shoulder to "recover" highlights would have been a fix for a defect
+    // that does not exist, and would have made the real one worse.
+    //
+    // Second, THE REAL DEFECT IS RANGE, AND IT IS WORST WHERE THE FRAME LOOKS
+    // CLEANEST. `outdoor-noon` has a p95/p05 of 2.92 against the reference's
+    // 7.59 — everything in it is packed into one milky mid band, which is what
+    // "flat, not AAA" actually looks like in numbers. The two evening/night
+    // plates already sit near the reference's ratio, but they bought it from
+    // the WRONG END: p05 18.68 / 19.63 and 1.89 % of the evening frame below
+    // L=8, against a reference that has literally zero pixels there. The ratio
+    // is right and the floor is wrong.
+    //
+    // So the ramp gets widened at the top and floored at the bottom, and the
+    // floor is bought with LIGHT ([`super::IBL_NITS_DAY`]) before the curve is
+    // asked to do anything.
+
+    /// Midtone contrast, v3 (shared: [`MIDTONE_CONTRAST`] 1.12).
+    ///
+    /// The p50 row is the whole argument: the reference sits at 55.51 with a
+    /// p95 of 165.83, `outdoor-noon_after` at 93.01 with a p95 of 141.75. The
+    /// midtones are not just narrow, they are riding high enough to leave no
+    /// room above them. 1.18 spreads that band. Not 1.30 — the shared note
+    /// above records 1.30 crushing open shade toward black, and while
+    /// [`SHADOW_GAIN_V3`] now puts a floor under exactly that failure, a floor
+    /// is a reason to step toward the cliff, not to jump off it.
+    pub const MIDTONE_CONTRAST_V3: f32 = 1.18;
+
+    /// Highlight contrast, v3 (shared: [`HIGHLIGHT_CONTRAST`] 1.12).
+    ///
+    /// 1.12 was picked to match the midtones "so the curve doesn't kink at the
+    /// section boundary" — a smoothness argument with no highlight measurement
+    /// under it. Now there is one, and it says the top end is SHORT: the
+    /// reference runs p95 → p99 165.8 → 227.0 (a 61-point span), this lane's
+    /// noon plate 141.8 → 179.2 (37 points). 1.20 lengthens that span, and it
+    /// is safe to do because the clip column above says there is 20 % of the
+    /// range sitting unused above the brightest pixel in frame.
+    pub const HIGHLIGHT_CONTRAST_V3: f32 = 1.20;
+
+    /// Highlight gain, v3 (shared: [`HIGHLIGHT_GAIN`] 0.86).
+    ///
+    /// 0.86 is a shoulder, and the shared note is explicit that it exists to
+    /// compress "the brightest surfaces (sky, sunlit wedges, window panes) back
+    /// into band". The table above is what "into band" cost: the brightest
+    /// channel anywhere on `outdoor-noon_after` is 251 and only 0.28 % of the
+    /// frame is within 5 of the top, so the compression is being applied to
+    /// headroom nothing was using. 0.98 gives it back.
+    ///
+    /// NOT 1.00. The shared note's other half is a real bound — 0.64 "turns the
+    /// sky into grey-blue putty", i.e. this knob is also what keeps the sky's
+    /// saturation off the clip, and G5 grades the window gradient's spread on a
+    /// plate that can go achromatic if all three channels rail. 0.98 stays a
+    /// shoulder, just a shoulder sized to a measured top end instead of an
+    /// assumed one.
+    pub const HIGHLIGHT_GAIN_V3: f32 = 0.98;
 }
 
 /// The hour of the day, as ONE object.
@@ -1439,8 +1676,20 @@ fn grade_knobs() -> (f32, f32, f32, f32) {
     let d = (
         grade::TEMPERATURE,
         grade::POST_SATURATION,
-        grade::MIDTONE_CONTRAST,
-        grade::HIGHLIGHT_GAIN,
+        // The v3 default is swapped HERE and not at the `ColorGrading` literal
+        // so that `VOXELFORGE_LOOK_GRADE` keeps overriding it under both
+        // generations — gating at the literal would have made the sweep hook
+        // silently dead on the only generation anyone is still tuning.
+        if v3() {
+            grade::MIDTONE_CONTRAST_V3
+        } else {
+            grade::MIDTONE_CONTRAST
+        },
+        if v3() {
+            grade::HIGHLIGHT_GAIN_V3
+        } else {
+            grade::HIGHLIGHT_GAIN
+        },
     );
     let Ok(raw) = std::env::var("VOXELFORGE_LOOK_GRADE") else {
         return d;
@@ -1823,8 +2072,17 @@ pub fn base_camera_look() -> impl Bundle {
                 post_saturation,
                 ..default()
             },
+            // v3 lifts the TOE and rolls the SHOULDER — see the three
+            // `*_V3` constants in [`grade`] for why each moves and why
+            // shadow *gain* is allowed where shadow *contrast* was not.
+            // Two of the three branch HERE; the midtone default is swapped one
+            // level up inside [`grade_knobs`] instead, so `VOXELFORGE_LOOK_GRADE`
+            // still overrides it under v3 (see the comment there). Under
+            // `VOXELFORGE_LOOK_GEN=v2` all three resolve to their pre-v5 values,
+            // so the before plate is untouched.
             shadows: ColorGradingSection {
                 contrast: 1.0,
+                gain: if v3() { grade::SHADOW_GAIN_V3 } else { 1.0 },
                 ..default()
             },
             midtones: ColorGradingSection {
@@ -1832,7 +2090,11 @@ pub fn base_camera_look() -> impl Bundle {
                 ..default()
             },
             highlights: ColorGradingSection {
-                contrast: grade::HIGHLIGHT_CONTRAST,
+                contrast: if v3() {
+                    grade::HIGHLIGHT_CONTRAST_V3
+                } else {
+                    grade::HIGHLIGHT_CONTRAST
+                },
                 gain: highlight_gain,
                 ..default()
             },
