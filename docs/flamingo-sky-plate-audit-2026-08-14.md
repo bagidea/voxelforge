@@ -21,12 +21,18 @@ actually goes dark when the dome is forced black. Top row is the A/B frame
   the stale debug default. Proven, not assumed.
 * On `edhari-load` the camera did **not** move. The 13.93 is a real scene
   change, so the angle guard is not a camera-move detector.
-* Neither of the plate's frames contains sky worth measuring. `sky_mask`
-  selects **88.4%–100% interior masonry**. Both frames stand inside a house.
-* Measured on the dome pixels alone, the fix works **better** than the plate
+* `sky_mask` selects **84.4%–100% interior masonry** on every frame here. On
+  `edhari-load` that is settled against the renderer: **0 dome pixels, at a
+  0.00-level floor**. On `playable-walk-after` it is *not* settled — that
+  camera moves ~10 levels between runs of the same binary, which is larger than
+  anything the dome lever does, so its 15.6% purity is an instrument reading,
+  not a measurement. Only `edhari-load` and the A/B frame carry numbers.
+* Measured on the dome pixels alone — on the A/B frame, the one frame here whose
+  dome is both in shot and same-camera — the fix works **better** than the plate
   reported: `R>=250` goes 100% → **0.0%** (not 88.1%), pure white 32.95% →
   0.000%. The "88% still pinned, so 1513x was one bug not the whole story" line
-  is an artefact of the contaminated mask.
+  is an artefact of the contaminated mask. That is one frame at one camera; it
+  does not generalise to frames nobody has measured.
 * The plate now refuses to write on drift, on a missing dome probe, and on an
   impure mask. Both new refusals are shown to be *reachable*, not just loud.
 
@@ -38,20 +44,32 @@ release exe is `2026-08-14 06:15`.
 
 Two full runs of `BIN=./target/release/voxelforge.exe bash scripts/prove_playable.sh`
 give the run-to-run floor; the 06:18 frames are then compared to them with the
-plate's own angle guard:
+plate's own angle guard. All of it is committed under
+`docs/evidence/sky-2026-08-14/` — `r1/`, `r2/`, the frozen 06:18 set in
+`s0618/`, the stale-exe control in `dbg/` — and reprinted by
+`POPPY_SKY_SET=proof python scripts/_flamingo_sky_presence.py`:
 
 | frame | R1 vs R2 (same exe, noise floor) | 06:18 vs R1 |
 |---|---|---|
 | `playable-boot.png` | 0.10 | 0.17 |
 | `playable-walk-before.png` | 0.18 | 0.19 |
 | `edhari-load.png` | 0.15 | 0.17 |
-| `playable-walk-after.png` | 10.91 | 10.70 |
+| `playable-walk-after.png` | 10.91 | 11.07 |
 
 Every frame sits inside its own noise floor, so 06:18 came off the release exe.
 The negative control closes it: the stale debug exe shot `edhari-load` today and
 lands **14.05** levels away from the release frame — and **0.38** levels from
 the 05:35 "before" frame, which is what makes that before frame a faithful
-pre-fix control.
+pre-fix control. That control frame is itself stamped now: re-shot off
+`./target/debug/voxelforge.exe · 142950400 bytes · 2026-08-11 01:05:06` into
+`dbg/edhari-load-restamp.png`, which reproduces it to **0.39** levels (debug
+run-to-run is noisier than release's 0.15). So the negative control is proven
+to be the stale exe, not asserted to be.
+
+That evidence lived in `_flamingo_shots/` until this revision, which
+`.gitignore:166` (`_*/`) swallows whole — so the paragraph above was true and
+un-rerunnable at the same time, and the script printed `skipped` instead of
+saying so. Missing provenance frames now **fail** the script.
 
 `prove_playable.sh` now stamps `BIN <path> <bytes> <mtime>` into stdout and into
 every per-shot log, and says `! STALE` when the newest `client/src/*.rs` is newer
@@ -65,10 +83,10 @@ reproducible and is not the camera:
 
 * run-to-run with one binary: **0.15** levels.
 * best integer shift that minimises the pre/post difference: **dx=0, dy=0**
-  (13.83 at zero shift, 13.83 at the best of ±6 in both axes). A moved camera
-  has a better shift; this one does not.
-* the difference is 94% one-signed — the post-fix frame is *brighter* by 13.3
-  levels on average. That is a repaint, not a parallax.
+  (13.52 levels full-frame at zero shift, 13.52 at the best of ±6 in both
+  axes). A moved camera has a better shift; this one does not.
+* the difference is **97% one-signed** — the post-fix frame is *brighter* by
+  12.84 levels on average. That is a repaint, not a parallax.
 
 The cause is not the sky fix: 72408ad ("one source of truth per block colour",
 05:14) and 3262c6e (05:30) repainted every voxel. Their commit clocks sit
@@ -94,7 +112,7 @@ So `drift < 3.0` on that frame is unreachable from the capture side: its floor
 is 10.91. Getting it under 3.0 needs a fixed timestep or a frame-counted
 screenshot in the engine — engine lane, not a plate change.
 
-## 3. Neither frame contains sky
+## 3. One frame is proven empty of sky. The other cannot be measured at all.
 
 `sky_mask` is `R>=250 & B>=170` in the top 45% of the frame. It cannot tell a
 dome from sunlit sandstone, and every frame here stands **inside a house** in
@@ -109,19 +127,56 @@ the `emissive` beside it, because an unlit fragment writes `base_color` verbatim
 (`pbr.wgsl:80-84`, the very bug 5eba1e8 fixed). Any dome pixel on screen goes
 near-black; nothing else moves.
 
-On the two `prove_playable` frames, with the shipped fog:
+**A lever reading is only as good as the frame's own no-lever floor**, and the
+two `prove_playable` frames do not have the same floor — so they do not get one
+table. Each row below is that frame shot twice off the same binary with nothing
+changed, then the same pair with the lever on. Numbers are in-mask (the plate's
+own mask), levels of mean |diff|, and px changed by >100 levels:
 
-| lever | in-mask mean change | px changed >100 | verdict |
+`edhari-load` — `--play`, no input, deterministic camera:
+
+| | in-mask mean | px >100 | dome px in the whole frame |
 |---|---|---|---|
-| `SKYPROBE=1` (dome → black) | **0.00** | 0 | no dome pixel in the mask |
-| `SKYHOR=1,0,1` (dome → magenta) | **0.00** | 0 | ditto, and 0 magenta px |
-| run-to-run noise, same exe | 0.15 | 37 | the floor for comparison |
+| no lever at all (R1 vs R2) | 0.00 | 0 | 49 |
+| `SKYPROBE=1` (dome → black) | **0.00** | **0** | 37 |
+| `SKYHOR=1,0,1` (dome → magenta) | 0.00 | 0 | 0 magenta px |
 
-The dome is not in those frames at all. `edhari-load`'s "sky" — 18,829 px whose
-`R>=250` stayed at 100.0% — is lit masonry, which cannot unpin no matter what
-the sky does. That is the whole answer to "why did one frame move and the other
-not", and it means the frame that *did* move moved for the other reason: its
-camera is elsewhere between the two shots.
+At a 0.00 floor a 0.00 reading is a result: **no dome pixel is in this frame**,
+in the mask or out of it. Its "sky" — 18,829 px whose `R>=250` stayed at 100.0%
+— is lit masonry, which cannot unpin no matter what the sky does.
+
+`playable-walk-after` — `--play-demo`, and the shot is taken on wall-clock time:
+
+| | in-mask mean | px >100 | dome px in the whole frame |
+|---|---|---|---|
+| no lever at all (R1 vs R2) | **9.89** | 2,266 | 28,338 |
+| `SKYPROBE=1` (dome → black) | 19.82 | 4,607 | 51,305 |
+| `SKYHOR=1,0,1` (dome → magenta) | 9.75 | 2,191 | 0 magenta px |
+
+Nothing here is publishable as a dome measurement. The floor is 9.89 levels and
+28,338 px **with no lever at all**; the magenta lever, which is dome-only, lands
+*below* that floor; `SKYPROBE` lands above it, but so would any third run of the
+same command. Its 51,305 "dome-responsive" px and its **15.6% purity** are that
+camera moving, mixed with whatever the dome did, and this instrument cannot
+separate them. So: `playable-walk-after` is **UNDETERMINED**, and the script
+prints it that way rather than as a number. A same-camera capture (fixed
+timestep, §2) is what would settle it.
+
+The one thing both frames do share is not a pixel measurement: `--play` and
+`--play-demo` both spawn at `(32.5, 2.6, 32.5)` inside the house, and the demo
+walk ends 10 blocks north, still indoors (`PLAY_WALK … to=(32.81, 3.62, 22.50)`).
+
+That answers "why did one frame move and the other not" for `edhari-load` only:
+it has no sky to move. The frame that *did* move has a camera that moves by
+itself.
+
+Both levers are shown to work before any zero above is quoted. On the A/B frame,
+where the dome IS in shot, `SKYPROBE` finds **8,711 px** and `SKYHOR=1,0,1`
+paints **8,712 magenta px** — the same pixels, from two independent levers, with
+**0** magenta false positives when neither is set. The caveat that keeps a
+magenta zero honest: that control is a fog-off frame, and `haze_color()` does
+not read `SKYHOR` (look.rs:1227), so a 0 on a fogged frame means "no dome pixel
+survives the haze", not "no dome geometry behind it".
 
 `VOXELFORGE_LOOK_SKYGAIN` must not be used for this test. `haze_color()` folds
 `sky_gain` in and is also the geometry fog colour, so on `edhari-load` a
@@ -163,16 +218,31 @@ this camera, 1513x accounts for all of it.
   caption red) and `PURITY_MIN = 0.90` against a `SKYPROBE` frame. Refusals are
   collected across frames so one run reports all of them. Both sets refuse
   today: `ab` on purity 11.6%, `proof` on drift **and** purity, `edhari-load` at
-  0.0% pure.
+  0.0% pure. One caveat on the wording it prints: on `playable-walk-after` the
+  plate's "only 15.6% of the mask is dome" is a number without a floor (§3), so
+  the refusal that *stands* on that frame is the 28.60-level drift one. The
+  plate has no way to know a camera's floor; the drift guard is what catches it,
+  and it does.
 * `scripts/_flamingo_sky_gate_control.py` — the gate has to be reachable or it
   is a brick. Feeds `main()` a synthetic 100%-pure probe in a temp dir → plate
   written, exit 0; then a 50% one → exit 2, nothing written.
 * `scripts/_poppy_sky_gain_ab.sh` — shoots the `ab-probe` frame the gate needs.
 * `scripts/prove_playable.sh` — binary provenance stamp + stale-binary warning.
 * `scripts/_flamingo_sky_presence.py` — the audit above, re-runnable, exits 1
-  while any mask is mostly geometry.
+  while any mask is mostly geometry. It now prints every lever reading **beside
+  that frame's own no-lever floor**, marks a reading UNDETERMINED when the floor
+  is larger than it, runs the magenta lever's positive control, and reprints §1
+  and §2 (provenance + shift search) instead of leaving them in a chat log. A
+  missing evidence directory is a failure, not a `skipped` line.
 * `docs/assets/_poppy_sky_probe_*.png`, `_poppy_sky_ab_probe.png` — the probe
   captures.
+* `docs/evidence/sky-2026-08-14/` — the frames §1 and §2 are computed from:
+  `r1/` + `r2/` (two prove_playable runs, release exe), `s0618/` (the published
+  06:18 set, frozen so a later run cannot overwrite the evidence), `dbg/` (the
+  stale 08-11 debug exe control), `probe/` (the magenta-dome shots and a
+  same-camera repeat of the A/B frame, which is where its 0.03-level floor comes
+  from). Deliberately **not** under a `_*/` name — that is the rule that ate the
+  first copy.
 
 ## 6. Still open
 
@@ -182,9 +252,13 @@ this camera, 1513x accounts for all of it.
   of work and it belongs to whoever owns the shot list, not to the plate.
 * `playable-walk-after` cannot meet any drift gate while the screenshot is taken
   on wall-clock time — engine lane.
-* The `playable-walk-after` purity figure (15.6%) is itself soft: its probe was
-  shot through `--play-demo`, so probe and frame are different cameras. The two
-  same-camera numbers, 0.0% (`edhari-load`) and 11.6% (`ab`), are the reliable
-  ones.
+* **`playable-walk-after` is unmeasured, not measured-and-clean.** Its probe was
+  shot through `--play-demo`, so probe and frame are different cameras, and that
+  camera's own no-lever floor (9.89 levels in-mask, 28,338 px) is bigger than
+  anything the dome lever moves. Its 15.6% purity is therefore not a purity
+  reading at all — do not quote it as one, in either direction. The two
+  same-camera numbers, 0.0% (`edhari-load`) and 11.6% (`ab`), are the only
+  purity figures in this document that mean anything. Whether that frame has
+  sky in it is still open, and stays open until the capture is same-camera.
 * Everything above is one camera in one map at one hour. It says the mask is
   wrong here; it does not say what the sky looks like where the sky is visible.
