@@ -1,14 +1,14 @@
-[2m2026-07-31T03:30:41.062607Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
-[2m2026-07-31T03:30:41.126842Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+[2m2026-08-14T10:14:10.309516Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-08-14T10:14:10.398266Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
 	loader_get_json: Failed to open JSON file E:\Program Files (x86)\Epic Games\Launcher\Portal\Extras\Overlay\EOSOverlayVkLayer-Win32.json
-[2m2026-07-31T03:30:41.126866Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x28ca6005580, name: ?)
-[2m2026-07-31T03:30:41.126876Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+[2m2026-08-14T10:14:10.398290Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x1d03e99f2d0, name: ?)
+[2m2026-08-14T10:14:10.398304Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
 	loader_get_json: Failed to open JSON file E:\Program Files (x86)\Epic Games\Launcher\Portal\Extras\Overlay\EOSOverlayVkLayer-Win64.json
-[2m2026-07-31T03:30:41.126880Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x28ca6005580, name: ?)
-[2m2026-07-31T03:30:41.398286Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+[2m2026-08-14T10:14:10.398307Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x1d03e99f2d0, name: ?)
+[2m2026-08-14T10:14:10.664782Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
 VFX showcase: Parry mute=true (fixed 1/60 step)
-[2m2026-07-31T03:30:41.542735Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
-[2m2026-07-31T03:30:41.542809Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
-[2m2026-07-31T03:30:41.543404Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — hero shot (65v0)
+[2m2026-08-14T10:14:10.820240Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-08-14T10:14:10.820308Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-08-14T10:14:10.820983Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — hero shot (65v0)
 SHOT saved to docs/assets/pairs/parry-a-before.png (frame 192)
-[2m2026-07-31T03:30:45.412324Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/pairs/parry-a-before.png
+[2m2026-08-14T10:14:14.369838Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/pairs/parry-a-before.png

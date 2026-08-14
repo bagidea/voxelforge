@@ -1,0 +1,14 @@
+[2m2026-08-14T10:13:58.891710Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-08-14T10:13:58.987403Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+	loader_get_json: Failed to open JSON file E:\Program Files (x86)\Epic Games\Launcher\Portal\Extras\Overlay\EOSOverlayVkLayer-Win32.json
+[2m2026-08-14T10:13:58.987443Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x1d9aa3964f0, name: ?)
+[2m2026-08-14T10:13:58.987463Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+	loader_get_json: Failed to open JSON file E:\Program Files (x86)\Epic Games\Launcher\Portal\Extras\Overlay\EOSOverlayVkLayer-Win64.json
+[2m2026-08-14T10:13:58.987916Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x1d9aa3964f0, name: ?)
+[2m2026-08-14T10:13:59.237600Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+VFX showcase: Dissolve mute=true (fixed 1/60 step)
+[2m2026-08-14T10:13:59.397874Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-08-14T10:13:59.397962Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-08-14T10:13:59.398607Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — hero shot (65v0)
+SHOT saved to docs/assets/pairs/dissolve-a-before.png (frame 192)
+[2m2026-08-14T10:14:02.883822Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/pairs/dissolve-a-before.png
