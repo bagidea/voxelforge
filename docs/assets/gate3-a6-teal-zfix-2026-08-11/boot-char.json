@@ -5,6 +5,8 @@
   "actor": "player",
   "cam": "0,-14.32,5.289",
   "ref_json": "_fl_char/ref-auren-hero.json",
+  "graderVersion": "v2",
+  "lane": "gate3:boot:character",
   "metrics": {
     "warmth": 45.83266067504883,
     "blue": 36.11188888549805,
