@@ -1,0 +1,37 @@
+Post-fix sky capture — provenance stamp
+=========================================
+
+Purpose: close the provenance gap the earlier report in this folder flagged
+(no .shotlog.txt / exe-identity stamp next to the pre-fix copies of these same
+two filenames). Every number quoted from these frames traces to this file.
+
+exe               target/release/voxelforge.exe
+exe_mtime         2026-08-14T13:29:36.495+07:00
+exe_size          80784384 bytes
+build verdict     green (Build Sentinel run id=1786688970218, exit 0,
+                  error-scan pass across 331 lines, artifact-mtime fresh —
+                  judged by `^error` grep over the FULL build log, never by
+                  tail or a pipe's own exit code)
+build command     cargo build --release --bin voxelforge -j 2
+                  (CARGO_PROFILE_RELEASE_DEBUG not needed — release profile
+                  already sets strip=debuginfo in the workspace Cargo.toml)
+
+commit at capture eea8bdd7f0a5c4c4c1f2aa4c2a725d94ba1e1444 (branch poppy/native-only)
+                  client/src/look.rs clean (git status --porcelain empty),
+                  last touched by 5eba1e8 "fix(look): the sky was 1513x
+                  overexposed", exp_comp=1.0 confirmed present at line 1897
+
+capture time      2026-08-14T13:40:10+07:00 (this stamp written immediately
+                  after the capture run below, same session, no gap)
+capture command   BIN=./target/release/voxelforge.exe bash scripts/prove_playable.sh
+                  (full 4-shot suite; PROVE_PLAYABLE: PASS — 4/4 shots clean,
+                  exit 0, PNG written, no panic, walk graded PASS, before!=after)
+capture logs      _poppy_proof/playable-walk-after.png.log (45383 bytes)
+                  _poppy_proof/edhari-load.png.log (43086 bytes)
+                  both stamped "BIN ./target/release/voxelforge.exe  80784384
+                  bytes  2026-08-14 13:29:36" as their first line
+
+files in this dir playable-walk-after.png  1024379 bytes  (== docs/assets/ copy,
+                  byte-identical, copied immediately after capture)
+                  edhari-load.png            937723 bytes  (== docs/assets/ copy,
+                  byte-identical, copied immediately after capture)

@@ -4,7 +4,11 @@ Verifying commit `5eba1e8` (`fix(look): the sky was 1513x overexposed`), which s
 `exp_comp = 1.0` in `client/src/look.rs:1897` (confirmed present at current HEAD,
 `git status --porcelain client/src/look.rs` is clean).
 
-## Bottom line: NOT CONFIRMED FIXED — provenance gap, not a verified pass
+**UPDATE 13:40 — the provenance gap below is closed. See `postfix/README.md`:
+a freshly built, freshly captured, checksum-verified-different frame off this
+exact source still measures FAIL. `5eba1e8` does not visibly fix the sky.**
+
+## [ORIGINAL 13:25 report] Bottom line: NOT CONFIRMED FIXED — provenance gap, not a verified pass
 
 The only frames available on disk (`docs/assets/playable-walk-after.png`,
 `docs/assets/edhari-load.png`, mtime 2026-08-14 06:36:41) still show the sky-band

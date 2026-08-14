@@ -1,0 +1,58 @@
+=== scripts/grade_sky.py --selftest (calibration) ===
+=== grade_sky.py --selftest: calibrating against synthetic ground truth ===
+
+  PASS case (synthetic healthy gradient)
+    R-span=107.00  sky-band%R>=250=0.00%  unoccluded_rows=45
+    got exit=0  want exit=0  -> OK
+
+  FAIL case (synthetic blown-flat, commit's [252,226,191])
+    R-span=1.00  sky-band%R>=250=100.00%  unoccluded_rows=45
+    got exit=1  want exit=1  -> OK
+
+  UNMEASURABLE case (flat grey sky band -- no sky-tier pixel anywhere)
+    R-span=0.00  sky-band%R>=250=0.00%  unoccluded_rows=0
+    got exit=2  want exit=2  -> OK
+
+CALIBRATION OK -- the meter tells PASS/FAIL/UNMEASURABLE apart correctly on known ground truth. Verdicts on real frames below can be trusted.
+
+=== grade_sky.py on POST-FIX playable-walk-after.png ===
+# docs\evidence\sky-verify-2026-08-14\postfix\playable-walk-after.png = 1280x720  sky band y[90:324]
+  predicate used            : R>=250 & B>=170 (blown-sky signature)
+  qualifying sky rows found : 134 (need >=10)
+  sky-band %R>=250          : 14.45%
+  sky-band R/G/B span       : R 0.67  G 3.92  B 6.54  (levels, top-to-bottom)
+  whole-frame %true-burnout : 0.16%  (R,G,B all >=250)
+  -> FAIL -- R-span 0.67 (need >1.5) / sky-band %R>=250 14.45% (need <3.0%) -- matches the documented pre-fix blown signature (span 0.7-1.0, %R>=250 5.33-14.33%)
+  EXIT 1
+exit=1
+
+=== grade_sky.py on POST-FIX edhari-load.png ===
+# docs\evidence\sky-verify-2026-08-14\postfix\edhari-load.png = 1280x720  sky band y[90:324]
+  predicate used            : R>=250 & B>=170 (blown-sky signature)
+  qualifying sky rows found : 19 (need >=10)
+  sky-band %R>=250          : 1.27%
+  sky-band R/G/B span       : R 0.55  G 3.88  B 5.71  (levels, top-to-bottom)
+  whole-frame %true-burnout : 0.16%  (R,G,B all >=250)
+  -> FAIL -- R-span 0.55 (need >1.5) / sky-band %R>=250 1.27% (need <3.0%) -- matches the documented pre-fix blown signature (span 0.7-1.0, %R>=250 5.33-14.33%)
+  EXIT 1
+exit=1
+
+=== grade_sky.py on PRE-FIX copies (sanity re-check) ===
+# docs\evidence\sky-verify-2026-08-14\playable-walk-after.png = 1280x720  sky band y[90:324]
+  predicate used            : R>=250 & B>=170 (blown-sky signature)
+  qualifying sky rows found : 134 (need >=10)
+  sky-band %R>=250          : 14.46%
+  sky-band R/G/B span       : R 0.54  G 3.58  B 5.74  (levels, top-to-bottom)
+  whole-frame %true-burnout : 0.16%  (R,G,B all >=250)
+  -> FAIL -- R-span 0.54 (need >1.5) / sky-band %R>=250 14.46% (need <3.0%) -- matches the documented pre-fix blown signature (span 0.7-1.0, %R>=250 5.33-14.33%)
+  EXIT 1
+exit=1
+# docs\evidence\sky-verify-2026-08-14\edhari-load.png = 1280x720  sky band y[90:324]
+  predicate used            : R>=250 & B>=170 (blown-sky signature)
+  qualifying sky rows found : 19 (need >=10)
+  sky-band %R>=250          : 1.27%
+  sky-band R/G/B span       : R 0.54  G 3.91  B 5.70  (levels, top-to-bottom)
+  whole-frame %true-burnout : 0.16%  (R,G,B all >=250)
+  -> FAIL -- R-span 0.54 (need >1.5) / sky-band %R>=250 1.27% (need <3.0%) -- matches the documented pre-fix blown signature (span 0.7-1.0, %R>=250 5.33-14.33%)
+  EXIT 1
+exit=1

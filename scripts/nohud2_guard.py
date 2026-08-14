@@ -183,6 +183,14 @@ EXEMPT = {
     "_review_steam_safearea.py":
         "checks the committed library-hero artwork (docs/assets/steam/*) against "
         "Valve's safe-area spec; audits curated art, not a HUD-bearing capture.",
+    "grade_sky.py":
+        "reads RAW captures, not *-nohud2.png, on purpose -- the sky band it measures "
+        "(rows [90, 0.45*H)) lives entirely above _flamingo_dehud2.py's HUD_BAND=80 crop, "
+        "and converting its sky-window rects into nohud2 coordinates leaves one of the two "
+        "reference frames (edhari-load.png) with only a 10-20px sliver of sky surviving -- "
+        "grading nohud2 here would neuter the measurement, not protect it. It stays clear "
+        "of the HUD status line (confined to that same top-left HUD_BAND=80 strip) and the "
+        "crosshair (frame-centre, well below the sky band) by construction.",
     "_flamingo_sat_ladder_sheet.py":
         "composite SHEET maker -- tiles sweep plates into one image and labels them "
         "via the already-guarded grade_axes.measure(); it emits a picture, not a verdict.",
