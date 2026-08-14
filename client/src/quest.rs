@@ -20,6 +20,10 @@ use crate::audio::SfxEvent;
 use crate::FlyCam;
 use voxelforge_sim::block::BlockId;
 use bevy::math::IVec3;
+// Temporary Act-1-end capture hook (`VOXELFORGE_ACT1_SHOT`). Poppy owns the real
+// cinematic camera; this is the placeholder so the quest demo can hand back a
+// screenshot at the moment Act 1 closes.
+use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 
 // =============================================================================
 // JSON data types — matching assets/story/act1.json (Rose's schema v1.0.0)
@@ -393,6 +397,8 @@ pub struct QuestDemo {
     /// `VOXELFORGE_QUEST_CHAOS=kill_early` only: Garren has been put down at the
     /// stand west of `guard_post_east`, so the demo may resume the ordinary walk.
     pub ambushed: bool,
+    /// `VOXELFORGE_QUEST_SHOTS` only — q1's campfire beat has been captured.
+    pub shot_q1: bool,
 }
 
 /// Cached story data — loaded ONCE at startup so `load_story_data()` is never
@@ -789,6 +795,26 @@ fn spawn_npcs(
         Npc { npc_id: "maren".into(), display_name: "Elder Maren".into() },
     ));
     println!("SPAWN_NPC id=maren name=\"Elder Maren\" pos=(32,2,4)");
+
+    // Spawn Toma — q1's optional survivor. Like Garren, she is `code_spawned`:
+    // the west house is a ruined shell on the map, so without a body here
+    // `o2_find_survivor` has a voice (`dlg_toma_first`) but nothing for the
+    // player to find. She hides in the darkest corner, beside the wooden toy
+    // (`lore_tomas_toy`, (15,1,24)) and the drawing (`lore_child_drawing`).
+    // Shortest cast member (~1.2 blocks): a 1.0-tall body stood at y=1.5.
+    let toma_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.54, 0.39, 0.24), // patched-overalls walnut (character-design §3.2)
+        perceptual_roughness: 0.9,
+        ..default()
+    });
+    let toma_mesh = meshes.add(Cuboid::new(0.4, 1.0, 0.25));
+    commands.spawn((
+        Mesh3d(toma_mesh), MeshMaterial3d(toma_mat),
+        Transform::from_xyz(16.0, 1.5, 24.0),
+        Visibility::default(),
+        Npc { npc_id: "toma".into(), display_name: "Toma".into() },
+    ));
+    println!("SPAWN_NPC id=toma name=\"Toma\" pos=(16,1.5,24)");
 }
 
 /// Garren the Husk — q3's `defeat` target. He is *not* in edhari.json (the eastern
@@ -1787,6 +1813,7 @@ fn check_act_end(
     journal: Res<QuestJournal>,
     story: Res<StoryDataRes>,
     mut fired: Local<bool>,
+    mut commands: Commands,
 ) {
     if *fired { return; }
     let q5_done = journal.quests.get("q5_sigil_that_knew_you")
@@ -1803,6 +1830,18 @@ fn check_act_end(
         println!("ACT_END final_line: {}", end.final_line);
         println!("ACT_END card: {}", end.card);
         println!("ACT1_COMPLETE");
+    }
+
+    // Temporary end capture: the demo (or a human) sets `VOXELFORGE_ACT1_SHOT`
+    // to a PNG path and this saves the frame the act closes on. Fire exactly
+    // once, and only when asked — normal play is untouched.
+    if let Ok(path) = std::env::var("VOXELFORGE_ACT1_SHOT") {
+        if !path.trim().is_empty() {
+            commands
+                .spawn(Screenshot::primary_window())
+                .observe(save_to_disk(path.clone()));
+            println!("ACT1_SHOT queued to {path}");
+        }
     }
 }
 
@@ -1830,18 +1869,27 @@ fn check_act_end(
 /// (z 12-15).  Step-up is one block, so this is the walkable path.
 /// Each leg is an (x, z) waypoint.
 ///
-/// Route: walk north FIRST to z≈22 (south of the longhouse, clear of shelter
-/// posts), THEN east to x=45, then north along the open field, then west to the
-/// ramp, then up onto the gate square.  This avoids the x=35 post that blocked
-/// the previous "east-first" route on the current map.
-const GATE_ROUTE: [(f32, f32); 5] = [
-    (32.5, 22.0), // north — clear the shelter posts (x=29/35) + longhouse south edge
-    (45.0, 22.0), // east along clear ground south of the longhouse
-    (45.0, 16.5), // north along the open east field
-    (32.5, 16.5), // west onto the ramp column
-    (32.5, 6.4),  // up the ramp onto the gate square
+/// Route: walk north along the x=32.5 column the whole way.  That column is the
+/// longhouse's open floor at z 24-28 (floor y=0, roof y=6 — the body walks under
+/// it), then clear ground straight up the x≈32 ramp (z 12-15) onto the gate
+/// square.  The previous route walked east to x=45 and tried to thread the
+/// 1-wide gap at (45,19); it wedged there — the body (~1 block wide) cannot
+/// centre in a gap with the (44,19) bush on one side and the east-house wall on
+/// the other (QUEST_WALK_TO_GATE timeout leg=2 at (45.0,20.3)).  A single
+/// straight leg is shorter and provably clear (surveyed top-y ≤ 2, step ≤ 1).
+const GATE_ROUTE: [(f32, f32); 2] = [
+    (32.5, 22.0), // north through the longhouse floor to its north side
+    (32.5, 6.4),  // north along the x=32 corridor, up the ramp onto the gate square
 ];
 const WAYPOINT_TOL: f32 = 0.6; // blocks — a 6 b/s walk moves ~0.1 per frame
+/// Movement dead-zone for `steer`, kept far below [`WAYPOINT_TOL`]. Arrival
+/// decides when a leg is done, but *movement* has to keep correcting toward the
+/// waypoint until that fires — a dead-zone equal to the arrival tolerance
+/// swallowed the last 0.4 block of a diagonal correction and wedged the body one
+/// column off the clear path (the `none` walk froze at (44.6,20.3) against the
+/// (44,19) wall because `dx=0.4 < 0.6` stopped pressing D, so it pushed north
+/// into the wall instead of sliding east onto the x=45 corridor).
+const MOVE_TOL: f32 = 0.05;
 /// How close the demo walks to Maren before pressing E. `INTERACT_RANGE` is 5.0
 /// and the gate plateau puts the eye 2.6 blocks above her, so leave real margin.
 const TALK_DIST: f32 = 4.3;
@@ -1966,6 +2014,29 @@ fn steer(keys: &mut ButtonInput<KeyCode>, cam_yaw: f32, dx: f32, dz: f32, tol: f
     set_key(keys, KeyCode::KeyW, fwd > tol);
 }
 
+/// `VOXELFORGE_QUEST_SHOTS=<dir>` — capture one frame per Act-1 beat into <dir>.
+/// Opt-in and inert in normal play: the scripted walk already stops at every
+/// beat, so this hands back a still at the moment each one completes, using the
+/// same `save_to_disk` path as the `VOXELFORGE_ACT1_SHOT` end capture. The game
+/// (not a driver) fires the `Screenshot`; the `QUEST_SHOT` line is the log trail
+/// a grader can cross-check against the PNG files on disk.
+fn quest_shots_dir() -> Option<&'static str> {
+    static DIR: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| std::env::var("VOXELFORGE_QUEST_SHOTS").ok().filter(|s| !s.is_empty()))
+        .as_deref()
+}
+
+/// Queue a single-frame capture named by story beat, unless the env knob is off.
+fn shoot_beat(commands: &mut Commands, label: &str) {
+    if let Some(dir) = quest_shots_dir() {
+        let path = format!("{dir}/act1_{label}.png");
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(path.clone()));
+        println!("QUEST_SHOT beat={label} -> {path}");
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn quest_demo(
     time: Res<Time>,
@@ -1978,10 +2049,12 @@ fn quest_demo(
     // Read-only, and disjoint from `fly_q` — the boom is its own entity
     // (`combat::lock_on_camera` filters the same way).
     cam_q: Query<&crate::OrbitCam, Without<FlyCam>>,
-    npcs: Query<&Transform, With<Npc>>,
+    npcs: Query<(&Transform, &Npc)>,
     enemies: Query<(&Transform, &combat::Health), With<combat::Enemy>>,
     mut exit: bevy::ecs::message::MessageWriter<AppExit>,
     cfg: Res<crate::Cfg>,
+    // `shoot_beat` queues a `Screenshot` per beat — needs a `Commands` to spawn.
+    mut commands: Commands,
 ) {
     if !cfg.quest_demo { return; }
     // Say which walk-through this is on frame 1, from the engine, before
@@ -2017,7 +2090,16 @@ fn quest_demo(
     // reach_zone objective on the way — that is the quest doing its own work.
     if demo.phase == 0 {
         if let Ok(mut fly) = fly_q.single_mut() { fly.walking = true; }
-        // `zone_early` walks the same five legs to the gate square and then adds
+        // q1 completes on approach to the campfire, crossed in the first seconds
+        // of the walk north. Capture its beat the moment the engine says it's done.
+        if !demo.shot_q1
+            && journal.quests.get("q1_embers")
+                .map(|p| p.status == QuestStatus::Completed).unwrap_or(false)
+        {
+            demo.shot_q1 = true;
+            shoot_beat(&mut commands, "q1_campfire");
+        }
+        // `zone_early` walks the same two legs to the gate square and then adds
         // a there-and-back through `guard_post_east` — stepping into q3's region
         // while q3 is still Locked, which is the visit that used to spend it.
         let route: &[(f32, f32)] = if chaos().zone_early() {
@@ -2050,7 +2132,7 @@ fn quest_demo(
                 }
                 press_key(&mut demo, &mut key_input,KeyCode::KeyX, t);
             } else {
-                steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL);
             }
             let tick = phase_t as u32;
             if tick > 0 && tick % 3 == 0 && tick != demo.debug_tick {
@@ -2073,6 +2155,7 @@ fn quest_demo(
         // trigger has closed out q2's gate objective.
         let q1 = journal.quests.get("q1_embers").map(|p| p.status).unwrap_or(QuestStatus::Locked);
         println!("QUEST_CHECK q1_embers status={:?}", q1);
+        shoot_beat(&mut commands, "q2_gate");
         enter!(1);
     }
 
@@ -2097,7 +2180,9 @@ fn quest_demo(
         }
 
         // Close the last stride if collision parked the body outside talking range.
-        if let Some(mtf) = npcs.iter().next() {
+        // Target Maren by id — `.iter().next()` broke once a second NPC (Toma)
+        // existed, steering the demo west toward the wrong body.
+        if let Some((mtf, _)) = npcs.iter().find(|(_, n)| n.npc_id == "maren") {
             let d = ptf.translation.distance(mtf.translation);
             if d > TALK_DIST && !dialogue.open {
                 let to = mtf.translation - ptf.translation;
@@ -2169,9 +2254,9 @@ fn quest_demo(
             let dz = quest_chaos::AMBUSH_Z - ptf.translation.z;
             let dx = quest_chaos::AMBUSH_X - ptf.translation.x;
             if dz.abs() > WAYPOINT_TOL {
-                steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, 0.0, dz, MOVE_TOL);
             } else if dx.abs() > WAYPOINT_TOL {
-                steer(&mut key_input, cam_yaw, dx, 0.0, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, dx, 0.0, MOVE_TOL);
             } else {
                 // Hold the line. Steering toward him from here is what would walk
                 // the fight into the region.
@@ -2213,9 +2298,9 @@ fn quest_demo(
             // by Shiba; z=8–9 are now clear all the way from x=30..52.
             let dz = POST_LANE_Z - ptf.translation.z;
             if dz.abs() > WAYPOINT_TOL {
-                steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, 0.0, dz, MOVE_TOL);
             } else {
-                steer(&mut key_input, cam_yaw, POST_STOP_X - ptf.translation.x, 0.0, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, POST_STOP_X - ptf.translation.x, 0.0, MOVE_TOL);
             }
             if phase_t > 25.0 {
                 steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
@@ -2228,6 +2313,7 @@ fn quest_demo(
         steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
         println!("QUEST_WALK_GUARD_POST reached x={:.1} z={:.1} hp={:.0}",
             ptf.translation.x, ptf.translation.z, php.cur);
+        shoot_beat(&mut commands, "q3_gatekeeper");
         enter!(3);
         return;
     }
@@ -2242,6 +2328,7 @@ fn quest_demo(
         {
             hands_off!();
             demo.killed_garren = true;
+            shoot_beat(&mut commands, "q4_walls");
             enter!(4);
             // Reset tap timer so the first press_key call in Phase 4 is never
             // blocked by Phase 3's combat key cooldown (TRIAGE §5-F1).
@@ -2314,6 +2401,7 @@ fn quest_demo(
         if q4_done {
             hands_off!();
             println!("QUEST_COMPLETE q4_what_walls_remember => PASS (all objectives done)");
+            shoot_beat(&mut commands, "q5_sigil");
             enter!(5);
             return;
         }
@@ -2334,7 +2422,7 @@ fn quest_demo(
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyR, t); }
-                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
+                else { steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL); }
                 // DEBUG: log walk progress every second
                 let tick = phase_t as u32;
                 if tick > 0 && tick != demo.debug_tick && tick % 3 == 0 {
@@ -2349,14 +2437,14 @@ fn quest_demo(
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
-                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
+                else { steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL); }
                 if phase_t > 30.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o2_ledger => FAIL (timeout)"); demo.phase = 99; } }
             2 => { let (tx, tz) = (33.0, 14.0);
                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
                     press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
-                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
+                else { steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL); }
                 if phase_t > 30.0 { hands_off!();
                     println!("QUEST_STAGE_COMPLETE q4 o3_offering => FAIL (timeout)"); demo.phase = 99; } }
             _ => { hands_off!(); enter!(5); }
@@ -2381,7 +2469,7 @@ fn quest_demo(
             if ptf.translation.x < 35.0 && ptf.translation.z < 2.0 {
                 steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
             } else if ptf.translation.x > 36.0 || ptf.translation.z > 8.0 {
-                steer(&mut key_input, cam_yaw, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, WAYPOINT_TOL);
+                steer(&mut key_input, cam_yaw, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, MOVE_TOL);
             } else { steer(&mut key_input, cam_yaw, 0.0, -1.0, 0.0); }
             if phase_t > 40.0 { hands_off!();
                 println!("QUEST_STAGE_COMPLETE q5 gate => FAIL (timeout at z={:.1})", ptf.translation.z);
