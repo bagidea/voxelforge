@@ -26,6 +26,28 @@ only — no external libraries, no sampled recordings).
 | `ambient_campfire.wav` | Campfire — crackling noise bursts (looping) | 2.50 s |
 | `ambient_village.wav` | Village murmur — heavily low-passed noise (looping) | 3.00 s |
 
+## Layer + music additions (2026-08-14, yamamoto — audio lane)
+
+Generated with `ffmpeg -f lavfi` synth filters (sine/noise generators + EQ/fade,
+no external libraries or sampled recordings — same CC0-by-construction basis
+as the table above, different tool).
+
+| File | Description | Duration |
+|---|---|---|
+| `swing_whoosh.wav` | Air-cut layer under swings — swept band-passed white noise | 0.26 s |
+| `impact_thump.wav` | Low-end punch layer under heavy hits/blocks — downward sine chirp | 0.22 s |
+| `impact_tail.wav` | Hang/decay layer after hits — band-passed pink noise decay | 0.45 s |
+| `music_theme.wav` | Background music (placeholder) — 4-tone sine drone chord + slow tremolo, phase-exact 24s loop (all partial frequencies are integer multiples of 55Hz and the tremolo period evenly divides 24s, so the loop point has no seam) | 24.00 s |
+
+These are not spawned standalone SFX events — `swing_whoosh`/`impact_thump`/
+`impact_tail` are mixed in as extra simultaneous layers by `audio.rs`'s
+`extra_layers()` to give swings/hits weight (see that file's module doc).
+`music_theme.wav` fills the previously-missing `AUDIO_MUSIC_THEME_PATH` slot
+(was specced as `.ogg` but the client's bevy build only enables the `wav`
+audio feature — see `client/Cargo.toml`'s comment on that — so `.wav` it is).
+Still a synthesized placeholder pad, not a composed theme — replace when a
+real track is delivered, same filename.
+
 ## License
 
 All files: **CC0 1.0 Universal (Public Domain Dedication)**

@@ -21,6 +21,34 @@ path = "src/shot_main.rs"
 name = "voxelforge_perf"
 path = "src/perf_main.rs"
 
+# Audio proof (yamamoto) — drives audio.rs's real systems through a scripted
+# walk + combat scenario headlessly. Separate bin so it can run and prove
+# footstep/ambient/zone-crossfade/music/mixer behavior while main.rs is
+# blocked by two OTHER lanes' unrelated breakage (main_menu.rs, combat.rs).
+# See src/audio_proof_main.rs.
+[[bin]]
+name = "voxelforge_audio_proof"
+path = "src/audio_proof_main.rs"
+
+# Character/equipment shot (Flamingo) — carries the SAME `VOXELFORGE_CHARSHOT`
+# stage wiring that shot_main.rs does, but links only characters.rs +
+# equipment.rs. Same reason as the audio proof above: `voxelforge_shot` also
+# `#[path]`-includes hero.rs and vfx.rs, so an unrelated lane mid-edit in vfx.rs
+# stops the character contact sheet from being rendered at all. This bin cannot
+# be blocked by a lane it does not link. See src/char_shot_main.rs.
+[[bin]]
+name = "voxelforge_charshot"
+path = "src/char_shot_main.rs"
+
+# VFX proof (kevin) — renders vfx::setup_showcase ONLY, linking vfx.rs verbatim
+# and no other module, so the before/after pairs can be rebuilt while main.rs
+# (main_menu.rs / combat.rs breakage from two OTHER lanes) and even voxelforge_shot
+# (hero/characters/equipment/enemies lanes) are mid-edit. Same isolation trick as
+# the audio proof above: `#[path]`-include, zero shims. See src/vfx_proof_main.rs.
+[[bin]]
+name = "voxelforge_vfx_proof"
+path = "src/vfx_proof_main.rs"
+
 [features]
 # PCSS soft shadows (bible pass #4 / gate G4) are behind an experimental Bevy
 # flag; on by default so the hero shot gets penumbras out of the box.
@@ -42,6 +70,10 @@ bevy_egui = "0.41"
 # Map files are plain JSON (see maps/FORMAT.md) — both already in the lock via bevy.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# SFX volume/pitch jitter (audio.rs) so repeated hits don't sound like a
+# stuck sample. Already resolved transitively (bevy deps), listed directly
+# since audio.rs calls it.
+fastrand = "2"
 
 # The Steam ship profiles live in the WORKSPACE root Cargo.toml. Cargo ignores
 # `[profile.*]` in a member manifest — it prints "profiles for the non root
