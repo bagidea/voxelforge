@@ -170,8 +170,12 @@ fn main() -> AppExit {
             WalkLeg { to: Vec3::new(-100.0, 0.0, -100.0), speed: 60.0, hold_until: 1.0 },
             // Walk into the village region → AmbientZone::Village.
             WalkLeg { to: Vec3::ZERO, speed: 30.0, hold_until: 4.5 },
-            // Walk into the campfire region → AmbientZone::Campfire.
-            WalkLeg { to: Vec3::new(40.0, 0.0, 40.0), speed: 20.0, hold_until: 8.5 },
+            // Walk into the campfire region, past a real tree trunk (Wood
+            // surface at world (36,46), seed 42) — still inside campfire_square.
+            WalkLeg { to: Vec3::new(36.0, 0.0, 46.0), speed: 20.0, hold_until: 7.6 },
+            // Cross deeper into campfire_square's grass field (Grass surface
+            // at world (44,49)) for a real footstep_grass trigger.
+            WalkLeg { to: Vec3::new(44.0, 0.0, 49.0), speed: 15.0, hold_until: 8.6 },
         ],
         leg_idx: 0,
         fired_combat: false,
