@@ -54,7 +54,7 @@ import art_order_grade as A  # noqa: E402
 import grade_character as C  # noqa: E402
 
 ACCENT_HUE = 185.8  # #4FC9D6 = Color::srgb(0.310, 0.788, 0.839) in anim.rs
-BAR = A.T["hero_hue_sep"]
+BAR = A.T["hero_hue_sep_deg"]
 
 
 def ring_of(blob):

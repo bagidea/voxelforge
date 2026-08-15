@@ -524,6 +524,8 @@ _doc↔tool reconciliation, ref re-graded 6/6 — Flamingo (Designer), 2026-08-0
 > พอรันจริง: **คอนเซปต์ที่ CEO อนุมัติทั้ง 3 ใบเกรดตัวเองตก** — เหมือนเป๊ะกับเคส
 > `warmth ≥ +175` ที่ปลดไปแล้วเมื่อ 2026-07-26.
 
+_(หมายเหตุปัจจุบัน: คีย์ใน `scripts/art_order_grade.py` ตอนนี้คือ `T["hero_hue_sep_deg"]` แล้ว — ชื่อ `hero_hue_sep` ข้างบนคือของเดิมก่อน rename.)_
+
 **เครื่องมือ:** `scripts/_flamingo_a62_huesep_control.py` (เรียก `art_order_grade.silhouette`
 ตัวจริง ไม่เขียนสูตรเอง) + `scripts/_flamingo_a62_metric_probe.py` (bake-off ตัวเลือกทดแทน).
 วัดสองแบบทุกใบ: **gate blob** (percentile split ในกล่อง — ที่ด่านใช้จริง) และ **ground-truth
