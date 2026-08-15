@@ -170,17 +170,21 @@ thin wrapper — gentle env defaults plus cargo's real exit code — but it does
 isolate a target dir or print a verdict. For a lane that needs its own
 **binary** build, the standard entry point is `scripts/lane-build.ps1`. It
 builds into a per-lane `target-<lane>/` so six parallel lanes never collide on
-one target, waits for other cargo builds to drain first, refuses a lane that is
-already building, checks the exe is not locked before relinking, and prints a
-`VERDICT PASS/FAIL` judged only from the full build log (`grep '^error'`) plus
-the real exit code and the exe's mtime. It never pipes cargo and never runs
-`cargo clean`.
+one target, waits for other cargo builds to drain first, refuses a lane only if
+its `target-<lane>/` is actually in use right now (its `.cargo-lock` is held
+open, or a `cargo`/`rustc`/`link.exe` is compiling into it — no hard-coded name
+list, so `-Lane rose` is fine whenever rose isn't building; `-Force` overrides),
+checks the exe is not locked before relinking, and prints a `VERDICT PASS/FAIL`
+judged only from the full build log (`grep '^error'`) plus the real exit code
+and the exe's mtime. It never pipes cargo and never runs `cargo clean`.
 
 ```powershell
 .\scripts\lane-build.ps1 -Lane kevin                  # dev build -> target-kevin/, -j 2
 .\scripts\lane-build.ps1 -Lane kevin -Profile release # -> target-kevin/release/
 .\scripts\lane-build.ps1 -Lane kevin -Bin voxelforge_vfx_proof
-.\scripts\lane-build.ps1 -SelfTest                    # prove the verdict catches (a)+(b)
+.\scripts\lane-build.ps1 -Lane rose -NoWait           # skip the drain-wait; the busy gate still guards
+.\scripts\lane-build.ps1 -Lane rose -Force            # build even if target-rose is in use (override)
+.\scripts\lane-build.ps1 -SelfTest                    # prove the verdict catches (a)+(b) + the busy gate
 ```
 
 **`lane-build.ps1` vs `build_safe.sh`.** Use `lane-build.ps1` when a lane needs
