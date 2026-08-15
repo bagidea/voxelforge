@@ -165,6 +165,32 @@ many crates cargo has to spawn rustc for:
 `scripts/build_safe.sh` sets the gentle defaults above, forwards every argument
 to cargo, and returns cargo's **real** exit code (it never pipes cargo).
 
+**Parallel lanes: `scripts/lane-build.ps1`.** `build_safe.sh` (above) is the
+thin wrapper — gentle env defaults plus cargo's real exit code — but it does not
+isolate a target dir or print a verdict. For a lane that needs its own
+**binary** build, the standard entry point is `scripts/lane-build.ps1`. It
+builds into a per-lane `target-<lane>/` so six parallel lanes never collide on
+one target, waits for other cargo builds to drain first, refuses a lane that is
+already building, checks the exe is not locked before relinking, and prints a
+`VERDICT PASS/FAIL` judged only from the full build log (`grep '^error'`) plus
+the real exit code and the exe's mtime. It never pipes cargo and never runs
+`cargo clean`.
+
+```powershell
+.\scripts\lane-build.ps1 -Lane kevin                  # dev build -> target-kevin/, -j 2
+.\scripts\lane-build.ps1 -Lane kevin -Profile release # -> target-kevin/release/
+.\scripts\lane-build.ps1 -Lane kevin -Bin voxelforge_vfx_proof
+.\scripts\lane-build.ps1 -SelfTest                    # prove the verdict catches (a)+(b)
+```
+
+**`lane-build.ps1` vs `build_safe.sh`.** Use `lane-build.ps1` when a lane needs
+its own binary build in its own warm `target-<lane>/` and a verdict it can
+trust. Use `scripts/build_safe.sh` (via the integration lead — see "The build
+lock" above) for the full `cargo build --bin voxelforge` into
+`target-int`/`target-combat`, and for `cargo check` scoped to a warm target
+dir. Both share the same core rules: warm target only, never `cargo clean`,
+never pipe cargo.
+
 **Never mask a failure with a pipe.** `cargo build | tail` returns `tail`'s
 exit code (0), not cargo's, so a failed build reads as success — the same class
 of bug as a gate that can't fail. The wrapper never pipes cargo; if you ever
