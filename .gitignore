@@ -300,3 +300,13 @@ _*.patch
 # path (same reasoning as scripts/tests/step2_rebuild_audio.ps1 above) —
 # never portable, always regenerated per machine/session.
 /_shino_build_quest.cmd
+
+# ── Enemy-AI evidence raw dumps (Rose 2026-08-16) ──────────────
+# docs/assets/ai/ carries the COMMITTED proof (~3 MB): the 14 before/after/
+# arch stills, 7 _paircheck review pairs, enemy-chase.mp4, trace.csv, runlog.txt.
+# `_frames/` (74 MB) and `_frames_lifted/` (23 MB) are the raw per-frame dumps
+# those stills were cut from — regenerable via scripts/_rose_ai_evidence.sh,
+# never tracked. The blanket `_*/` above already catches them; explicit entries
+# so a future narrowing of that rule can't turn 97 MB of dumps into repo bloat.
+/docs/assets/ai/_frames/
+/docs/assets/ai/_frames_lifted/

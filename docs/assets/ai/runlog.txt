@@ -1,0 +1,1315 @@
+[2m2026-08-15T20:19:38.006429Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-08-15T20:19:38.165579Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+	loader_get_json: Failed to open JSON file E:\Program Files (x86)\Epic Games\Launcher\Portal\Extras\Overlay\EOSOverlayVkLayer-Win32.json
+[2m2026-08-15T20:19:38.165655Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x1cd82d1a490, name: ?)
+[2m2026-08-15T20:19:38.165707Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m GENERAL [Loader Message (0x0)]
+	loader_get_json: Failed to open JSON file E:\Program Files (x86)\Epic Games\Launcher\Portal\Extras\Overlay\EOSOverlayVkLayer-Win64.json
+[2m2026-08-15T20:19:38.172165Z[0m [31mERROR[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m 	objects: (type: INSTANCE, hndl: 0x1cd82d1a490, name: ?)
+[2m2026-08-15T20:19:39.121845Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+AIPROOF bin: link=enemies.rs+enemy_ai.rs only — no combat.rs, no main.rs
+[2m2026-08-15T20:19:39.516743Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-08-15T20:19:39.516865Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-08-15T20:19:39.524553Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — enemy AI proof (65v0)
+ENEMY_SPAWN kind=reaver parts=26 height=1.88b feet=(-7.0,0.0,-6.0) yaw=0.00
+ENEMY_SPAWN kind=reaver parts=26 height=1.88b feet=(-4.0,0.0,-9.0) yaw=0.00
+ENEMY_SPAWN kind=sentinel parts=30 height=3.38b feet=(9.0,0.0,-8.0) yaw=0.00
+ENEMY_SPAWN kind=stalker parts=25 height=1.33b feet=(3.0,0.0,-14.0) yaw=0.00
+AIPROOF cast: reaver#1 reaver#2 (swarm), sentinel (bruiser), stalker (pouncer); player scripted 4 phases
+[2m2026-08-15T20:19:42.792581Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0060.png
+[2m2026-08-15T20:19:42.893271Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0062.png
+[2m2026-08-15T20:19:42.949636Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0064.png
+[2m2026-08-15T20:19:43.044156Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0066.png
+[2m2026-08-15T20:19:43.188513Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0068.png
+[2m2026-08-15T20:19:43.265854Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0070.png
+[2m2026-08-15T20:19:43.356586Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0072.png
+[2m2026-08-15T20:19:43.474300Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0074.png
+[2m2026-08-15T20:19:43.607665Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0076.png
+[2m2026-08-15T20:19:43.743498Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0078.png
+AI id=4 pouncer patrol -> alert dist=13.91
+[2m2026-08-15T20:19:43.831744Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0080.png
+AI id=2 swarm patrol -> alert dist=11.86
+[2m2026-08-15T20:19:43.944651Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0082.png
+[2m2026-08-15T20:19:44.075673Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0084.png
+[2m2026-08-15T20:19:44.149525Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0086.png
+[2m2026-08-15T20:19:44.246409Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0088.png
+AI id=2 swarm alert -> chase dist=10.56
+AI id=4 pouncer alert -> stalk dist=12.16
+[2m2026-08-15T20:19:44.344190Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0090.png
+[2m2026-08-15T20:19:44.451963Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0092.png
+[2m2026-08-15T20:19:44.558500Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0094.png
+[2m2026-08-15T20:19:44.642197Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0096.png
+[2m2026-08-15T20:19:44.729554Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0098.png
+[2m2026-08-15T20:19:44.831880Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0100.png
+[2m2026-08-15T20:19:44.926285Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0102.png
+[2m2026-08-15T20:19:45.058795Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0104.png
+[2m2026-08-15T20:19:45.106061Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0106.png
+[2m2026-08-15T20:19:45.176782Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0108.png
+AI id=3 bruiser patrol -> alert dist=8.92
+[2m2026-08-15T20:19:45.803840Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0110.png
+[2m2026-08-15T20:19:45.989106Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0112.png
+[2m2026-08-15T20:19:46.074257Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0114.png
+AI id=3 bruiser alert -> advance dist=8.39
+[2m2026-08-15T20:19:47.790605Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0116.png
+AIPROOF frame 120/1320 captured 31 (t=6.0s)
+[2m2026-08-15T20:19:47.945803Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0118.png
+[2m2026-08-15T20:19:48.070445Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0120.png
+AI id=2 swarm chase -> windup dist=1.15
+[2m2026-08-15T20:19:48.220084Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0122.png
+[2m2026-08-15T20:19:48.336154Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0124.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.32,0.95) dist=1.15
+AI id=2 swarm windup -> strike dist=1.15
+[2m2026-08-15T20:19:48.452639Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0126.png
+[2m2026-08-15T20:19:48.585422Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0128.png
+AI id=2 swarm strike -> recover dist=0.07
+[2m2026-08-15T20:19:48.706279Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0130.png
+[2m2026-08-15T20:19:48.838555Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0132.png
+[2m2026-08-15T20:19:49.069929Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0134.png
+[2m2026-08-15T20:19:49.243599Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0136.png
+AI id=2 swarm recover -> chase dist=0.44
+[2m2026-08-15T20:19:49.380334Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0138.png
+AI id=2 swarm chase -> windup dist=0.44
+[2m2026-08-15T20:19:49.555462Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0140.png
+[2m2026-08-15T20:19:49.705353Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0142.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.92,0.40) dist=1.32
+AI id=2 swarm windup -> strike dist=1.32
+[2m2026-08-15T20:19:50.002099Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0144.png
+[2m2026-08-15T20:19:50.117435Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0146.png
+AI id=2 swarm strike -> recover dist=0.85
+[2m2026-08-15T20:19:50.239561Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0148.png
+AI id=4 pouncer stalk -> crouch dist=9.54
+[2m2026-08-15T20:19:50.351650Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0150.png
+[2m2026-08-15T20:19:50.530158Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0152.png
+[2m2026-08-15T20:19:50.618109Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0154.png
+[2m2026-08-15T20:19:50.754639Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0156.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.80,0.60) dist=11.46
+AI id=4 pouncer crouch -> pounce dist=11.46
+[2m2026-08-15T20:19:50.871611Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0158.png
+AI id=2 swarm recover -> chase dist=3.19
+[2m2026-08-15T20:19:50.951433Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0160.png
+[2m2026-08-15T20:19:51.038020Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0162.png
+AI id=4 pouncer pounce -> recover dist=10.03
+[2m2026-08-15T20:19:51.126813Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0164.png
+[2m2026-08-15T20:19:51.239141Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0166.png
+[2m2026-08-15T20:19:51.429557Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0168.png
+AI id=1 swarm patrol -> alert dist=11.99
+[2m2026-08-15T20:19:51.513063Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0170.png
+[2m2026-08-15T20:19:51.613793Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0172.png
+[2m2026-08-15T20:19:51.746502Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0174.png
+AI id=1 swarm alert -> chase dist=11.77
+[2m2026-08-15T20:19:51.844789Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0176.png
+[2m2026-08-15T20:19:51.933759Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0178.png
+[2m2026-08-15T20:19:51.994449Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0180.png
+[2m2026-08-15T20:19:52.070746Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0182.png
+[2m2026-08-15T20:19:52.222759Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0184.png
+[2m2026-08-15T20:19:52.292919Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0186.png
+AI id=4 pouncer recover -> stalk dist=14.47
+[2m2026-08-15T20:19:52.374694Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0188.png
+[2m2026-08-15T20:19:52.437105Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0190.png
+[2m2026-08-15T20:19:52.518453Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0192.png
+[2m2026-08-15T20:19:52.617186Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0194.png
+[2m2026-08-15T20:19:52.685536Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0196.png
+[2m2026-08-15T20:19:52.769780Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0198.png
+[2m2026-08-15T20:19:52.900102Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0200.png
+[2m2026-08-15T20:19:52.979432Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0202.png
+[2m2026-08-15T20:19:53.050821Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0204.png
+[2m2026-08-15T20:19:53.176302Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0206.png
+[2m2026-08-15T20:19:53.280012Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0208.png
+[2m2026-08-15T20:19:53.365525Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0210.png
+[2m2026-08-15T20:19:53.612414Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0212.png
+[2m2026-08-15T20:19:53.717308Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0214.png
+[2m2026-08-15T20:19:53.829635Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0216.png
+[2m2026-08-15T20:19:53.914912Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0218.png
+[2m2026-08-15T20:19:54.025478Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0220.png
+[2m2026-08-15T20:19:54.156849Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0222.png
+[2m2026-08-15T20:19:54.257529Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0224.png
+[2m2026-08-15T20:19:54.343709Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0226.png
+[2m2026-08-15T20:19:54.437101Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0228.png
+[2m2026-08-15T20:19:54.537547Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0230.png
+[2m2026-08-15T20:19:54.628914Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0232.png
+[2m2026-08-15T20:19:54.940778Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0234.png
+[2m2026-08-15T20:19:55.074090Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0236.png
+AIPROOF frame 240/1320 captured 91 (t=13.5s)
+[2m2026-08-15T20:19:55.221007Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0238.png
+[2m2026-08-15T20:19:55.304110Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0240.png
+[2m2026-08-15T20:19:55.375048Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0242.png
+[2m2026-08-15T20:19:55.441682Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0244.png
+[2m2026-08-15T20:19:55.526129Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0246.png
+[2m2026-08-15T20:19:55.638024Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0248.png
+[2m2026-08-15T20:19:55.714273Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0250.png
+[2m2026-08-15T20:19:55.838634Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0252.png
+[2m2026-08-15T20:19:55.917603Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0254.png
+[2m2026-08-15T20:19:56.069113Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0256.png
+[2m2026-08-15T20:19:56.213761Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0258.png
+[2m2026-08-15T20:19:56.589220Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0260.png
+[2m2026-08-15T20:19:56.680387Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0262.png
+AI id=2 swarm chase -> windup dist=1.28
+[2m2026-08-15T20:19:56.743242Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0264.png
+[2m2026-08-15T20:19:56.812488Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0266.png
+[2m2026-08-15T20:19:56.879396Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0268.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.44,0.90) dist=1.28
+AI id=2 swarm windup -> strike dist=1.28
+[2m2026-08-15T20:19:57.196505Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0270.png
+[2m2026-08-15T20:19:57.242882Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0272.png
+AI id=1 swarm chase -> windup dist=1.50
+AI id=2 swarm strike -> recover dist=0.51
+[2m2026-08-15T20:19:57.305309Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0274.png
+[2m2026-08-15T20:19:57.482848Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0276.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.56,0.83) dist=1.50
+AI id=1 swarm windup -> strike dist=1.50
+[2m2026-08-15T20:19:57.554706Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0278.png
+[2m2026-08-15T20:19:57.636899Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0280.png
+[2m2026-08-15T20:19:57.741873Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0282.png
+AI id=1 swarm strike -> recover dist=0.40
+[2m2026-08-15T20:19:57.864074Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0284.png
+[2m2026-08-15T20:19:58.033918Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0286.png
+AI id=2 swarm recover -> chase dist=0.61
+AI id=2 swarm chase -> windup dist=0.61
+[2m2026-08-15T20:19:58.110263Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0288.png
+[2m2026-08-15T20:19:58.198674Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0290.png
+[2m2026-08-15T20:19:58.280696Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0292.png
+[2m2026-08-15T20:19:58.398800Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0294.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.44,-0.90) dist=0.61
+AI id=2 swarm windup -> strike dist=0.61
+AI id=4 pouncer stalk -> crouch dist=15.57
+[2m2026-08-15T20:19:58.498615Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0296.png
+AI id=1 swarm recover -> chase dist=0.16
+AI id=1 swarm chase -> windup dist=0.16
+[2m2026-08-15T20:19:58.650801Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0298.png
+AI id=2 swarm strike -> recover dist=0.17
+[2m2026-08-15T20:19:58.753183Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0300.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.41,0.91) dist=0.16
+AI id=1 swarm windup -> strike dist=0.16
+[2m2026-08-15T20:19:58.885774Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0302.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.67,0.74) dist=15.45
+AI id=4 pouncer crouch -> pounce dist=15.45
+[2m2026-08-15T20:19:59.110626Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0304.png
+AI id=1 swarm strike -> recover dist=0.80
+[2m2026-08-15T20:19:59.226382Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0306.png
+AI id=4 pouncer pounce -> recover dist=12.87
+[2m2026-08-15T20:19:59.360878Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0308.png
+AI id=2 swarm recover -> chase dist=0.47
+[2m2026-08-15T20:19:59.586573Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0310.png
+AI id=2 swarm chase -> windup dist=0.47
+[2m2026-08-15T20:19:59.728471Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0312.png
+AI id=1 swarm recover -> chase dist=1.01
+[2m2026-08-15T20:19:59.843554Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0314.png
+AI id=1 swarm chase -> windup dist=1.01
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.61,-0.79) dist=0.47
+AI id=2 swarm windup -> strike dist=0.47
+[2m2026-08-15T20:19:59.947760Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0316.png
+AI id=2 swarm strike -> recover dist=0.70
+[2m2026-08-15T20:20:00.125002Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0318.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.99,-0.14) dist=1.01
+AI id=1 swarm windup -> strike dist=1.01
+[2m2026-08-15T20:20:00.231418Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0320.png
+[2m2026-08-15T20:20:00.365696Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0322.png
+AI id=1 swarm strike -> recover dist=0.34
+[2m2026-08-15T20:20:00.476483Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0324.png
+AI id=4 pouncer recover -> stalk dist=12.31
+[2m2026-08-15T20:20:00.602753Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0326.png
+[2m2026-08-15T20:20:00.737427Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0328.png
+[2m2026-08-15T20:20:00.821725Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0330.png
+AI id=2 swarm recover -> chase dist=0.84
+AI id=2 swarm chase -> windup dist=0.84
+[2m2026-08-15T20:20:00.973086Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0332.png
+[2m2026-08-15T20:20:01.046697Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0334.png
+AI id=1 swarm recover -> chase dist=0.54
+AI id=1 swarm chase -> windup dist=0.54
+[2m2026-08-15T20:20:01.187648Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0336.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.15,0.99) dist=0.84
+AI id=2 swarm windup -> strike dist=0.84
+[2m2026-08-15T20:20:01.303221Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0338.png
+[2m2026-08-15T20:20:01.398380Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0340.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.73,-0.68) dist=0.54
+AI id=1 swarm windup -> strike dist=0.54
+AI id=2 swarm strike -> recover dist=0.62
+[2m2026-08-15T20:20:01.514823Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0342.png
+[2m2026-08-15T20:20:01.628275Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0344.png
+AI id=1 swarm strike -> recover dist=0.68
+[2m2026-08-15T20:20:01.782956Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0346.png
+[2m2026-08-15T20:20:01.856530Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0348.png
+[2m2026-08-15T20:20:01.990931Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0350.png
+[2m2026-08-15T20:20:02.106455Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0352.png
+AI id=2 swarm recover -> chase dist=0.95
+AI id=2 swarm chase -> windup dist=0.95
+[2m2026-08-15T20:20:02.253636Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0354.png
+[2m2026-08-15T20:20:02.361234Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0356.png
+AIPROOF frame 360/1320 captured 151 (t=20.8s)
+AI id=1 swarm recover -> chase dist=0.91
+[2m2026-08-15T20:20:02.434870Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0358.png
+AI id=1 swarm chase -> windup dist=0.91
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.83,-0.56) dist=0.95
+AI id=2 swarm windup -> strike dist=0.95
+[2m2026-08-15T20:20:02.496714Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0360.png
+[2m2026-08-15T20:20:02.613944Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0362.png
+AI id=2 swarm strike -> recover dist=0.25
+[2m2026-08-15T20:20:02.684680Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0364.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.42,0.91) dist=0.91
+AI id=1 swarm windup -> strike dist=0.91
+[2m2026-08-15T20:20:02.822695Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0366.png
+[2m2026-08-15T20:20:02.920627Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0368.png
+AI id=1 swarm strike -> recover dist=0.73
+[2m2026-08-15T20:20:03.050764Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0370.png
+[2m2026-08-15T20:20:03.287575Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0372.png
+[2m2026-08-15T20:20:03.396148Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0374.png
+AI id=2 swarm recover -> chase dist=0.37
+AI id=2 swarm chase -> windup dist=0.37
+[2m2026-08-15T20:20:03.513018Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0376.png
+[2m2026-08-15T20:20:03.598473Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0378.png
+AI id=1 swarm recover -> chase dist=0.84
+[2m2026-08-15T20:20:03.736979Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0380.png
+AI id=1 swarm chase -> windup dist=0.84
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.94,-0.35) dist=0.37
+AI id=2 swarm windup -> strike dist=0.37
+[2m2026-08-15T20:20:03.810914Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0382.png
+AI id=2 swarm strike -> recover dist=0.77
+[2m2026-08-15T20:20:03.943265Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0384.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.86,-0.51) dist=0.84
+AI id=1 swarm windup -> strike dist=0.84
+[2m2026-08-15T20:20:04.035069Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0386.png
+[2m2026-08-15T20:20:04.128362Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0388.png
+[2m2026-08-15T20:20:04.236729Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0390.png
+AI id=1 swarm strike -> recover dist=0.45
+[2m2026-08-15T20:20:04.348814Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0392.png
+[2m2026-08-15T20:20:04.382311Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0394.png
+[2m2026-08-15T20:20:04.484496Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0396.png
+[2m2026-08-15T20:20:04.651890Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0398.png
+AI id=2 swarm recover -> chase dist=0.88
+AI id=2 swarm chase -> windup dist=0.88
+[2m2026-08-15T20:20:04.754563Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0400.png
+[2m2026-08-15T20:20:04.853992Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0402.png
+AI id=4 pouncer stalk -> crouch dist=7.70
+[2m2026-08-15T20:20:04.951726Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0404.png
+AI id=1 swarm recover -> chase dist=0.64
+AI id=1 swarm chase -> windup dist=0.64
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.43,0.90) dist=0.88
+AI id=2 swarm windup -> strike dist=0.88
+[2m2026-08-15T20:20:05.043578Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0406.png
+AI id=3 bruiser advance -> windup dist=2.39
+[2m2026-08-15T20:20:05.165959Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0408.png
+[2m2026-08-15T20:20:05.239467Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0410.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.99,-0.14) dist=0.64
+AI id=1 swarm windup -> strike dist=0.64
+AI id=2 swarm strike -> recover dist=0.46
+[2m2026-08-15T20:20:05.417674Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0412.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.28,0.96) dist=7.69
+AI id=4 pouncer crouch -> pounce dist=7.69
+[2m2026-08-15T20:20:05.474206Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0414.png
+AI id=1 swarm strike -> recover dist=0.75
+[2m2026-08-15T20:20:05.588134Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0416.png
+[2m2026-08-15T20:20:05.691931Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0418.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.78,0.63) dist=2.39
+AI id=3 bruiser windup -> strike dist=2.39
+AI id=4 pouncer pounce -> recover dist=4.72
+[2m2026-08-15T20:20:05.775875Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0420.png
+[2m2026-08-15T20:20:05.866676Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0422.png
+[2m2026-08-15T20:20:05.925913Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0424.png
+AI id=2 swarm recover -> chase dist=0.57
+[2m2026-08-15T20:20:05.992471Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0426.png
+AI id=2 swarm chase -> windup dist=0.57
+[2m2026-08-15T20:20:06.065022Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0428.png
+AI id=3 bruiser strike -> recover dist=1.02
+[2m2026-08-15T20:20:06.152466Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0430.png
+[2m2026-08-15T20:20:06.261868Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0432.png
+AI id=1 swarm recover -> chase dist=0.95
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.71,-0.70) dist=0.57
+AI id=2 swarm windup -> strike dist=0.57
+AI id=1 swarm chase -> windup dist=0.95
+[2m2026-08-15T20:20:06.342572Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0434.png
+[2m2026-08-15T20:20:06.472977Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0436.png
+AI id=2 swarm strike -> recover dist=0.83
+[2m2026-08-15T20:20:06.611024Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0438.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.50,0.86) dist=0.95
+AI id=1 swarm windup -> strike dist=0.95
+[2m2026-08-15T20:20:06.713677Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0440.png
+[2m2026-08-15T20:20:06.820974Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0442.png
+AI id=1 swarm strike -> recover dist=0.55
+[2m2026-08-15T20:20:06.910114Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0444.png
+AI id=4 pouncer recover -> stalk dist=4.55
+[2m2026-08-15T20:20:07.010008Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0446.png
+AI id=4 pouncer stalk -> crouch dist=4.55
+[2m2026-08-15T20:20:07.103513Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0448.png
+[2m2026-08-15T20:20:07.175786Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0450.png
+AI id=3 bruiser recover -> advance dist=0.88
+AI id=3 bruiser advance -> windup dist=0.88
+AI id=2 swarm recover -> chase dist=1.34
+[2m2026-08-15T20:20:07.283563Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0452.png
+AI id=2 swarm chase -> windup dist=1.34
+[2m2026-08-15T20:20:07.342044Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0454.png
+[2m2026-08-15T20:20:07.416377Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0456.png
+[2m2026-08-15T20:20:07.516379Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0458.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.30,0.95) dist=4.59
+AI id=4 pouncer crouch -> pounce dist=4.59
+[2m2026-08-15T20:20:08.061121Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0460.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.97,-0.25) dist=1.34
+AI id=2 swarm windup -> strike dist=1.34
+AI id=1 swarm recover -> chase dist=0.67
+AI id=2 swarm strike -> recover dist=1.34
+AI id=4 pouncer pounce -> recover dist=1.73
+[2m2026-08-15T20:20:08.140347Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0462.png
+AI id=1 swarm chase -> windup dist=0.67
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.78,0.62) dist=0.88
+AI id=3 bruiser windup -> strike dist=0.88
+[2m2026-08-15T20:20:08.544730Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0464.png
+[2m2026-08-15T20:20:08.638350Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0466.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.24,-0.97) dist=0.67
+AI id=1 swarm windup -> strike dist=0.67
+AI id=3 bruiser strike -> recover dist=0.58
+[2m2026-08-15T20:20:08.701519Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0468.png
+[2m2026-08-15T20:20:08.788107Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0470.png
+AI id=1 swarm strike -> recover dist=0.41
+[2m2026-08-15T20:20:08.877571Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0472.png
+AI id=2 swarm recover -> chase dist=1.23
+[2m2026-08-15T20:20:08.971051Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0474.png
+AI id=2 swarm chase -> windup dist=1.23
+[2m2026-08-15T20:20:09.038669Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0476.png
+AIPROOF frame 480/1320 captured 211 (t=27.1s)
+[2m2026-08-15T20:20:09.113426Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0478.png
+[2m2026-08-15T20:20:09.174227Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0480.png
+[2m2026-08-15T20:20:09.318547Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0482.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.96,-0.29) dist=1.23
+AI id=2 swarm windup -> strike dist=1.23
+[2m2026-08-15T20:20:09.409787Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0484.png
+AI id=4 pouncer recover -> stalk dist=1.57
+AI id=4 pouncer stalk -> crouch dist=1.57
+[2m2026-08-15T20:20:09.502637Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0486.png
+AI id=2 swarm strike -> recover dist=0.75
+AI id=1 swarm recover -> chase dist=0.57
+[2m2026-08-15T20:20:09.575205Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0488.png
+AI id=1 swarm chase -> windup dist=0.57
+[2m2026-08-15T20:20:09.678970Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0490.png
+AI id=3 bruiser recover -> advance dist=0.63
+[2m2026-08-15T20:20:09.768032Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0492.png
+AI id=3 bruiser advance -> windup dist=0.63
+[2m2026-08-15T20:20:09.860563Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0494.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.71,0.71) dist=0.57
+AI id=1 swarm windup -> strike dist=0.57
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.23,0.97) dist=1.66
+AI id=4 pouncer crouch -> pounce dist=1.66
+[2m2026-08-15T20:20:09.991321Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0496.png
+[2m2026-08-15T20:20:10.074500Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0498.png
+AI id=1 swarm strike -> recover dist=0.24
+[2m2026-08-15T20:20:10.177139Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0500.png
+AI id=2 swarm recover -> chase dist=0.80
+AI id=2 swarm chase -> windup dist=0.80
+AI id=4 pouncer pounce -> recover dist=1.22
+[2m2026-08-15T20:20:10.340641Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0502.png
+[2m2026-08-15T20:20:10.379343Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0504.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.97,-0.23) dist=0.63
+AI id=3 bruiser windup -> strike dist=0.63
+[2m2026-08-15T20:20:10.533436Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0506.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.20,-0.98) dist=0.80
+AI id=2 swarm windup -> strike dist=0.80
+[2m2026-08-15T20:20:10.680743Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0508.png
+[2m2026-08-15T20:20:10.744311Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0510.png
+AI id=3 bruiser strike -> recover dist=0.45
+AI id=1 swarm recover -> chase dist=0.51
+AI id=2 swarm strike -> recover dist=0.83
+[2m2026-08-15T20:20:10.918861Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0512.png
+AI id=1 swarm chase -> windup dist=0.51
+[2m2026-08-15T20:20:10.969701Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0514.png
+[2m2026-08-15T20:20:11.076149Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0516.png
+[2m2026-08-15T20:20:11.183659Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0518.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.95,-0.30) dist=0.51
+AI id=1 swarm windup -> strike dist=0.51
+[2m2026-08-15T20:20:11.301752Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0520.png
+[2m2026-08-15T20:20:11.359591Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0522.png
+AI id=1 swarm strike -> recover dist=0.79
+[2m2026-08-15T20:20:11.486473Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0524.png
+AI id=4 pouncer recover -> stalk dist=1.31
+[2m2026-08-15T20:20:11.563717Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0526.png
+AI id=4 pouncer stalk -> crouch dist=1.31
+AI id=2 swarm recover -> chase dist=1.18
+AI id=2 swarm chase -> windup dist=1.18
+[2m2026-08-15T20:20:11.692870Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0528.png
+[2m2026-08-15T20:20:11.769253Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0530.png
+[2m2026-08-15T20:20:11.868531Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0532.png
+AI id=3 bruiser recover -> advance dist=0.60
+AI id=3 bruiser advance -> windup dist=0.60
+[2m2026-08-15T20:20:11.987823Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0534.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.99,-0.15) dist=1.18
+AI id=2 swarm windup -> strike dist=1.18
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.91,0.42) dist=1.40
+AI id=4 pouncer crouch -> pounce dist=1.40
+[2m2026-08-15T20:20:12.090890Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0536.png
+[2m2026-08-15T20:20:12.242047Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0538.png
+AI id=1 swarm recover -> chase dist=1.17
+AI id=1 swarm chase -> windup dist=1.17
+AI id=2 swarm strike -> recover dist=0.09
+[2m2026-08-15T20:20:12.309411Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0540.png
+[2m2026-08-15T20:20:12.385903Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0542.png
+AI id=4 pouncer pounce -> recover dist=1.87
+[2m2026-08-15T20:20:12.445390Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0544.png
+[2m2026-08-15T20:20:12.543806Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0546.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.60,-0.80) dist=1.17
+AI id=1 swarm windup -> strike dist=1.17
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.05,1.00) dist=0.60
+AI id=3 bruiser windup -> strike dist=0.60
+[2m2026-08-15T20:20:12.709127Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0548.png
+[2m2026-08-15T20:20:12.754351Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0550.png
+AI id=1 swarm strike -> recover dist=0.99
+[2m2026-08-15T20:20:12.827920Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0552.png
+AI id=3 bruiser strike -> recover dist=0.63
+[2m2026-08-15T20:20:12.895462Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0554.png
+AI id=2 swarm recover -> chase dist=0.46
+[2m2026-08-15T20:20:12.989957Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0556.png
+AI id=2 swarm chase -> windup dist=0.46
+[2m2026-08-15T20:20:13.066407Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0558.png
+[2m2026-08-15T20:20:13.184220Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0560.png
+[2m2026-08-15T20:20:13.287050Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0562.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.68,-0.74) dist=0.46
+AI id=2 swarm windup -> strike dist=0.46
+[2m2026-08-15T20:20:13.442944Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0564.png
+[2m2026-08-15T20:20:13.509602Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0566.png
+AI id=1 swarm recover -> chase dist=0.95
+AI id=1 swarm chase -> windup dist=0.95
+AI id=2 swarm strike -> recover dist=1.09
+[2m2026-08-15T20:20:13.690943Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0568.png
+AI id=4 pouncer recover -> stalk dist=2.04
+AI id=4 pouncer stalk -> crouch dist=2.04
+[2m2026-08-15T20:20:13.886601Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0570.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.87,-0.49) dist=0.95
+AI id=1 swarm windup -> strike dist=0.95
+[2m2026-08-15T20:20:14.551976Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0572.png
+AI id=3 bruiser recover -> advance dist=0.71
+AI id=3 bruiser advance -> windup dist=0.71
+[2m2026-08-15T20:20:14.644017Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0574.png
+AI id=1 swarm strike -> recover dist=1.23
+AI id=2 swarm recover -> chase dist=1.69
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.81,0.59) dist=2.10
+AI id=4 pouncer crouch -> pounce dist=2.10
+[2m2026-08-15T20:20:14.744479Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0576.png
+AI id=2 swarm chase -> windup dist=1.45
+[2m2026-08-15T20:20:14.808104Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0578.png
+[2m2026-08-15T20:20:14.939272Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0580.png
+[2m2026-08-15T20:20:15.027719Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0582.png
+AI id=4 pouncer pounce -> recover dist=0.70
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.22,0.98) dist=1.45
+AI id=2 swarm windup -> strike dist=1.45
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.82,0.57) dist=0.71
+AI id=3 bruiser windup -> strike dist=0.71
+[2m2026-08-15T20:20:15.124064Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0584.png
+[2m2026-08-15T20:20:15.315320Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0586.png
+AI id=2 swarm strike -> recover dist=0.78
+[2m2026-08-15T20:20:15.420362Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0588.png
+AI id=1 swarm recover -> chase dist=1.37
+AI id=3 bruiser strike -> recover dist=0.71
+AI id=1 swarm chase -> windup dist=1.37
+[2m2026-08-15T20:20:15.512403Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0590.png
+[2m2026-08-15T20:20:15.609605Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0592.png
+[2m2026-08-15T20:20:15.777624Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0594.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.87,-0.49) dist=1.37
+AI id=1 swarm windup -> strike dist=1.37
+[2m2026-08-15T20:20:15.907177Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0596.png
+AIPROOF frame 600/1320 captured 271 (t=33.6s)
+[2m2026-08-15T20:20:16.005930Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0598.png
+AI id=1 swarm strike -> recover dist=1.97
+AI id=2 swarm recover -> chase dist=0.80
+AI id=2 swarm chase -> windup dist=0.80
+[2m2026-08-15T20:20:16.138936Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0600.png
+[2m2026-08-15T20:20:16.258205Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0602.png
+AI id=4 pouncer recover -> stalk dist=1.01
+AI id=4 pouncer stalk -> crouch dist=1.01
+[2m2026-08-15T20:20:16.340362Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0604.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-1.00,0.10) dist=0.80
+AI id=2 swarm windup -> strike dist=0.80
+[2m2026-08-15T20:20:16.445129Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0606.png
+[2m2026-08-15T20:20:16.528711Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0608.png
+AI id=3 bruiser recover -> advance dist=0.88
+AI id=2 swarm strike -> recover dist=0.50
+AI id=3 bruiser advance -> windup dist=0.88
+[2m2026-08-15T20:20:16.634710Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0610.png
+[2m2026-08-15T20:20:16.719014Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0612.png
+AI id=1 swarm recover -> chase dist=1.56
+[2m2026-08-15T20:20:16.789947Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0614.png
+AI id=1 swarm chase -> windup dist=1.48
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.44,-0.90) dist=1.06
+AI id=4 pouncer crouch -> pounce dist=1.06
+[2m2026-08-15T20:20:16.879505Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0616.png
+[2m2026-08-15T20:20:16.919973Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0618.png
+[2m2026-08-15T20:20:16.993499Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0620.png
+[2m2026-08-15T20:20:17.063172Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0622.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.99,-0.17) dist=1.48
+AI id=1 swarm windup -> strike dist=1.48
+[2m2026-08-15T20:20:17.168633Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0624.png
+AI id=4 pouncer pounce -> recover dist=1.72
+[2m2026-08-15T20:20:17.258265Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0626.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.49,-0.87) dist=0.88
+AI id=3 bruiser windup -> strike dist=0.88
+AI id=1 swarm strike -> recover dist=0.66
+AI id=2 swarm recover -> chase dist=0.75
+[2m2026-08-15T20:20:17.347628Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0628.png
+AI id=2 swarm chase -> windup dist=0.75
+[2m2026-08-15T20:20:17.419196Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0630.png
+[2m2026-08-15T20:20:17.488148Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0632.png
+AI id=3 bruiser strike -> recover dist=0.70
+[2m2026-08-15T20:20:17.554208Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0634.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.86,0.51) dist=0.75
+AI id=2 swarm windup -> strike dist=0.75
+[2m2026-08-15T20:20:18.030572Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0636.png
+[2m2026-08-15T20:20:18.152679Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0638.png
+AI id=2 swarm strike -> recover dist=2.23
+[2m2026-08-15T20:20:18.337265Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0640.png
+AI id=1 swarm recover -> chase dist=0.63
+AI id=1 swarm chase -> windup dist=0.63
+[2m2026-08-15T20:20:18.487080Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0642.png
+[2m2026-08-15T20:20:18.569227Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0644.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.48,0.88) dist=0.63
+AI id=1 swarm windup -> strike dist=0.63
+AI id=4 pouncer recover -> stalk dist=2.04
+[2m2026-08-15T20:20:18.659903Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0646.png
+AI id=4 pouncer stalk -> crouch dist=2.04
+[2m2026-08-15T20:20:18.802961Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0648.png
+AI id=1 swarm strike -> recover dist=0.80
+[2m2026-08-15T20:20:19.158008Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0650.png
+AI id=2 swarm recover -> chase dist=1.88
+AI id=3 bruiser recover -> advance dist=0.75
+AI id=3 bruiser advance -> windup dist=0.75
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.49,0.87) dist=2.12
+AI id=4 pouncer crouch -> pounce dist=2.12
+[2m2026-08-15T20:20:19.279240Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0652.png
+[2m2026-08-15T20:20:19.399030Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0654.png
+AI id=2 swarm chase -> windup dist=1.39
+[2m2026-08-15T20:20:19.747435Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0656.png
+AI id=1 swarm recover -> chase dist=2.22
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.71,0.71) dist=1.39
+AI id=2 swarm windup -> strike dist=1.39
+AI id=4 pouncer pounce -> recover dist=1.40
+[2m2026-08-15T20:20:21.459138Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0658.png
+[2m2026-08-15T20:20:21.529561Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0660.png
+AI id=1 swarm chase -> windup dist=0.78
+AI id=2 swarm strike -> recover dist=1.12
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.78,-0.63) dist=0.75
+AI id=3 bruiser windup -> strike dist=0.75
+[2m2026-08-15T20:20:21.594409Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0662.png
+[2m2026-08-15T20:20:21.658287Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0664.png
+[2m2026-08-15T20:20:21.728928Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0666.png
+[2m2026-08-15T20:20:21.808758Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0668.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.26,-0.96) dist=0.78
+AI id=1 swarm windup -> strike dist=0.78
+AI id=3 bruiser strike -> recover dist=0.58
+[2m2026-08-15T20:20:21.868008Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0670.png
+[2m2026-08-15T20:20:21.999133Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0672.png
+AI id=1 swarm strike -> recover dist=0.60
+[2m2026-08-15T20:20:22.112839Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0674.png
+[2m2026-08-15T20:20:22.245749Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0676.png
+AI id=2 swarm recover -> chase dist=1.28
+AI id=2 swarm chase -> windup dist=1.28
+[2m2026-08-15T20:20:22.330523Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0678.png
+AI id=4 pouncer recover -> stalk dist=1.86
+AI id=4 pouncer stalk -> crouch dist=1.86
+[2m2026-08-15T20:20:22.418346Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0680.png
+[2m2026-08-15T20:20:22.509387Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0682.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-1.00,0.06) dist=1.28
+AI id=2 swarm windup -> strike dist=1.28
+[2m2026-08-15T20:20:22.581903Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0684.png
+[2m2026-08-15T20:20:22.691580Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0686.png
+[2m2026-08-15T20:20:22.792649Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0688.png
+AI id=1 swarm recover -> chase dist=0.91
+AI id=2 swarm strike -> recover dist=0.48
+AI id=1 swarm chase -> windup dist=0.91
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.38,-0.92) dist=1.97
+AI id=4 pouncer crouch -> pounce dist=1.97
+[2m2026-08-15T20:20:22.854892Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0690.png
+[2m2026-08-15T20:20:22.902793Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0692.png
+AI id=3 bruiser recover -> advance dist=0.65
+AI id=3 bruiser advance -> windup dist=0.65
+[2m2026-08-15T20:20:22.978595Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0694.png
+[2m2026-08-15T20:20:23.035411Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0696.png
+[2m2026-08-15T20:20:23.093716Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0698.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.99,0.14) dist=0.91
+AI id=1 swarm windup -> strike dist=0.91
+[2m2026-08-15T20:20:23.182206Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0700.png
+AI id=4 pouncer pounce -> recover dist=1.89
+[2m2026-08-15T20:20:23.270896Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0702.png
+[2m2026-08-15T20:20:23.356904Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0704.png
+AI id=1 swarm strike -> recover dist=0.65
+[2m2026-08-15T20:20:23.469404Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0706.png
+[2m2026-08-15T20:20:23.540949Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0708.png
+AI id=2 swarm recover -> chase dist=0.55
+AI id=2 swarm chase -> windup dist=0.55
+[2m2026-08-15T20:20:23.627170Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0710.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.03,1.00) dist=0.65
+AI id=3 bruiser windup -> strike dist=0.65
+[2m2026-08-15T20:20:23.730615Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0712.png
+[2m2026-08-15T20:20:23.819749Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0714.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.02,-1.00) dist=0.55
+AI id=2 swarm windup -> strike dist=0.55
+[2m2026-08-15T20:20:23.919253Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0716.png
+AI id=3 bruiser strike -> recover dist=0.86
+AIPROOF frame 720/1320 captured 331 (t=39.9s)
+[2m2026-08-15T20:20:24.009444Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0718.png
+[2m2026-08-15T20:20:24.087367Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0720.png
+AI id=1 swarm recover -> chase dist=1.03
+AI id=1 swarm chase -> windup dist=1.03
+AI id=2 swarm strike -> recover dist=0.69
+[2m2026-08-15T20:20:24.194540Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0722.png
+[2m2026-08-15T20:20:24.323672Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0724.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.98,-0.21) dist=1.03
+AI id=1 swarm windup -> strike dist=1.03
+[2m2026-08-15T20:20:24.429699Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0726.png
+AI id=4 pouncer recover -> stalk dist=1.97
+AI id=4 pouncer stalk -> crouch dist=1.97
+[2m2026-08-15T20:20:24.552818Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0728.png
+[2m2026-08-15T20:20:24.630600Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0730.png
+AI id=1 swarm strike -> recover dist=0.20
+[2m2026-08-15T20:20:24.752224Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0732.png
+[2m2026-08-15T20:20:24.914619Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0734.png
+AI id=2 swarm recover -> chase dist=0.94
+AI id=2 swarm chase -> windup dist=0.94
+[2m2026-08-15T20:20:24.970767Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0736.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.82,0.57) dist=2.02
+AI id=4 pouncer crouch -> pounce dist=2.02
+[2m2026-08-15T20:20:25.053754Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0738.png
+AI id=3 bruiser recover -> advance dist=1.08
+AI id=3 bruiser advance -> windup dist=1.08
+[2m2026-08-15T20:20:25.138313Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0740.png
+[2m2026-08-15T20:20:25.183960Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0742.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.02,1.00) dist=0.94
+AI id=2 swarm windup -> strike dist=0.94
+[2m2026-08-15T20:20:28.357029Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0744.png
+[2m2026-08-15T20:20:28.460321Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0746.png
+AI id=1 swarm recover -> chase dist=0.56
+AI id=2 swarm strike -> recover dist=0.85
+AI id=4 pouncer pounce -> recover dist=2.98
+AI id=1 swarm chase -> windup dist=0.56
+[2m2026-08-15T20:20:28.530478Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0748.png
+[2m2026-08-15T20:20:28.610668Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0750.png
+[2m2026-08-15T20:20:28.679475Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0752.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.97,-0.25) dist=1.08
+AI id=3 bruiser windup -> strike dist=1.08
+[2m2026-08-15T20:20:28.780039Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0754.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.87,-0.50) dist=0.56
+AI id=1 swarm windup -> strike dist=0.56
+[2m2026-08-15T20:20:28.874704Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0756.png
+[2m2026-08-15T20:20:28.956934Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0758.png
+AI id=3 bruiser strike -> recover dist=1.02
+[2m2026-08-15T20:20:29.038589Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0760.png
+AI id=1 swarm strike -> recover dist=0.64
+[2m2026-08-15T20:20:29.115161Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0762.png
+AI id=2 swarm recover -> chase dist=1.01
+[2m2026-08-15T20:20:29.227730Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0764.png
+AI id=2 swarm chase -> windup dist=1.01
+[2m2026-08-15T20:20:29.354384Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0766.png
+[2m2026-08-15T20:20:29.479425Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0768.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.51,-0.86) dist=1.01
+AI id=2 swarm windup -> strike dist=1.01
+[2m2026-08-15T20:20:29.621553Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0770.png
+AI id=4 pouncer recover -> stalk dist=3.15
+[2m2026-08-15T20:20:29.738344Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0772.png
+AI id=1 swarm recover -> chase dist=0.89
+AI id=2 swarm strike -> recover dist=0.35
+AI id=4 pouncer stalk -> crouch dist=3.15
+AI id=1 swarm chase -> windup dist=0.89
+[2m2026-08-15T20:20:29.853907Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0774.png
+[2m2026-08-15T20:20:29.955504Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0776.png
+[2m2026-08-15T20:20:30.060930Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0778.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.85,0.53) dist=0.89
+AI id=1 swarm windup -> strike dist=0.89
+AI id=3 bruiser recover -> advance dist=0.99
+[2m2026-08-15T20:20:30.187371Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0780.png
+AI id=3 bruiser advance -> windup dist=0.99
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.27,-0.96) dist=3.22
+AI id=4 pouncer crouch -> pounce dist=3.22
+[2m2026-08-15T20:20:30.442638Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0782.png
+AI id=1 swarm strike -> recover dist=0.45
+[2m2026-08-15T20:20:30.589972Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0784.png
+AI id=2 swarm recover -> chase dist=0.66
+AI id=2 swarm chase -> windup dist=0.66
+AI id=4 pouncer pounce -> recover dist=1.28
+[2m2026-08-15T20:20:30.715474Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0786.png
+[2m2026-08-15T20:20:30.848422Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0788.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.53,0.85) dist=0.99
+AI id=3 bruiser windup -> strike dist=0.99
+[2m2026-08-15T20:20:31.158680Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0790.png
+AI id=1 swarm recover -> chase dist=0.62
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-1.00,-0.03) dist=0.66
+AI id=2 swarm windup -> strike dist=0.66
+AI id=1 swarm chase -> windup dist=0.62
+AI id=3 bruiser strike -> recover dist=0.91
+[2m2026-08-15T20:20:31.315113Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0792.png
+[2m2026-08-15T20:20:31.505173Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0794.png
+AI id=2 swarm strike -> recover dist=0.50
+[2m2026-08-15T20:20:31.597485Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0796.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.31,-0.95) dist=0.62
+AI id=1 swarm windup -> strike dist=0.62
+[2m2026-08-15T20:20:31.690754Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0798.png
+[2m2026-08-15T20:20:31.801562Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0800.png
+AI id=1 swarm strike -> recover dist=0.67
+[2m2026-08-15T20:20:31.898556Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0802.png
+AI id=4 pouncer recover -> stalk dist=1.34
+AI id=4 pouncer stalk -> crouch dist=1.34
+[2m2026-08-15T20:20:32.008755Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0804.png
+[2m2026-08-15T20:20:32.082846Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0806.png
+AI id=2 swarm recover -> chase dist=0.73
+AI id=2 swarm chase -> windup dist=0.73
+[2m2026-08-15T20:20:32.173046Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0808.png
+[2m2026-08-15T20:20:32.256914Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0810.png
+[2m2026-08-15T20:20:32.352267Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0812.png
+AI id=3 bruiser recover -> advance dist=0.80
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.98,0.22) dist=0.73
+AI id=2 swarm windup -> strike dist=0.73
+AI id=3 bruiser advance -> windup dist=0.80
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.89,-0.46) dist=1.54
+AI id=4 pouncer crouch -> pounce dist=1.54
+[2m2026-08-15T20:20:32.458067Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0814.png
+[2m2026-08-15T20:20:32.544927Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0816.png
+AI id=1 swarm recover -> chase dist=0.96
+AI id=1 swarm chase -> windup dist=0.96
+[2m2026-08-15T20:20:32.608978Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0818.png
+AI id=2 swarm strike -> recover dist=0.30
+[2m2026-08-15T20:20:32.719672Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0820.png
+[2m2026-08-15T20:20:32.813877Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0822.png
+AI id=4 pouncer pounce -> recover dist=1.77
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.90,0.43) dist=0.96
+AI id=1 swarm windup -> strike dist=0.96
+[2m2026-08-15T20:20:32.919587Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0824.png
+[2m2026-08-15T20:20:33.027777Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0826.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.10,0.99) dist=0.80
+AI id=3 bruiser windup -> strike dist=0.80
+[2m2026-08-15T20:20:33.158412Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0828.png
+AI id=1 swarm strike -> recover dist=1.21
+[2m2026-08-15T20:20:33.328058Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0830.png
+[2m2026-08-15T20:20:33.425208Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0832.png
+AI id=2 swarm recover -> chase dist=0.30
+AI id=3 bruiser strike -> recover dist=0.86
+AI id=2 swarm chase -> windup dist=0.30
+[2m2026-08-15T20:20:33.557075Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0834.png
+[2m2026-08-15T20:20:33.662295Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0836.png
+AIPROOF frame 840/1320 captured 391 (t=46.6s)
+[2m2026-08-15T20:20:33.758942Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0838.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.29,-0.96) dist=0.30
+AI id=2 swarm windup -> strike dist=0.30
+[2m2026-08-15T20:20:34.275059Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0840.png
+AI id=1 swarm recover -> chase dist=1.32
+AI id=1 swarm chase -> windup dist=1.32
+[2m2026-08-15T20:20:35.393283Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0842.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.41,-0.91) dist=1.32
+AI id=1 swarm windup -> strike dist=1.32
+AI id=2 swarm strike -> recover dist=1.97
+AI id=4 pouncer recover -> stalk dist=1.89
+AI id=4 pouncer stalk -> crouch dist=1.89
+[2m2026-08-15T20:20:35.625446Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0844.png
+AI id=1 swarm strike -> recover dist=0.18
+AI id=3 bruiser recover -> advance dist=0.90
+[2m2026-08-15T20:20:36.336265Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0846.png
+AI id=3 bruiser advance -> windup dist=0.90
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.92,-0.40) dist=2.35
+AI id=4 pouncer crouch -> pounce dist=2.35
+[2m2026-08-15T20:20:36.595377Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0848.png
+AI id=2 swarm recover -> chase dist=2.06
+[2m2026-08-15T20:20:36.892101Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0850.png
+AI id=1 swarm recover -> chase dist=0.78
+AI id=2 swarm chase -> windup dist=0.97
+AI id=4 pouncer pounce -> recover dist=2.27
+AI id=1 swarm chase -> windup dist=0.78
+[2m2026-08-15T20:20:42.451624Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0852.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.67,0.74) dist=0.78
+AI id=1 swarm windup -> strike dist=0.78
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.10,1.00) dist=0.97
+AI id=2 swarm windup -> strike dist=0.97
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-1.00,0.06) dist=0.90
+AI id=3 bruiser windup -> strike dist=0.90
+[2m2026-08-15T20:20:42.518921Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0854.png
+AI id=1 swarm strike -> recover dist=1.22
+AI id=2 swarm strike -> recover dist=1.60
+[2m2026-08-15T20:20:42.700592Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0856.png
+AI id=3 bruiser strike -> recover dist=0.53
+[2m2026-08-15T20:20:42.768667Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0858.png
+[2m2026-08-15T20:20:43.236110Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0860.png
+[2m2026-08-15T20:20:43.502229Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0862.png
+AI id=4 pouncer recover -> stalk dist=2.31
+[2m2026-08-15T20:20:43.614093Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0864.png
+AI id=1 swarm recover -> chase dist=1.29
+AI id=2 swarm recover -> chase dist=1.56
+AI id=4 pouncer stalk -> crouch dist=2.31
+AI id=1 swarm chase -> windup dist=1.29
+[2m2026-08-15T20:20:43.809151Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0866.png
+AI id=2 swarm chase -> windup dist=1.32
+[2m2026-08-15T20:20:43.888135Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0868.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.64,-0.77) dist=1.29
+AI id=1 swarm windup -> strike dist=1.29
+AI id=3 bruiser recover -> advance dist=0.57
+AI id=3 bruiser advance -> windup dist=0.57
+[2m2026-08-15T20:20:44.210600Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0870.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.87,0.49) dist=1.32
+AI id=2 swarm windup -> strike dist=1.32
+[2m2026-08-15T20:20:44.305756Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0872.png
+AI id=1 swarm strike -> recover dist=1.48
+AI id=2 swarm strike -> recover dist=0.18
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.84,-0.54) dist=2.32
+AI id=4 pouncer crouch -> pounce dist=2.32
+[2m2026-08-15T20:20:44.376895Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0874.png
+[2m2026-08-15T20:20:44.879326Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0876.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(1.00,0.00) dist=0.57
+AI id=3 bruiser windup -> strike dist=0.57
+[2m2026-08-15T20:20:44.960402Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0878.png
+AI id=4 pouncer pounce -> recover dist=2.41
+[2m2026-08-15T20:20:44.992065Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0880.png
+AI id=3 bruiser strike -> recover dist=0.73
+[2m2026-08-15T20:20:45.092353Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0882.png
+AI id=1 swarm recover -> chase dist=1.44
+AI id=2 swarm recover -> chase dist=0.18
+[2m2026-08-15T20:20:45.165420Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0884.png
+AI id=1 swarm chase -> windup dist=1.44
+AI id=2 swarm chase -> windup dist=0.18
+[2m2026-08-15T20:20:45.225454Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0886.png
+[2m2026-08-15T20:20:45.286369Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0888.png
+[2m2026-08-15T20:20:45.396561Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0890.png
+[2m2026-08-15T20:20:46.067810Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0892.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.89,-0.46) dist=1.44
+AI id=1 swarm windup -> strike dist=1.44
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.63,-0.78) dist=0.18
+AI id=2 swarm windup -> strike dist=0.18
+[2m2026-08-15T20:20:46.233777Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0894.png
+AI id=1 swarm strike -> recover dist=0.06
+AI id=2 swarm strike -> recover dist=1.38
+[2m2026-08-15T20:20:46.312240Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0896.png
+[2m2026-08-15T20:20:46.678731Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0898.png
+[2m2026-08-15T20:20:46.914545Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0900.png
+AI id=3 bruiser recover -> advance dist=0.75
+AI id=4 pouncer recover -> stalk dist=2.46
+AI id=3 bruiser advance -> windup dist=0.75
+AI id=4 pouncer stalk -> crouch dist=2.46
+[2m2026-08-15T20:20:47.429167Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0902.png
+AI id=1 swarm recover -> chase dist=0.05
+AI id=2 swarm recover -> chase dist=1.41
+AI id=1 swarm chase -> windup dist=0.05
+AI id=2 swarm chase -> windup dist=1.41
+[2m2026-08-15T20:20:47.562241Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0904.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.26,0.97) dist=0.05
+AI id=1 swarm windup -> strike dist=0.05
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-1.00,0.06) dist=1.41
+AI id=2 swarm windup -> strike dist=1.41
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.81,-0.59) dist=2.83
+AI id=4 pouncer crouch -> pounce dist=2.83
+[2m2026-08-15T20:20:47.601572Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0906.png
+[2m2026-08-15T20:20:47.756761Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0908.png
+AI id=1 swarm strike -> recover dist=1.29
+AI id=2 swarm strike -> recover dist=0.77
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.97,0.26) dist=0.75
+AI id=3 bruiser windup -> strike dist=0.75
+[2m2026-08-15T20:20:47.812124Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0910.png
+[2m2026-08-15T20:20:47.980056Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0912.png
+AI id=4 pouncer pounce -> recover dist=0.29
+AI id=3 bruiser strike -> recover dist=1.30
+[2m2026-08-15T20:20:48.390081Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0914.png
+[2m2026-08-15T20:20:48.437247Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0916.png
+[2m2026-08-15T20:20:48.493738Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0918.png
+[2m2026-08-15T20:20:48.594749Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0920.png
+AI id=1 swarm recover -> chase dist=1.34
+AI id=2 swarm recover -> chase dist=0.76
+[2m2026-08-15T20:20:48.688312Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0922.png
+AI id=1 swarm chase -> windup dist=1.34
+AI id=2 swarm chase -> windup dist=0.76
+[2m2026-08-15T20:20:48.758566Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0924.png
+[2m2026-08-15T20:20:48.991492Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0926.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.41,-0.91) dist=1.34
+AI id=1 swarm windup -> strike dist=1.34
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.37,0.93) dist=0.76
+AI id=2 swarm windup -> strike dist=0.76
+[2m2026-08-15T20:20:49.305887Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0928.png
+[2m2026-08-15T20:20:49.836003Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0930.png
+AI id=1 swarm strike -> recover dist=0.22
+AI id=2 swarm strike -> recover dist=0.80
+AI id=3 bruiser recover -> advance dist=1.25
+AI id=4 pouncer recover -> stalk dist=1.78
+AI id=3 bruiser advance -> windup dist=1.25
+AI id=4 pouncer stalk -> crouch dist=1.78
+[2m2026-08-15T20:20:50.107051Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0932.png
+[2m2026-08-15T20:20:50.312389Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0934.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-1.00,-0.03) dist=2.25
+AI id=4 pouncer crouch -> pounce dist=2.25
+[2m2026-08-15T20:20:50.458578Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0936.png
+[2m2026-08-15T20:20:50.508782Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0938.png
+AI id=1 swarm recover -> chase dist=0.28
+AI id=2 swarm recover -> chase dist=0.86
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(1.00,-0.01) dist=1.25
+AI id=3 bruiser windup -> strike dist=1.25
+AI id=1 swarm chase -> windup dist=0.28
+AI id=2 swarm chase -> windup dist=0.86
+[2m2026-08-15T20:20:50.582685Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0940.png
+[2m2026-08-15T20:20:50.668042Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0942.png
+[2m2026-08-15T20:20:50.761360Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0944.png
+AI id=4 pouncer pounce -> recover dist=1.14
+[2m2026-08-15T20:20:50.822041Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0946.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.32,0.95) dist=0.28
+AI id=1 swarm windup -> strike dist=0.28
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.36,-0.93) dist=0.86
+AI id=2 swarm windup -> strike dist=0.86
+AI id=3 bruiser strike -> recover dist=1.26
+[2m2026-08-15T20:20:50.867718Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0948.png
+[2m2026-08-15T20:20:50.915686Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0950.png
+[2m2026-08-15T20:20:50.987262Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0952.png
+[2m2026-08-15T20:20:51.221634Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0954.png
+AI id=1 swarm strike -> recover dist=1.58
+AI id=2 swarm strike -> recover dist=0.86
+[2m2026-08-15T20:20:51.267257Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0956.png
+AIPROOF frame 960/1320 captured 451 (t=55.7s)
+[2m2026-08-15T20:20:51.418142Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0958.png
+[2m2026-08-15T20:20:51.449900Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0960.png
+[2m2026-08-15T20:20:51.563286Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0962.png
+[2m2026-08-15T20:20:51.598526Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0964.png
+[2m2026-08-15T20:20:51.623332Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0966.png
+[2m2026-08-15T20:20:51.649357Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0968.png
+[2m2026-08-15T20:20:51.740770Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0970.png
+[2m2026-08-15T20:20:51.765800Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0972.png
+[2m2026-08-15T20:20:51.922787Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0974.png
+[2m2026-08-15T20:20:52.006044Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0976.png
+AI id=1 swarm recover -> chase dist=1.58
+AI id=2 swarm recover -> chase dist=0.83
+AI id=3 bruiser recover -> advance dist=1.27
+AI id=4 pouncer recover -> stalk dist=1.05
+AI id=2 swarm chase -> windup dist=0.83
+AI id=3 bruiser advance -> windup dist=1.27
+AI id=4 pouncer stalk -> crouch dist=1.05
+[2m2026-08-15T20:20:52.054051Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0978.png
+AI id=1 swarm chase -> windup dist=1.40
+[2m2026-08-15T20:20:52.082829Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0980.png
+[2m2026-08-15T20:20:52.120376Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0982.png
+[2m2026-08-15T20:20:52.197216Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0984.png
+[2m2026-08-15T20:20:52.242830Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0986.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.36,0.93) dist=0.83
+AI id=2 swarm windup -> strike dist=0.83
+[2m2026-08-15T20:20:52.410929Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0988.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.89,0.45) dist=1.40
+AI id=1 swarm windup -> strike dist=1.40
+[2m2026-08-15T20:20:52.450520Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0990.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.71,-0.70) dist=1.18
+AI id=4 pouncer crouch -> pounce dist=1.18
+AI id=2 swarm strike -> recover dist=0.39
+[2m2026-08-15T20:20:52.569441Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0992.png
+[2m2026-08-15T20:20:52.621475Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0994.png
+[2m2026-08-15T20:20:52.658788Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0996.png
+AI id=1 swarm strike -> recover dist=0.36
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.43,0.90) dist=1.27
+AI id=3 bruiser windup -> strike dist=1.27
+[2m2026-08-15T20:20:52.713294Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f0998.png
+[2m2026-08-15T20:20:52.841899Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1000.png
+[2m2026-08-15T20:20:53.389008Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1002.png
+AI id=4 pouncer pounce -> recover dist=2.15
+AI id=3 bruiser strike -> recover dist=1.40
+[2m2026-08-15T20:20:53.534100Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1004.png
+AI id=2 swarm recover -> chase dist=0.52
+AI id=2 swarm chase -> windup dist=0.52
+[2m2026-08-15T20:20:53.573634Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1006.png
+[2m2026-08-15T20:20:53.617883Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1008.png
+[2m2026-08-15T20:20:53.883198Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1010.png
+AI id=1 swarm recover -> chase dist=0.34
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.04,-1.00) dist=0.52
+AI id=2 swarm windup -> strike dist=0.52
+[2m2026-08-15T20:20:53.930684Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1012.png
+AI id=1 swarm chase -> windup dist=0.34
+[2m2026-08-15T20:20:53.977169Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1014.png
+[2m2026-08-15T20:20:54.036741Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1016.png
+[2m2026-08-15T20:20:54.089047Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1018.png
+[2m2026-08-15T20:20:54.145955Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1020.png
+AI id=2 swarm strike -> recover dist=1.02
+[2m2026-08-15T20:20:54.252328Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1022.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.01,1.00) dist=0.34
+AI id=1 swarm windup -> strike dist=0.34
+[2m2026-08-15T20:20:54.296064Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1024.png
+[2m2026-08-15T20:20:54.340502Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1026.png
+[2m2026-08-15T20:20:54.381582Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1028.png
+[2m2026-08-15T20:20:54.423950Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1030.png
+AI id=1 swarm strike -> recover dist=0.88
+[2m2026-08-15T20:20:54.461888Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1032.png
+AI id=4 pouncer recover -> stalk dist=3.97
+AI id=4 pouncer stalk -> crouch dist=3.97
+[2m2026-08-15T20:20:54.502457Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1034.png
+[2m2026-08-15T20:20:54.555085Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1036.png
+[2m2026-08-15T20:20:54.595075Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1038.png
+AI id=3 bruiser recover -> advance dist=1.54
+AI id=3 bruiser advance -> windup dist=1.54
+[2m2026-08-15T20:20:54.635793Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1040.png
+[2m2026-08-15T20:20:54.683099Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1042.png
+[2m2026-08-15T20:20:54.741206Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1044.png
+[2m2026-08-15T20:20:54.806860Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1046.png
+[2m2026-08-15T20:20:55.057902Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1048.png
+AI id=2 swarm recover -> chase dist=1.06
+AI id=2 swarm chase -> windup dist=1.06
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.34,0.94) dist=4.01
+AI id=4 pouncer crouch -> pounce dist=4.01
+[2m2026-08-15T20:20:55.106495Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1050.png
+[2m2026-08-15T20:20:55.161579Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1052.png
+AI id=1 swarm recover -> chase dist=0.93
+AI id=1 swarm chase -> windup dist=0.93
+[2m2026-08-15T20:20:55.212436Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1054.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.99,0.12) dist=1.06
+AI id=2 swarm windup -> strike dist=1.06
+[2m2026-08-15T20:20:55.271074Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1056.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.66,-0.75) dist=1.54
+AI id=3 bruiser windup -> strike dist=1.54
+[2m2026-08-15T20:20:55.323280Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1058.png
+AI id=4 pouncer pounce -> recover dist=2.12
+[2m2026-08-15T20:20:55.387454Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1060.png
+[2m2026-08-15T20:20:55.489445Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1062.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.06,-1.00) dist=0.93
+AI id=1 swarm windup -> strike dist=0.93
+AI id=2 swarm strike -> recover dist=0.62
+[2m2026-08-15T20:20:55.670451Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1064.png
+AI id=3 bruiser strike -> recover dist=1.01
+[2m2026-08-15T20:20:55.733505Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1066.png
+AI id=1 swarm strike -> recover dist=0.52
+[2m2026-08-15T20:20:55.841758Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1068.png
+[2m2026-08-15T20:20:55.889086Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1070.png
+[2m2026-08-15T20:20:55.942765Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1072.png
+[2m2026-08-15T20:20:56.001363Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1074.png
+[2m2026-08-15T20:20:56.050454Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1076.png
+AIPROOF frame 1080/1320 captured 511 (t=60.1s)
+[2m2026-08-15T20:20:56.104896Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1078.png
+[2m2026-08-15T20:20:56.169010Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1080.png
+AI id=2 swarm recover -> chase dist=0.81
+[2m2026-08-15T20:20:56.233566Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1082.png
+AI id=2 swarm chase -> windup dist=0.81
+[2m2026-08-15T20:20:56.292658Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1084.png
+[2m2026-08-15T20:20:56.352039Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1086.png
+[2m2026-08-15T20:20:56.427013Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1088.png
+[2m2026-08-15T20:20:56.496045Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1090.png
+AI id=1 swarm recover -> chase dist=0.90
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.66,0.75) dist=0.81
+AI id=2 swarm windup -> strike dist=0.81
+AI id=1 swarm chase -> windup dist=0.90
+AI id=4 pouncer recover -> stalk dist=1.99
+[2m2026-08-15T20:20:56.562561Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1092.png
+AI id=4 pouncer stalk -> crouch dist=1.99
+[2m2026-08-15T20:20:56.623089Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1094.png
+AI id=3 bruiser recover -> advance dist=0.86
+[2m2026-08-15T20:20:56.713351Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1096.png
+AI id=2 swarm strike -> recover dist=0.11
+AI id=3 bruiser advance -> windup dist=0.86
+[2m2026-08-15T20:20:56.793953Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1098.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.71,0.71) dist=0.90
+AI id=1 swarm windup -> strike dist=0.90
+[2m2026-08-15T20:20:56.867646Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1100.png
+[2m2026-08-15T20:20:56.939080Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1102.png
+[2m2026-08-15T20:20:57.041191Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1104.png
+AI id=1 swarm strike -> recover dist=0.90
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.38,0.93) dist=2.07
+AI id=4 pouncer crouch -> pounce dist=2.07
+[2m2026-08-15T20:20:57.096395Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1106.png
+[2m2026-08-15T20:20:57.156704Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1108.png
+[2m2026-08-15T20:20:57.231637Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1110.png
+[2m2026-08-15T20:20:57.295290Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1112.png
+[2m2026-08-15T20:20:57.370633Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1114.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(1.00,0.06) dist=0.86
+AI id=3 bruiser windup -> strike dist=0.86
+AI id=4 pouncer pounce -> recover dist=1.33
+[2m2026-08-15T20:20:57.431275Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1116.png
+AI id=2 swarm recover -> chase dist=0.36
+AI id=2 swarm chase -> windup dist=0.36
+[2m2026-08-15T20:20:57.533104Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1118.png
+[2m2026-08-15T20:20:57.623024Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1120.png
+AI id=3 bruiser strike -> recover dist=0.99
+[2m2026-08-15T20:20:57.709129Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1122.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.66,-0.75) dist=0.36
+AI id=2 swarm windup -> strike dist=0.36
+[2m2026-08-15T20:20:57.823292Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1124.png
+AI id=1 swarm recover -> chase dist=1.27
+AI id=1 swarm chase -> windup dist=1.27
+[2m2026-08-15T20:20:57.925610Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1126.png
+AI id=2 swarm strike -> recover dist=0.52
+[2m2026-08-15T20:20:58.010752Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1128.png
+[2m2026-08-15T20:20:58.140513Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1130.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.65,0.76) dist=1.27
+AI id=1 swarm windup -> strike dist=1.27
+[2m2026-08-15T20:20:58.244162Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1132.png
+[2m2026-08-15T20:20:58.407686Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1134.png
+AI id=1 swarm strike -> recover dist=0.73
+[2m2026-08-15T20:20:58.496564Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1136.png
+[2m2026-08-15T20:20:58.593200Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1138.png
+AI id=4 pouncer recover -> stalk dist=1.42
+[2m2026-08-15T20:20:58.680915Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1140.png
+AI id=2 swarm recover -> chase dist=0.77
+AI id=4 pouncer stalk -> crouch dist=1.42
+AI id=2 swarm chase -> windup dist=0.77
+[2m2026-08-15T20:20:58.826511Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1142.png
+AI id=3 bruiser recover -> advance dist=1.08
+AI id=3 bruiser advance -> windup dist=1.08
+[2m2026-08-15T20:20:58.923429Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1144.png
+[2m2026-08-15T20:20:59.023632Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1146.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.07,1.00) dist=0.77
+AI id=2 swarm windup -> strike dist=0.77
+[2m2026-08-15T20:20:59.165254Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1148.png
+AI id=1 swarm recover -> chase dist=0.45
+AI id=1 swarm chase -> windup dist=0.45
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-1.00,0.09) dist=1.49
+AI id=4 pouncer crouch -> pounce dist=1.49
+[2m2026-08-15T20:20:59.270351Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1150.png
+AI id=2 swarm strike -> recover dist=0.64
+[2m2026-08-15T20:20:59.348833Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1152.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.95,0.30) dist=0.45
+AI id=1 swarm windup -> strike dist=0.45
+[2m2026-08-15T20:20:59.452285Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1154.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.29,-0.96) dist=1.08
+AI id=3 bruiser windup -> strike dist=1.08
+AI id=4 pouncer pounce -> recover dist=1.25
+[2m2026-08-15T20:20:59.535936Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1156.png
+[2m2026-08-15T20:20:59.628432Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1158.png
+AI id=1 swarm strike -> recover dist=0.56
+[2m2026-08-15T20:20:59.719952Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1160.png
+[2m2026-08-15T20:20:59.805547Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1162.png
+AI id=3 bruiser strike -> recover dist=0.64
+[2m2026-08-15T20:20:59.915171Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1164.png
+AI id=2 swarm recover -> chase dist=0.58
+[2m2026-08-15T20:21:00.007001Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1166.png
+AI id=2 swarm chase -> windup dist=0.58
+[2m2026-08-15T20:21:00.104981Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1168.png
+[2m2026-08-15T20:21:00.202004Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1170.png
+[2m2026-08-15T20:21:00.283201Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1172.png
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.94,-0.34) dist=0.58
+AI id=2 swarm windup -> strike dist=0.58
+[2m2026-08-15T20:21:00.364793Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1174.png
+AI id=1 swarm recover -> chase dist=0.78
+AI id=1 swarm chase -> windup dist=0.78
+[2m2026-08-15T20:21:00.476182Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1176.png
+[2m2026-08-15T20:21:00.581731Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1178.png
+AI id=2 swarm strike -> recover dist=0.98
+[2m2026-08-15T20:21:00.663538Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1180.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.64,0.77) dist=0.78
+AI id=1 swarm windup -> strike dist=0.78
+[2m2026-08-15T20:21:00.717631Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1182.png
+AI id=4 pouncer recover -> stalk dist=1.30
+AI id=4 pouncer stalk -> crouch dist=1.30
+[2m2026-08-15T20:21:00.854858Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1184.png
+[2m2026-08-15T20:21:00.916701Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1186.png
+AI id=1 swarm strike -> recover dist=0.74
+AI id=3 bruiser recover -> advance dist=0.84
+AI id=3 bruiser advance -> windup dist=0.84
+[2m2026-08-15T20:21:00.983622Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1188.png
+[2m2026-08-15T20:21:01.077458Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1190.png
+[2m2026-08-15T20:21:01.148669Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1192.png
+[2m2026-08-15T20:21:01.220164Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1194.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(0.35,0.94) dist=1.39
+AI id=4 pouncer crouch -> pounce dist=1.39
+[2m2026-08-15T20:21:01.386625Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1196.png
+AI id=2 swarm recover -> chase dist=1.24
+AIPROOF frame 1200/1320 captured 571 (t=65.4s)
+AI id=2 swarm chase -> windup dist=1.24
+[2m2026-08-15T20:21:01.953094Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1198.png
+[2m2026-08-15T20:21:02.013070Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1200.png
+AI id=1 swarm recover -> chase dist=0.91
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.86,-0.52) dist=1.24
+AI id=2 swarm windup -> strike dist=1.24
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(0.84,0.54) dist=0.84
+AI id=3 bruiser windup -> strike dist=0.84
+AI id=4 pouncer pounce -> recover dist=2.62
+AI id=1 swarm chase -> windup dist=0.91
+[2m2026-08-15T20:21:02.077716Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1202.png
+[2m2026-08-15T20:21:02.130485Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1204.png
+[2m2026-08-15T20:21:02.210065Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1206.png
+[2m2026-08-15T20:21:02.278477Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1208.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.05,-1.00) dist=0.91
+AI id=1 swarm windup -> strike dist=0.91
+AI id=2 swarm strike -> recover dist=0.90
+AI id=3 bruiser strike -> recover dist=0.66
+[2m2026-08-15T20:21:02.335096Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1210.png
+[2m2026-08-15T20:21:02.393635Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1212.png
+[2m2026-08-15T20:21:02.462580Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1214.png
+[2m2026-08-15T20:21:02.530497Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1216.png
+AI id=1 swarm strike -> recover dist=0.74
+[2m2026-08-15T20:21:02.660271Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1218.png
+[2m2026-08-15T20:21:02.742801Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1220.png
+[2m2026-08-15T20:21:02.813241Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1222.png
+[2m2026-08-15T20:21:02.907256Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1224.png
+[2m2026-08-15T20:21:02.977294Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1226.png
+AI id=2 swarm recover -> chase dist=0.92
+AI id=2 swarm chase -> windup dist=0.92
+[2m2026-08-15T20:21:03.053715Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1228.png
+[2m2026-08-15T20:21:03.136111Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1230.png
+[2m2026-08-15T20:21:03.244954Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1232.png
+AI id=1 swarm recover -> chase dist=0.74
+AI id=4 pouncer recover -> stalk dist=2.74
+AI id=1 swarm chase -> windup dist=0.74
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.52,0.85) dist=0.92
+AI id=2 swarm windup -> strike dist=0.92
+AI id=4 pouncer stalk -> crouch dist=2.74
+[2m2026-08-15T20:21:03.357159Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1234.png
+[2m2026-08-15T20:21:03.462202Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1236.png
+AI id=3 bruiser recover -> advance dist=0.81
+AI id=3 bruiser advance -> windup dist=0.81
+[2m2026-08-15T20:21:03.565007Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1238.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(1.00,-0.02) dist=0.74
+AI id=1 swarm windup -> strike dist=0.74
+AI id=2 swarm strike -> recover dist=0.66
+[2m2026-08-15T20:21:03.644628Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1240.png
+[2m2026-08-15T20:21:03.730511Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1242.png
+[2m2026-08-15T20:21:03.777180Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1244.png
+AI id=1 swarm strike -> recover dist=0.71
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-0.67,-0.74) dist=2.79
+AI id=4 pouncer crouch -> pounce dist=2.79
+[2m2026-08-15T20:21:03.854971Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1246.png
+[2m2026-08-15T20:21:03.955874Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1248.png
+[2m2026-08-15T20:21:04.080035Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1250.png
+[2m2026-08-15T20:21:04.185872Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1252.png
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-1.00,0.08) dist=0.81
+AI id=3 bruiser windup -> strike dist=0.81
+AI id=4 pouncer pounce -> recover dist=2.26
+[2m2026-08-15T20:21:04.304354Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1254.png
+AI id=2 swarm recover -> chase dist=0.66
+AI id=2 swarm chase -> windup dist=0.66
+[2m2026-08-15T20:21:04.386316Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1256.png
+[2m2026-08-15T20:21:04.458692Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1258.png
+AI id=1 swarm recover -> chase dist=0.87
+AI id=3 bruiser strike -> recover dist=0.53
+[2m2026-08-15T20:21:04.639358Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1260.png
+AI id=1 swarm chase -> windup dist=0.87
+AI id=2 swarm TELEGRAPH->COMMIT locked=(-0.42,0.91) dist=0.66
+AI id=2 swarm windup -> strike dist=0.66
+[2m2026-08-15T20:21:05.193541Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1262.png
+AI id=2 swarm strike -> recover dist=0.74
+[2m2026-08-15T20:21:05.338156Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1264.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(-0.36,-0.93) dist=0.87
+AI id=1 swarm windup -> strike dist=0.87
+[2m2026-08-15T20:21:05.428472Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1266.png
+[2m2026-08-15T20:21:05.487362Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1268.png
+AI id=1 swarm strike -> recover dist=1.11
+[2m2026-08-15T20:21:05.623132Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1270.png
+AI id=4 pouncer recover -> stalk dist=2.03
+AI id=4 pouncer stalk -> crouch dist=2.03
+[2m2026-08-15T20:21:05.697427Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1272.png
+AI id=2 swarm recover -> chase dist=1.80
+[2m2026-08-15T20:21:05.760941Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1274.png
+[2m2026-08-15T20:21:05.840190Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1276.png
+AI id=3 bruiser recover -> advance dist=0.44
+AI id=3 bruiser advance -> windup dist=0.44
+[2m2026-08-15T20:21:05.929702Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1278.png
+AI id=2 swarm chase -> windup dist=1.34
+[2m2026-08-15T20:21:06.012850Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1280.png
+[2m2026-08-15T20:21:06.081103Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1282.png
+[2m2026-08-15T20:21:06.165852Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1284.png
+AI id=4 pouncer TELEGRAPH->COMMIT locked=(-1.00,0.05) dist=2.09
+AI id=4 pouncer crouch -> pounce dist=2.09
+AI id=2 swarm TELEGRAPH->COMMIT locked=(0.99,-0.17) dist=1.34
+AI id=2 swarm windup -> strike dist=1.34
+[2m2026-08-15T20:21:06.243096Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1286.png
+AI id=1 swarm recover -> chase dist=1.01
+AI id=1 swarm chase -> windup dist=1.01
+[2m2026-08-15T20:21:06.328221Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1288.png
+[2m2026-08-15T20:21:06.391347Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1290.png
+AI id=2 swarm strike -> recover dist=0.71
+[2m2026-08-15T20:21:06.468651Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1292.png
+[2m2026-08-15T20:21:06.534317Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1294.png
+AI id=1 swarm TELEGRAPH->COMMIT locked=(0.62,-0.78) dist=1.01
+AI id=1 swarm windup -> strike dist=1.01
+AI id=3 bruiser TELEGRAPH->COMMIT locked=(-0.79,-0.61) dist=0.44
+AI id=3 bruiser windup -> strike dist=0.44
+AI id=4 pouncer pounce -> recover dist=1.71
+[2m2026-08-15T20:21:06.592381Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1296.png
+[2m2026-08-15T20:21:06.645843Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1298.png
+[2m2026-08-15T20:21:06.702572Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1300.png
+[2m2026-08-15T20:21:06.742652Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1302.png
+AI id=1 swarm strike -> recover dist=0.40
+[2m2026-08-15T20:21:06.803592Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1304.png
+AI id=3 bruiser strike -> recover dist=1.08
+[2m2026-08-15T20:21:06.859429Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1306.png
+[2m2026-08-15T20:21:06.921318Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1308.png
+[2m2026-08-15T20:21:06.972084Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1310.png
+[2m2026-08-15T20:21:07.019952Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1312.png
+[2m2026-08-15T20:21:07.073288Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1314.png
+[2m2026-08-15T20:21:07.123720Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1316.png
+AI id=2 swarm recover -> chase dist=0.74
+AIPROOF frame 1320/1320 captured 631 (t=70.7s)
+AI id=2 swarm chase -> windup dist=0.74
+AIPROOF DONE frames=1321 captured=631 — assembling clip next
+[2m2026-08-15T20:21:07.173976Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/assets/ai/_frames/f1318.png
