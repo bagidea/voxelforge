@@ -35,6 +35,7 @@ usage:
   python scripts/art_order_grade.py                       # gate3 frames + map + source
   python scripts/art_order_grade.py --frame play.png --before play-nofog.png
   python scripts/art_order_grade.py --idle boot.png       # A6 is idle-pose only
+  python scripts/art_order_grade.py --frame hero.png --frame-class portrait   # A4 skipped
   python scripts/art_order_grade.py --calibrate           # controls only, no grading
 
 exit: 0 all measured gates PASS · 1 some gate FAILs · 2 bad usage
@@ -59,20 +60,26 @@ ROOT = Path(__file__).resolve().parents[1]
 # Where it came from is in the comment: an approved frame, a measured defect, or
 # a synthetic control. No threshold in this file was chosen by feel.
 T = {
+    # KEY NAMES CARRY THEIR UNITS — read the suffix before the number:
+    #   _L      luminance, 0..100   _pct   percent, 0..100
+    #   _deg    degrees             _ratio dimensionless 0..1 (aerial_ratio)
+    #   _blue   0..255 channel      (bare) a count (map_types) or a 0..1 ratio
+    #                                  whose comment names the scale (sky_mono,
+    #                                  ray_lift, ray_elong, third_share, grass_sat)
     # A1 — "gradient ≥ 25 L" is the order's own line. The control proves the
     # metric reports a 30 L ramp as 30 L (+-2), so 25 means 25.
     "sky_grad_L": 25.0,
-    "sky_mono": 0.85,      # control: true ramp 0.99+, gate3 plates 0.56-0.65
+    "sky_mono": 0.85,      # ratio |ΣdL|/Σ|dL|; control: true ramp 0.99+, gate3 plates 0.56-0.65
     "sky_seam_L": 12.0,    # control: soft haze blend 4.9, hard seam 40+
-    "sky_min_frac": 0.20,  # % of frame that must be sky before A1 is gradeable
+    "sky_min_pct": 0.20,   # % of frame that must be sky before A1 is gradeable — 0.20 is 0.2%, NOT 20%
     # A2 — differential, because no single-frame shaft detector separates the
     # approved ref from the shaft-free gate3 frames (probe result, see docstring
     # of godray_ab). All four sub-gates must hold on the same A/B pair.
     "ray_amp_L": 6.0,      # p99.5 of dL; control: shafts 18 L pass, 2 L fail
     "ray_lift": 0.35,      # median/p99 of dL; a global exposure bump sits at ~1.0
     "ray_elong": 3.0,      # major/minor axis of the biggest dL island; a glow ~1
-    "ray_cov_lo": 0.5,     # % of frame; below this nobody sees it
-    "ray_cov_hi": 25.0,    # above this it is a fog wall, not shafts (rubric:156)
+    "ray_cov_lo_pct": 0.5,     # % of frame; below this nobody sees it
+    "ray_cov_hi_pct": 25.0,    # % of frame; above this it is a fog wall, not shafts (rubric:156)
     # A3 — measured defect is 4 types / 93.9% top-2 / 56.0% bare columns
     "map_types": 8,
     "map_top2_pct": 75.0,
@@ -81,19 +88,27 @@ T = {
     # A4 — golden ref (approved) measures 0.49; gate3 measures 0.86-2.12
     "aerial_ratio": 0.80,
     # A5 — walk (camera inside a block) measures 0.10; every other frame 0.51-0.94
-    "third_share": 0.35,
+    "third_share": 0.35,   # ratio 0..1 (worst third / frame mean), not a percent
     # A6 — order's own line; an empty box measures 16.0
     "silhouette": 40.0,
-    "hero_hue_sep": 25.0,
+    "hero_hue_sep_deg": 25.0,
     # A7 — approved accent green in wide-hero-final is B=94 sat 0.25;
     # shipped gate3 grass is B=1-4 sat 0.97-0.99
-    "grass_blue": 40.0,
-    "grass_sat": 0.75,
+    "grass_blue": 40.0,    # blue channel, 0..255
+    "grass_sat": 0.75,     # ratio 0..1
     # A8 — order's own line; approved frames measure 80.4% / 91.9%
-    "island_share": 40.0,
+    "island_share_pct": 40.0,
 }
 
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
+
+# A4's frame class. Aerial perspective ("far reads softer than near") is a
+# property of an ENVIRONMENT shot with real depth. On a HERO PORTRAIT the
+# subject fills the frame and far/near is undefined, so the metric would
+# falsely FAIL a sharp portrait. The class is caller-declared — the grader
+# never guesses it from magic numbers (that guess is what let a portrait leak
+# into the environment gate, and the temptation to lower the 0.80 cut).
+FRAME_CLASSES = ("environment", "portrait")
 
 
 class Verdict:
@@ -169,7 +184,14 @@ def sky_region(f):
     top = np.zeros_like(L, dtype=bool)
     top[: int(H * 0.70)] = True
     core = top & (hue >= 185) & (hue <= 255) & (sat >= 0.20) & (lum01 > 0.25)
-    if core.mean() * 100 < T["sky_min_frac"]:
+    # A blown-out sky clips to white: saturation collapses below the blue core's
+    # 0.20 gate, so a blue-only mask reads it as "no sky" and A1 silently SKIPs
+    # the most common sky defect. Detect it separately — bright, achromatic,
+    # texture-free (atmosphere has no micro detail; a specular voxel highlight
+    # measures detail 70+, well above the 1.2 gate).
+    blown = top & (lum01 > 0.90) & (sat < 0.10) & (detail < 1.2)
+    core = core | blown
+    if core.mean() * 100 < T["sky_min_pct"]:
         return None
     m = core.copy()
     quiet = detail < 1.2
@@ -267,9 +289,27 @@ def aerial(f):
     W = L.shape[1]
     wings = np.r_[hp[:, : int(W * .2)].ravel(), hp[:, int(W * .8):].ravel()].mean()
     centre = hp[:, int(W * .4): int(W * .6)].mean()
-    return dict(contrast=float(hp[far][fm].mean() / max(hp[near][nm].mean(), 1e-6)),
+    near_hp = hp[near][nm].mean()
+    if near_hp < 0.5:
+        return None   # no near-field detail: far/near is 0/0, undefined — not a PASS
+    return dict(contrast=float(hp[far][fm].mean() / near_hp),
                 sat=float(sat[far][fm].mean() / max(sat[near][nm].mean(), 1e-6)),
                 wings=float(centre / max(wings, 1e-6)))
+
+
+def a4_verdict(a, frame_class):
+    """The A4 cut, shared by grade() and calibrate().
+
+    `a` is aerial(f) — the measured far/near contrast, or None if unmeasurable.
+    `frame_class` is caller-declared: a portrait skips the gate by design, an
+    environment is measured against the one threshold. Nothing in here guesses
+    the class from magic numbers.
+    """
+    if frame_class == "portrait":
+        return SKIP
+    if a is None:
+        return SKIP   # unmeasurable is not a pass
+    return PASS if a["contrast"] < T["aerial_ratio"] else FAIL
 
 
 def worst_third(f):
@@ -444,6 +484,45 @@ def synth_sky(amp_L, seam_L=0.0, blend=0, size=(360, 640), noise=0.0):
     return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
 
 
+def synth_blown_sky(size=(360, 640)):
+    """A sky clipped to white (99.5% L) over a textured ground.
+
+    This is the overexposure defect: the sky keeps no blue and no gradient, the
+    exact frame a blown highlight produces — and the exact frame the old blue-only
+    sky detector read as "no sky", turning a FAIL into an INCOMPLETE.
+    """
+    H, W = size
+    img = np.zeros((H, W, 3), dtype=np.float32)
+    sky_h = int(H * 0.55)
+    img[:sky_h] = [253.7, 253.7, 253.7]                # 99.5% of 255
+    img[sky_h:] = GROUND_TINT * (55.0 / 100.0 * 255.0)  # ground at 55 L
+    rng = np.random.default_rng(7)
+    img[sky_h:] += rng.normal(0, 9.0, img[sky_h:].shape)
+    return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+
+
+def synth_portrait(size=(360, 640)):
+    """A hero portrait: a sharp high-contrast subject fills the far band and a
+    soft torso the near band, on a warm (non-sky) ground.
+
+    This is the exact shape that falsely FAILs aerial perspective when read as
+    an environment: the head's micro-contrast dominates the far band, so
+    far/near >> 0.80 even though there is no landscape in the frame. The frame
+    class, not a looser threshold, is what routes it to SKIP.
+    """
+    H, W = size
+    rng = np.random.default_rng(11)
+    img = np.zeros((H, W, 3), dtype=np.float32)
+    img[:] = [190.0, 165.0, 140.0]                              # warm interior — R>B, no blue sky
+    far = slice(0, int(H * 0.33))
+    near = slice(int(H * 0.66), H)
+    # luminance-only noise (shared across RGB) keeps the warm tint, so the sky
+    # detector never fires; the head is sharp, the torso soft.
+    img[far] += rng.normal(0, 55, img[far].shape[:2])[..., None]
+    img[near] += rng.normal(0, 12, img[near].shape[:2])[..., None]
+    return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+
+
 def synth_shafts(base_im, amp, n=3, ang=28.0, width=42):
     a = np.asarray(base_im.convert("RGB"), dtype=np.float32)
     H, W = a.shape[:2]
@@ -546,6 +625,35 @@ def calibrate(verbose=True):
         c.check("A1", "approved interior ref has no sky", SKIP if sky_metrics(load(ref)) is None else PASS,
                 SKIP, "sky mask empty")
 
+    # --- negative controls: defects the grader must reject, not shrug at -------
+    # A sky blown out to white must be DETECTED as sky and FAIL A1 — the old
+    # blue-only detector read it as "no sky" and returned INCOMPLETE instead.
+    bs = sky_metrics(from_image(synth_blown_sky()))
+    got = FAIL if (bs and bs["grad"] < T["sky_grad_L"]) else (SKIP if bs is None else PASS)
+    c.check("A1", "blown-out sky (clipped white, 99.5% L)", got, FAIL,
+            f"grad {bs['grad']:.1f} mono {bs['mono']:.2f} seam {bs['seam']:.1f} L" if bs else "no sky detected")
+    # A flat frame with no value span must not PASS aerial perspective (0/0) and
+    # must FAIL A5 (every third is a dead third).
+    flat = from_image(Image.new("RGB", (640, 360), (128, 128, 128)))
+    fa = aerial(flat)
+    c.check("A4", "flat frame has no aerial to grade", SKIP if fa is None else FAIL, SKIP,
+            f"far/near {fa['contrast']:.2f}" if fa else "unmeasurable (no near detail)")
+    sh, _ = worst_third(flat)
+    c.check("A5", "flat frame is all dead thirds", FAIL if sh < T["third_share"] else PASS, FAIL,
+            f"share {sh:.2f}")
+    # A hero portrait must NOT leak into the environment gate. Its sharp subject
+    # falsely FAILs the 0.80 cut when read as an environment — that is exactly
+    # why the threshold cannot simply be lowered. The explicit frame class is
+    # what routes the portrait to SKIP without weakening the environment gate.
+    pa = aerial(from_image(synth_portrait()))
+    c.check("A4", "hero portrait env-reading (sharp subject)",
+            FAIL if (pa and pa["contrast"] > T["aerial_ratio"]) else SKIP, FAIL,
+            f"far/near {pa['contrast']:.2f}" if pa else "unmeasurable")
+    c.check("A4", "hero portrait class -> skip A4", a4_verdict(pa, "portrait"), SKIP,
+            f"far/near {pa['contrast']:.2f} routed to SKIP" if pa else "unmeasurable")
+    c.check("A4", "hero portrait env-class still FAILs", a4_verdict(pa, "environment"), FAIL,
+            f"far/near {pa['contrast']:.2f} still > {T['aerial_ratio']:.2f}" if pa else "unmeasurable")
+
     # --- A2: differential detector vs shafts, glow, exposure bump ------------
     boot = ROOT / "docs/assets/gate3/gate3-after-boot-nohud2.png"
     if boot.exists():
@@ -563,7 +671,7 @@ def calibrate(verbose=True):
             r = godray_ab(from_image(after_im), b)
             got = PASS if (r and r["amp"] >= T["ray_amp_L"] and r["lift"] <= T["ray_lift"]
                            and r["elong"] >= T["ray_elong"]
-                           and T["ray_cov_lo"] <= r["cov"] <= T["ray_cov_hi"]) else FAIL
+                           and T["ray_cov_lo_pct"] <= r["cov"] <= T["ray_cov_hi_pct"]) else FAIL
             c.check("A2", label, got, want,
                     f"amp {r['amp']:.1f} lift {r['lift']:.2f} el {r['elong']:.1f} cov {r['cov']:.1f}%")
         hits, play = fogvolume_in_play()
@@ -582,7 +690,7 @@ def calibrate(verbose=True):
         c.check("A5", "approved ref: no dead third", PASS if sh >= T["third_share"] else FAIL, PASS,
                 f"share {sh:.2f}")
         isl = bright_islands(f)
-        c.check("A8", "approved ref has one light pool", PASS if isl["share"] >= T["island_share"] else FAIL,
+        c.check("A8", "approved ref has one light pool", PASS if isl["share"] >= T["island_share_pct"] else FAIL,
                 PASS, f"share {isl['share']:.1f}%")
         c.check("A6", "no hero box given -> no verdict", SKIP if silhouette(f, None) is None else PASS,
                 SKIP, "mask must be caller-given")
@@ -596,7 +704,7 @@ def calibrate(verbose=True):
                 PASS if (g and g["rgb"][2] >= T["grass_blue"] and g["sat"] <= T["grass_sat"]) else FAIL,
                 PASS, f"B {g['rgb'][2]:.0f} sat {g['sat']:.2f}")
         isl = bright_islands(load(wide))
-        c.check("A8", "approved wide-hero light pool", PASS if isl["share"] >= T["island_share"] else FAIL,
+        c.check("A8", "approved wide-hero light pool", PASS if isl["share"] >= T["island_share_pct"] else FAIL,
                 PASS, f"share {isl['share']:.1f}%")
     if boot.exists():
         g = grass(load(boot))
@@ -635,7 +743,7 @@ def calibrate(verbose=True):
 
 
 # ------------------------------------------------------------------- grade --
-def grade(frame, before, idle, hero_box, map_path, v: Verdict):
+def grade(frame, before, idle, hero_box, map_path, frame_class, v: Verdict):
     if frame:
         f = load(frame)
         print(f"\nframe : {Path(frame).name}  ({f['L'].shape[1]}x{f['L'].shape[0]})")
@@ -659,9 +767,15 @@ def grade(frame, before, idle, hero_box, map_path, v: Verdict):
                       f"averaged over {s['n_edge']} boundary px")
 
         a = aerial(f)
-        if a:
-            v.add("A4", "far/near local contrast", PASS if a["contrast"] < T["aerial_ratio"] else FAIL,
-                  f"{a['contrast']:.2f}", f"< {T['aerial_ratio']:.2f}",
+        a4 = a4_verdict(a, frame_class)
+        if a4 == SKIP:
+            note = ("hero portrait — aerial perspective is an environment-shot gate; "
+                    "a close-up has no far landscape to grade (--frame-class portrait)") \
+                if frame_class == "portrait" else \
+                "unmeasurable (no far/near detail) — not a pass"
+            v.add("A4", "far/near local contrast", SKIP, "—", f"< {T['aerial_ratio']:.2f}", note)
+        else:
+            v.add("A4", "far/near local contrast", a4, f"{a['contrast']:.2f}", f"< {T['aerial_ratio']:.2f}",
                   f"advisory: far/near saturation {a['sat']:.2f} · "
                   f"centre/wings contrast {a['wings']:.2f} (the order's hand-picked split)")
         sh, th = worst_third(f)
@@ -679,8 +793,8 @@ def grade(frame, before, idle, hero_box, map_path, v: Verdict):
                   f"{g['sat']:.2f}", f"<= {T['grass_sat']:.2f}")
         isl = bright_islands(f)
         if isl:
-            v.add("A8", "largest bright-island share", PASS if isl["share"] >= T["island_share"] else FAIL,
-                  f"{isl['share']:.1f}%", f">= {T['island_share']:.0f}%",
+            v.add("A8", "largest bright-island share", PASS if isl["share"] >= T["island_share_pct"] else FAIL,
+                  f"{isl['share']:.1f}%", f">= {T['island_share_pct']:.0f}%",
                   f"{isl['n']} islands >= 0.2% of frame")
 
         if before:
@@ -696,8 +810,8 @@ def grade(frame, before, idle, hero_box, map_path, v: Verdict):
                 v.add("A2", "shaft elongation", PASS if r["elong"] >= T["ray_elong"] else FAIL,
                       f"{r['elong']:.1f}", f">= {T['ray_elong']:.0f}")
                 v.add("A2", "coverage (beam, not wall)",
-                      PASS if T["ray_cov_lo"] <= r["cov"] <= T["ray_cov_hi"] else FAIL,
-                      f"{r['cov']:.1f}%", f"{T['ray_cov_lo']:.1f}-{T['ray_cov_hi']:.0f}%")
+                      PASS if T["ray_cov_lo_pct"] <= r["cov"] <= T["ray_cov_hi_pct"] else FAIL,
+                      f"{r['cov']:.1f}%", f"{T['ray_cov_lo_pct']:.1f}-{T['ray_cov_hi_pct']:.0f}%")
         else:
             v.add("A2", "god ray A/B", SKIP, "no pair", "--before <frame>",
                   "no same-camera before-frame given — shafts CANNOT be judged from one frame")
@@ -714,8 +828,8 @@ def grade(frame, before, idle, hero_box, map_path, v: Verdict):
             v.add("A6", "silhouette complexity", PASS if sil["complexity"] >= T["silhouette"] else FAIL,
                   f"{sil['complexity']:.1f}", f">= {T['silhouette']:.0f}",
                   f"hero is {sil['area_pct']:.2f}% of frame (an empty box measures 16.0)")
-            v.add("A6", "hero vs bg hue split", PASS if sil["hue_sep"] >= T["hero_hue_sep"] else FAIL,
-                  f"{sil['hue_sep']:.1f} deg", f">= {T['hero_hue_sep']:.0f} deg")
+            v.add("A6", "hero vs bg hue split", PASS if sil["hue_sep"] >= T["hero_hue_sep_deg"] else FAIL,
+                  f"{sil['hue_sep']:.1f} deg", f">= {T['hero_hue_sep_deg']:.0f} deg")
     else:
         v.add("A6", "silhouette complexity", SKIP, "no idle frame", "--idle <frame>",
               "A6 is an idle-pose gate; walk/combat poses do not count (order A6.1)")
@@ -750,6 +864,9 @@ def main(argv):
     ap.add_argument("--idle", help="idle-pose frame (A6 only)")
     ap.add_argument("--hero-box", help="x0,y0,x1,y1 around the hero in the idle frame (A6)")
     ap.add_argument("--map", default=str(ROOT / "maps" / "edhari.json"))
+    ap.add_argument("--frame-class", default="environment", choices=FRAME_CLASSES,
+                    help="environment: grade A4 aerial perspective (default) · "
+                         "portrait: hero close-up, A4 skipped by design")
     ap.add_argument("--calibrate", action="store_true", help="run the control suite and stop")
     ap.add_argument("--quiet-calibration", action="store_true")
     a = ap.parse_args(argv[1:])
@@ -785,7 +902,7 @@ def main(argv):
             print(f"missing frame: {fr}", file=sys.stderr)
             return 2
         v = Verdict()
-        grade(fr, a.before, idle if i == 0 else None, box, a.map if i == 0 else None, v)
+        grade(fr, a.before, idle if i == 0 else None, box, a.map if i == 0 else None, a.frame_class, v)
         v.show()
         code = v.exit_code()
         codes.append(code)

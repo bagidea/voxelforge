@@ -173,6 +173,14 @@ positive control: **golden ref ที่อนุมัติแล้ววั�
 (หมายเหตุ: `wide-hero-final` วัดได้ 3.66 ❌ แต่ `aaa-framing-spec.md:145` เขียนเองว่าเฟรมนั้น
 "the light gate passes but the geometry is broken" → อนุมัติที่แสง ไม่ใช่ที่การจัดวางระยะ)
 
+**frame class (สำคัญ — A4 เป็นเกตของ environment shot เท่านั้น):** grader ไม่ auto-detect ว่าเฟรมเป็น
+"hero portrait" หรือ "environment" จากเลข magic อีกต่อไป — คนยิงเฟรมต้องประกาศเองด้วย `--frame-class`.
+- `--frame-class environment` (default) → วัด `far/near local contrast < 0.80` ตามปกติ
+- `--frame-class portrait` → A4 **SKIP โดยดีไซน์** (hero close-up ไม่มีของไกล/ของใกล้ให้วัด — ไม่ใช่ PASS ไม่ใช่ FAIL)
+
+**ห้ามลด threshold 0.80 เพื่อให้ hero portrait ผ่าน** — ถ้าลด เส้นจะอ่อนต่อ environment shot จริง
+ซึ่งเป็นเคสที่ A4 ถูกสร้างมาเพื่อจับ. portrait ถูกแยกออกด้วย class ที่ประกาศชัด ไม่ใช่ด้วยการร่นเกณฑ์.
+
 ---
 
 ## A5 · กล้องมุดเข้าไปในบล็อก — เสียเฟรมไป 30% 🟠
@@ -420,7 +428,8 @@ python scripts/art_order_grade.py --calibrate          # ชุด control อ�
 python scripts/art_order_grade.py --frame after.png --before before.png \
        --idle idle.png --hero-box x0,y0,x1,y1
 ```
-ผ่าน = exit 0. **exit 4 (INCOMPLETE) ไม่ใช่ผ่าน** — แปลว่ามีเกตที่ยังวัดไม่ได้เพราะขาด input
+ผ่าน = exit 0. **exit 4 (INCOMPLETE) ไม่ใช่ผ่าน** — แปลว่ามีเกตที่ยังวัดไม่ได้เพราะขาด input.
+(ยิง **hero portrait** ใส่ `--frame-class portrait` เพื่อให้ A4 SKIP แทน false-FAIL — ดูหัวข้อ A4)
 
 ---
 

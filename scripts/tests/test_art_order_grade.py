@@ -59,13 +59,16 @@ check("A2 needs a same-camera A/B pair, not one frame", "--before" in order)
 check("A6 silhouette bar is 40 in code and in the order",
       G.T["silhouette"] == 40.0 and "≥ 40" in order)
 check("A8 island share is 40% in code and in the order",
-      G.T["island_share"] == 40.0 and "≥ 40%" in order)
+      G.T["island_share_pct"] == 40.0 and "≥ 40%" in order)
+check("A4 aerial ratio is 0.80 in code and in the order",
+      G.T["aerial_ratio"] == 0.80 and "< 0.80" in order)
+check("A4 frame class is documented in the order", "--frame-class" in order)
 
 print("3. unmeasurable is not a pass")
 boot = ROOT / "docs/assets/gate3/gate3-after-boot-nohud2.png"
 ref = ROOT / "docs/assets/golden-beauty-shot-ref.png"
 v = G.Verdict()
-G.grade(str(ref), None, str(ref), None, None, v)
+G.grade(str(ref), None, str(ref), None, None, "environment", v)
 states = {r[1]: r[2] for r in v.rows}
 check("no A/B pair -> A2 SKIP", states.get("god ray A/B") == G.SKIP)
 check("no sky -> A1 SKIP", states.get("sky gradient") == G.SKIP)
@@ -73,8 +76,17 @@ check("no hero box -> A6 SKIP", states.get("silhouette complexity") == G.SKIP)
 check("a run holding SKIPs exits 4 (INCOMPLETE), never 0", v.exit_code() == 4,
       f"exit {v.exit_code()}")
 v2 = G.Verdict()
-G.grade(str(boot), None, None, None, None, v2)
+G.grade(str(boot), None, None, None, None, "environment", v2)
 check("a run holding a FAIL exits 1", v2.exit_code() == 1, f"exit {v2.exit_code()}")
+
+print("3b. A4 frame class — a portrait never leaks into the environment gate")
+pa = G.aerial(G.from_image(G.synth_portrait()))
+check("a sharp portrait falsely FAILs the environment reading (why 0.80 stays)",
+      pa is not None and pa["contrast"] > G.T["aerial_ratio"],
+      f"far/near {pa['contrast']:.2f}" if pa else "unmeasurable")
+check("portrait class -> A4 SKIP", G.a4_verdict(pa, "portrait") == G.SKIP)
+check("environment class -> A4 FAIL (gate not weakened)",
+      G.a4_verdict(pa, "environment") == G.FAIL)
 
 print("4. the grader ships")
 tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "scripts/art_order_grade.py"],
