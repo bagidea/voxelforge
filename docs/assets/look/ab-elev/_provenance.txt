@@ -1,0 +1,41 @@
+# Engine banners from the blocker #1 A/B shoot -- proof each plate got the sun it was asked for,
+# and that pcss / shadow_map / contact / illuminance never moved across all 13 plates.
+#
+# Pulled out of ab-elev/_shoot.log, which .gitignore drops via *.log (line 26). The three
+# plates with no [shoot] line above them (probe-s1cam-near66, probeB-lowcam-*, s1cam-elev34/50)
+# were driven from PowerShell rather than the .cmd, so only the exe's own banner is here.
+
+[shoot] s1cam-elev66  sun=66,205,20000  cine=44,14,44, 44,14,44, 32.5,2.0,29.5, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=66deg/205deg illum=20000 contact=true
+SHOT saved to s1cam-elev66.png
+[shoot] s1cam-elev22  sun=22,205,20000  cine=44,14,44, 44,14,44, 32.5,2.0,29.5, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/205deg illum=20000 contact=true
+SHOT saved to s1cam-elev22.png
+[shoot] s2cam-elev66  sun=66,205,20000  cine=18,9,44, 18,9,44, 31,1.5,29, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=66deg/205deg illum=20000 contact=true
+SHOT saved to s2cam-elev66.png
+[shoot] s2cam-elev22  sun=22,205,20000  cine=18,9,44, 18,9,44, 31,1.5,29, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/205deg illum=20000 contact=true
+SHOT saved to s2cam-elev22.png
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=66deg/205deg illum=20000 contact=true
+SHOT saved to probe-s1cam-near66.png
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=66deg/205deg illum=20000 contact=true
+SHOT saved to probeB-lowcam-elev66.png
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/205deg illum=20000 contact=true
+SHOT saved to probeB-lowcam-elev22.png
+[azflip] s1cam-elev66-az25  sun=66,25,20000 cine=44,14,44, 44,14,44, 32.5,2.0,29.5, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=66deg/25deg illum=20000 contact=true
+SHOT saved to s1cam-elev66-az25.png
+[azflip] s1cam-elev22-az25  sun=22,25,20000 cine=44,14,44, 44,14,44, 32.5,2.0,29.5, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/25deg illum=20000 contact=true
+SHOT saved to s1cam-elev22-az25.png
+[azflip] s2cam-elev66-az25  sun=66,25,20000 cine=18,9,44, 18,9,44, 31,1.5,29, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=66deg/25deg illum=20000 contact=true
+SHOT saved to s2cam-elev66-az25.png
+[azflip] s2cam-elev22-az25  sun=22,25,20000 cine=18,9,44, 18,9,44, 31,1.5,29, 1 
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=22deg/25deg illum=20000 contact=true
+SHOT saved to s2cam-elev22-az25.png
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=34deg/205deg illum=20000 contact=true
+SHOT saved to s1cam-elev34.png
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=50deg/205deg illum=20000 contact=true
+SHOT saved to s1cam-elev50.png
