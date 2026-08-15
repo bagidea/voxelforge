@@ -8,13 +8,20 @@ This is NOT a live capture of the game's audio device output (headless CI/
 proof bins have no such capture path here) — it is a deterministic ffmpeg
 mixdown of the exact same .wav files audio.rs loads, laid out on a
 COMPRESSED timeline so a human can listen to one ~15s clip and hear every
-category instead of scrubbing a 12.5s run where 371 footstep_stone.wav hits
+category instead of scrubbing a 12.5s run where 484 footstep_stone.wav hits
 bury everything else. Every (file, gain) pair below is lifted directly from
 audio.rs's SfxEvent->path table and extra_layers() combos, and every zone/
-footstep file choice matches what the real runlog actually logged (only
-footstep_stone/footstep_sand fired this run — grass/wood did not, so they
-are not claimed here). Timestamps are reel-local, not sim-local; the runlog
-sidecar is the source of truth for real sim timestamps.
+footstep file choice matches what the real runlog actually logged.
+
+footstep_grass.wav/footstep_wood.wav now appear (see the "proof-driver
+catalog burst" layers below) — but per the runlog they are 100% sourced from
+sfx_proof_driver, audio.rs's TEMPORARY synthetic-catalog system (all 120
+hits of each land at t<=0.05, at the player's start-of-run position). The
+real footstep_tracker (movement-triggered, same system that produces the
+484 real stone hits and 160 real sand hits below) landed zero grass/wood
+hits this run, even though the walk script's legs 3-4 target real
+Wood(36,46)/Grass(44,49) tiles. Timestamps are reel-local, not sim-local;
+the runlog sidecar is the source of truth for real sim timestamps.
 
 Usage: python scripts/gen_audio_proof_reel.py
 """
@@ -35,6 +42,11 @@ LAYERS = [
     ("music_theme.wav", 0.00, 0.22),
     # Wilds ambience — real spawn_ambient at Play-enter (runlog t=0.00)
     ("ambient_wind.wav", 0.00, 0.45),
+    # proof-driver catalog burst (runlog t<=0.05, sfx_proof_driver only —
+    # see doc header) — NOT footstep_tracker/movement-triggered, staggered
+    # here purely so grass and wood are each distinguishable by ear.
+    ("footstep_grass.wav", 0.15, 0.9),
+    ("footstep_wood.wav", 0.40, 0.9),
     # real footstep_stone.wav hits (runlog first fired t=1.02, Wilds leg)
     ("footstep_stone.wav", 0.80, 0.9),
     ("footstep_stone.wav", 1.15, 0.9),
