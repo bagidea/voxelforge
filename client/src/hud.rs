@@ -21,14 +21,20 @@ use crate::FlyCam;
 // Design tokens — docs/hud-design.md §2 (hex values transcribed verbatim)
 // ===========================================================================
 
-const PANEL_BG: Color = Color::srgba_u8(0x1A, 0x12, 0x0D, 224); // #1A120D @ ~88%
-const PANEL_BORDER: Color = Color::srgb_u8(0x3A, 0x27, 0x16);
+// `pub(crate)` on the shared tokens: `dialogue_ui.rs` reuses these verbatim so
+// the dialogue box wears the same walnut/amber plaque language as the combat
+// HUD instead of inventing its own palette — one source of truth for both.
+pub(crate) const PANEL_BG: Color = Color::srgba_u8(0x1A, 0x12, 0x0D, 224); // #1A120D @ ~88%
+pub(crate) const PANEL_BORDER: Color = Color::srgb_u8(0x3A, 0x27, 0x16);
 const HP_FILL: Color = Color::srgb_u8(0x96, 0x36, 0x2C);
 const HP_HILITE: Color = Color::srgba_u8(0xC4, 0x58, 0x3A, 210);
 const STAMINA_FILL: Color = Color::srgb_u8(0xE8, 0xA9, 0x4E);
 const STAMINA_HILITE: Color = Color::srgba_u8(0xFF, 0xD9, 0x8A, 210);
-const TEXT_CREAM: Color = Color::srgb_u8(0xE8, 0xD8, 0xB8);
-const ACCENT_AMBER: Color = Color::srgb_u8(0xF4, 0xB8, 0x60);
+pub(crate) const TEXT_CREAM: Color = Color::srgb_u8(0xE8, 0xD8, 0xB8);
+pub(crate) const ACCENT_AMBER: Color = Color::srgb_u8(0xF4, 0xB8, 0x60);
+/// Dim label tone (hints, timestamps) — same value the old egui dialogue box
+/// used for its footer hint text, transcribed here so it's a shared token too.
+pub(crate) const TEXT_DIM: Color = Color::srgb_u8(0x8C, 0x87, 0x7D);
 const SEGMENT_LINE: Color = Color::srgba_u8(0x3A, 0x27, 0x16, 179); // ~70%
 
 // ===========================================================================
