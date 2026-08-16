@@ -637,7 +637,7 @@ pub fn enemy_ai(
         tf.translation.y = 0.0; // flat-arena contract; combat wiring owns real ground
 
         mind.facing = turn_toward(mind.facing, want_yaw, 10.0 * dt);
-        let pose = pose_for(mind, t);
+        let pose = pose_for(&mind, t);
         tf.rotation = Quat::from_axis_angle(Vec3::Y, mind.facing)
             * Quat::from_axis_angle(Vec3::X, pose.pitch);
         tf.scale = Vec3::new(pose.sxz, pose.sy, pose.sxz);
