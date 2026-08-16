@@ -1,0 +1,25 @@
+=== 21-gate-beauty-tight
+when : 2026-08-16T07:59:07+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_gate.py _fl_beauty_20260816/beauty-tight-nohud2.png
+--- stdout+stderr ---
+# _fl_beauty_20260816/beauty-tight-nohud2.png = 1280x720
+
+## G3  bounce/shade not black, not blue
+   interior p05-L=8.8% (need >=8)  p50-L=12.2%
+   darkest shade @(542,252) RGB=(79,0,0) R-B=+79 warm=True
+   -> PASS
+
+## G5  window not blown-out (gradient survives, G/B roll off)
+   brightest px @(1017,0) RGB=(255, 160, 40)  min(G,B)=40 (need <=245)
+   3-pt vertical L = [67.3, 67.3, 43.9]  spread=23.4 (need >=8)
+   -> PASS
+
+## G6  warm golden tone on sunlit wood (R>G>B, R-B 40..210, sunlit L>=55)
+   brightest golden patch @(70,324) RGB=(255,230,202) R-B=+52 L=91.4
+   -> PASS
+
+============================================
+MEASURABLE GATES: G3=P  G5=P  G6=P   => all measurable gates PASS
+(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)
+--- exit=0 ---

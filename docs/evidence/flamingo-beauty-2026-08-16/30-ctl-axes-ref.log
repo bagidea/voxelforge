@@ -1,0 +1,21 @@
+=== 30-ctl-axes-ref
+when : 2026-08-16T07:59:08+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_axes.py _fl_beauty_20260816/ctl-golden-ref-nohud2.png
+--- stdout+stderr ---
+profile: hero
+  axes graded: warmth, blue, clip, sat, dof, micro, p95
+  advisory (printed, not gated): warmth, blue, sat  -- clip is the sole chromatic gate
+
+_fl_beauty_20260816/ctl-golden-ref-nohud2.png
+  profile: hero  context: warmth(global) +118.5  sat(mid,legacy/clip-sig)  96.1% [do not judge]  DOF fg  7.95 bg  2.27
+  [ADV]  warmth R-B (mid)           120.92   ref  120.9   (advisory -- tune toward REF, not a gate)
+  [ADV]  blue B (mid)                 4.33   ref    4.3   (advisory -- tune toward REF, not a gate)
+  [PASS] mid clip %                  18.79   target      <= 35   (REF 18.8)
+  [ADV]  saturation (mid, honest)    95.16   ref   95.2   (advisory -- tune toward REF, not a gate)
+  [PASS] DOF fg:bg ratio              3.50   target       >= 3   (REF 3.5)
+  [PASS] micro-contrast               5.24   target       >= 5   (REF 5.24)
+  [PASS] highlight p95              165.83   target   150..185   (REF 165.8)
+  => ALL AXES PASS
+
+--- exit=0 ---

@@ -274,6 +274,7 @@ _*.patch
 *.exitcode
 /_shino_proof.status
 /quest_save.json
+/savegame.json
 /client/src/settings.json
 /client/src/editor_config.json
 
@@ -310,3 +311,13 @@ _*.patch
 # so a future narrowing of that rule can't turn 97 MB of dumps into repo bloat.
 /docs/assets/ai/_frames/
 /docs/assets/ai/_frames_lifted/
+
+# ── Beauty-shot control logs (Flamingo / pixel lane, 2026-08-16) ──────────
+# `*.log` (line 26) silently ate these on `git add` — the exact trap this repo
+# has already paid for twice (472aa8f, 50e1e09). These 17 files are the whole
+# point of the run: each holds the command, cwd, stdout/stderr and the real
+# exit code of one grader or control, so the beauty verdict can be re-proved
+# without re-rendering. ~60 KB total, and they pin numbers a reviewer would
+# otherwise have to take on trust. Allowlisted by exact directory, not by a
+# broad rule, so nothing else leaks in behind them.
+!docs/evidence/flamingo-beauty-2026-08-16/*.log

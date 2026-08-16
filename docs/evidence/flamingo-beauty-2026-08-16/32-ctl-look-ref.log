@@ -1,0 +1,48 @@
+=== 32-ctl-look-ref
+when : 2026-08-16T07:59:09+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_look.py _fl_beauty_20260816/ctl-golden-ref-nohud2.png
+--- stdout+stderr ---
+# _fl_beauty_20260816/ctl-golden-ref-nohud2.png = 1024x1024
+
+## G3 [MEASURED] bounce/shade not black, not blue
+   interior p05-L=9.9% (need >=8)  p50-L=23.8%
+   darkest shade RGB=(22,12,0) R-B=+21
+   -> PASS
+
+## G5 [MEASURED] window not blown-out (gradient survives)
+   brightest px @(0,129) RGB=(255, 161, 38) min(G,B)=38 (<=245)  spread=47.5
+   -> PASS
+
+## G6 [MEASURED] warm golden tone (R>G>B, R-B 40..210)
+   brightest warm patch RGB=(254,193,70) R-B=+184
+   -> PASS
+
+## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)
+   edges found=418  penumbra median=8px  p25=4px (need median>=5)
+   -> PASS
+## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)
+   grooves=3205  top-40 mean dip=78.2 L-units
+   -> VISUAL call (compare under-bowl darkening old vs new)
+   G4a penumbra=8px is the objective half; G4b AO = eyeball
+
+## G2 [MEASURED] key-light has a bright directional beam
+   top5% mean L=79.6  median L=23.8  delta=55.9 (need>=18)
+   beam x-centroid bias=0.67 (0=centre,1=edge; ref light is off to one side)
+   -> PASS
+
+## G1 [VISUAL] voxel hard 90-deg edges — eyeball at 100%, not scored here
+
+====================================================
+GATE SUMMARY  (M=measured objective / V=visual call):
+  G2 key-dir  [M] = PASS
+  G3 shade    [M] = PASS
+  G4a penumbra[M] = PASS  (8px, need>=5)
+  G4b AO      [V] = eyeball (groove indicator 78)
+  G5 window   [M] = PASS
+  G6 warm     [M] = PASS
+  G1 voxel    [V] = eyeball at 100%
+  => G4/G1 are visual determinations; G2/G3/G4a/G5/G6 objective above.
+
+VERDICT: PASS — all 5 measured gates green (G1/G4b still eyeball, not scored)
+--- exit=0 ---

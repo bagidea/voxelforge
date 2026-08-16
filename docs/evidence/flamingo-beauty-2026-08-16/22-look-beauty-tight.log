@@ -1,0 +1,46 @@
+=== 22-look-beauty-tight
+when : 2026-08-16T07:59:07+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_look.py _fl_beauty_20260816/beauty-tight-nohud2.png
+--- stdout+stderr ---
+# _fl_beauty_20260816/beauty-tight-nohud2.png = 1280x720
+
+## G3 [MEASURED] bounce/shade not black, not blue
+   interior p05-L=8.8% (need >=8)  p50-L=12.2%
+   darkest shade RGB=(79,0,0) R-B=+79
+   -> PASS
+
+## G5 [MEASURED] window not blown-out (gradient survives)
+   brightest px @(1017,0) RGB=(255, 160, 40) min(G,B)=40 (<=245)  spread=23.4
+   -> PASS
+
+## G6 [MEASURED] warm golden tone (R>G>B, R-B 40..210)
+   brightest warm patch RGB=(255,230,202) R-B=+52
+   -> PASS
+
+## G4a [MEASURED] no shadow edges detected on floor -> FAIL
+## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)
+   grooves=735  top-40 mean dip=38.9 L-units
+   -> VISUAL call (compare under-bowl darkening old vs new)
+   G4a penumbra=0px is the objective half; G4b AO = eyeball
+
+## G2 [MEASURED] key-light has a bright directional beam
+   top5% mean L=76.2  median L=12.2  delta=64.0 (need>=18)
+   beam x-centroid bias=0.36 (0=centre,1=edge; ref light is off to one side)
+   -> PASS
+
+## G1 [VISUAL] voxel hard 90-deg edges — eyeball at 100%, not scored here
+
+====================================================
+GATE SUMMARY  (M=measured objective / V=visual call):
+  G2 key-dir  [M] = PASS
+  G3 shade    [M] = PASS
+  G4a penumbra[M] = FAIL  (0px, need>=5)
+  G4b AO      [V] = eyeball (groove indicator 39)
+  G5 window   [M] = PASS
+  G6 warm     [M] = PASS
+  G1 voxel    [V] = eyeball at 100%
+  => G4/G1 are visual determinations; G2/G3/G4a/G5/G6 objective above.
+
+VERDICT: FAIL — 1 of 5 measured gates red: G4a
+--- exit=1 ---

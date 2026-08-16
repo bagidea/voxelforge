@@ -1,0 +1,14 @@
+=== 23-rubric-beauty-tight
+when : 2026-08-16T07:59:08+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/_pixel_rubric_probe.py _fl_beauty_20260816/beauty-tight-nohud2.png
+--- stdout+stderr ---
+
+=== _fl_beauty_20260816/beauty-tight-nohud2.png  1280x720 ===
+  [9a] warm share R>B          100.00%   (strong R>B+20 100.00%)   mean R/G/B  147.9/  39.6/   9.4
+  [9b] cool accent share         0.00%   (0 px, need <=15% AND non-zero; no accent pixels)   [REF 1.11% / wide-baseline 2.87%]
+  [2a] open shade (L<p35)      L= 9.45%  R-B=+104.4  (want L 12..35%, R>B)
+  [8b] shadow floor p01/p05 L   6.75% /  7.50%   (bloom wash lifts these)
+  [6a] window ladder @x=59     L = 91.8 / 91.2 / 10.8%   spread=81.1   brightest RGB=(255,231,204)
+  [Gr] hi-pass std (grain)       5.44   pure-black px  0.00%   near-clip px(L>250)  0.00%
+--- exit=0 ---

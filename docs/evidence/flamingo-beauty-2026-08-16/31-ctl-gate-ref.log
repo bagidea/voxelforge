@@ -1,0 +1,25 @@
+=== 31-ctl-gate-ref
+when : 2026-08-16T07:59:08+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_gate.py _fl_beauty_20260816/ctl-golden-ref-nohud2.png
+--- stdout+stderr ---
+# _fl_beauty_20260816/ctl-golden-ref-nohud2.png = 1024x1024
+
+## G3  bounce/shade not black, not blue
+   interior p05-L=9.9% (need >=8)  p50-L=23.8%
+   darkest shade @(861,941) RGB=(22,12,0) R-B=+21 warm=True
+   -> PASS
+
+## G5  window not blown-out (gradient survives, G/B roll off)
+   brightest px @(105,150) RGB=(254, 249, 209)  min(G,B)=209 (need <=245)
+   3-pt vertical L = [13.3, 96.9, 89.8]  spread=83.6 (need >=8)
+   -> PASS
+
+## G6  warm golden tone on sunlit wood (R>G>B, R-B 40..210, sunlit L>=55)
+   brightest golden patch @(102,460) RGB=(254,226,121) R-B=+133 L=88.0
+   -> PASS
+
+============================================
+MEASURABLE GATES: G3=P  G5=P  G6=P   => all measurable gates PASS
+(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)
+--- exit=0 ---

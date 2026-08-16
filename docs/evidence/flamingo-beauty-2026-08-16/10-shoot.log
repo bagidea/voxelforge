@@ -1,0 +1,10 @@
+=== 10-shoot
+when : 2026-08-16T07:58:53+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : bash scripts/_pixel_beauty_render.sh
+--- stdout+stderr ---
+EXE   target-pixel/release/voxelforge_shot.exe  (71400448b, mtime 2026-08-16 07:53:47.643145900 +0700)
+OK   _fl_beauty_20260816/beauty-wide-nohud2.png (858189b)
+OK   _fl_beauty_20260816/beauty-tight-nohud2.png (747075b)
+DONE
+--- exit=0 ---

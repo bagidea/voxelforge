@@ -1,0 +1,21 @@
+=== 20-axes-beauty-tight
+when : 2026-08-16T07:59:06+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_axes.py _fl_beauty_20260816/beauty-tight-nohud2.png
+--- stdout+stderr ---
+profile: hero
+  axes graded: warmth, blue, clip, sat, dof, micro, p95
+  advisory (printed, not gated): warmth, blue, sat  -- clip is the sole chromatic gate
+
+_fl_beauty_20260816/beauty-tight-nohud2.png
+  profile: hero  context: warmth(global) +138.4  sat(mid,legacy/clip-sig)  98.7% [do not judge]  DOF fg  1.06 bg  3.40
+  [ADV]  warmth R-B (mid)           126.40   ref  120.9   (advisory -- tune toward REF, not a gate)
+  [ADV]  blue B (mid)                 1.24   ref    4.3   (advisory -- tune toward REF, not a gate)
+  [FAIL] mid clip %                  44.36   target      <= 35   (REF 18.8)
+  [N-A]  saturation (mid, honest)    97.59   midtone clipped 44.4% -- honest sat over <55.6% survivors is noise
+  [FAIL] DOF fg:bg ratio              0.31   target       >= 3   (REF 3.5)
+  [PASS] micro-contrast               5.24   target       >= 5   (REF 5.24)
+  [PASS] highlight p95              181.62   target   150..185   (REF 165.8)
+  => FAIL (>=1 gate below target)
+
+--- exit=1 ---

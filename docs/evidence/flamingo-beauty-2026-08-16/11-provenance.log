@@ -1,0 +1,29 @@
+=== 11-provenance
+when : 2026-08-16T07:59:04+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/_pixel_beauty_provenance.py
+--- stdout+stderr ---
+root      E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge
+when      2026-08-16T07:59:04+07:00
+git rev   4242f216fee5c504411d3cc2db588e12326728fe
+git branchpoppy/native-only
+git dirty 133 paths
+EXE       target-pixel\release\voxelforge_shot.exe
+  size    71400448
+  mtime   2026-08-16T07:53:47+07:00
+  sha256  38d03bceb310fddc459ad8c060150532246145d4cb1b75d6b11cd4eb763caff5
+  sources newer than exe: 6  (edits NOT in this binary -- other lanes)
+    anim.rs                      2026-08-16T07:55:00+07:00
+    vfx_bridge.rs                2026-08-16T07:55:20+07:00
+    enemy_ai_proof_main.rs       2026-08-16T07:55:41+07:00
+    main.rs                      2026-08-16T07:58:10+07:00
+    vfx.rs                       2026-08-16T07:58:37+07:00
+    audio.rs                     2026-08-16T07:58:52+07:00
+frames
+  NEW beauty-tight-nohud2.png               747075b  2026-08-16T07:59:03+07:00  md5=d8b1dca1d91d28f463c01daa1d43a2ef
+  NEW beauty-wide-nohud2.png                858189b  2026-08-16T07:58:58+07:00  md5=f56da73833ed6296104a8e78974b520a
+  ctl ctl-golden-ref-at640p-nohud2.png      563112b  2026-08-16T07:45:23+07:00  md5=f470c110c9a709d3dc23c33c4eefc33a
+  ctl ctl-golden-ref-at720p-nohud2.png      731635b  2026-08-16T07:45:23+07:00  md5=2a09c21f26995b162d13f4b4eea23504
+  ctl ctl-golden-ref-nohud2.png            1607736b  2026-07-24T23:59:39+07:00  md5=e3eb80a42bccc81721f6b2cf6f6a71f9
+  ctl ctl-wide-baseline-nohud2.png          858077b  2026-08-05T15:31:35+07:00  md5=ad81abd78f1a7fc0f4bd07692e11877a
+--- exit=0 ---

@@ -1,0 +1,25 @@
+=== 21-gate-beauty-wide
+when : 2026-08-16T07:59:05+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/grade_gate.py _fl_beauty_20260816/beauty-wide-nohud2.png
+--- stdout+stderr ---
+# _fl_beauty_20260816/beauty-wide-nohud2.png = 1280x720
+
+## G3  bounce/shade not black, not blue
+   interior p05-L=14.3% (need >=8)  p50-L=25.0%
+   darkest shade @(232,242) RGB=(45,22,7) R-B=+38 warm=True
+   -> PASS
+
+## G5  window not blown-out (gradient survives, G/B roll off)
+   brightest px @(1230,0) RGB=(246, 205, 124)  min(G,B)=124 (need <=245)
+   3-pt vertical L = [81.5, 81.5, 37.7]  spread=43.8 (need >=8)
+   -> PASS
+
+## G6  warm golden tone on sunlit wood (R>G>B, R-B 40..210, sunlit L>=55)
+   brightest golden patch @(198,324) RGB=(232,211,181) R-B=+51 L=83.7
+   -> PASS
+
+============================================
+MEASURABLE GATES: G3=P  G5=P  G6=P   => all measurable gates PASS
+(G1 voxel-edge / G2 window-bars-on-floor / G4 soft-shadow+AO = visual check)
+--- exit=0 ---

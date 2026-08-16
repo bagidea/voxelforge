@@ -1,0 +1,14 @@
+=== 36-ctl-rubric-base
+when : 2026-08-16T07:59:11+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/_pixel_rubric_probe.py _fl_beauty_20260816/ctl-wide-baseline-nohud2.png
+--- stdout+stderr ---
+
+=== _fl_beauty_20260816/ctl-wide-baseline-nohud2.png  1280x720 ===
+  [9a] warm share R>B           97.87%   (strong R>B+20 97.21%)   mean R/G/B  128.4/  66.2/  19.8
+  [9b] cool accent share         2.87%   (26458 px, need <=15% AND non-zero; median hue 125.1deg)   [REF 1.11% / wide-baseline 2.87%]
+  [2a] open shade (L<p35)      L=15.67%  R-B= +66.5  (want L 12..35%, R>B)
+  [8b] shadow floor p01/p05 L  12.27% / 14.56%   (bloom wash lifts these)
+  [6a] window ladder @x=270     L = 86.3 / 13.7 / 12.5%   spread=73.8   brightest RGB=(240,218,181)
+  [Gr] hi-pass std (grain)       6.11   pure-black px  0.00%   near-clip px(L>250)  0.00%
+--- exit=0 ---

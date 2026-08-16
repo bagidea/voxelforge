@@ -1,0 +1,14 @@
+=== 33-ctl-rubric-ref
+when : 2026-08-16T07:59:09+07:00
+cwd  : /e/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge
+cmd  : python scripts/_pixel_rubric_probe.py _fl_beauty_20260816/ctl-golden-ref-nohud2.png
+--- stdout+stderr ---
+
+=== _fl_beauty_20260816/ctl-golden-ref-nohud2.png  1024x1024 ===
+  [9a] warm share R>B          100.00%   (strong R>B+20 99.36%)   mean R/G/B  128.3/  58.9/   9.8
+  [9b] cool accent share         1.11%   (11588 px, need <=15% AND non-zero; median hue  63.9deg)   [REF 1.11% / wide-baseline 2.87%]
+  [2a] open shade (L<p35)      L=12.31%  R-B= +67.7  (want L 12..35%, R>B)
+  [8b] shadow floor p01/p05 L   7.21% /  8.57%   (bloom wash lifts these)
+  [6a] window ladder @x=103     L = 97.8 / 90.1 / 52.2%   spread=45.6   brightest RGB=(254,252,210)
+  [Gr] hi-pass std (grain)       5.33   pure-black px  0.00%   near-clip px(L>250)  0.00%
+--- exit=0 ---
