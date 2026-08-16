@@ -617,7 +617,51 @@ pub const IBL_HORIZON_MIX: f32 = 0.68;
 pub const AMBIENT_LUX_V3: f32 = 620.0;
 
 /// The same, night (v2: 42).
-pub const AMBIENT_LUX_V3_NIGHT: f32 = 14.0;
+///
+/// 14 → 26, 2026-08-15, AND ONLY BECAUSE [`AMBIENT_COLOR_V3_NIGHT`] LANDED IN
+/// THE SAME MOVE. 14 lux of [`Hour::NIGHT`]'s own ambient is 14 lux of sRGB
+/// [0.42, 0.52, 0.78] — R−B −0.36 — so every previous round that reached for
+/// this constant to buy night warmth was buying blue. Measured, that is exactly
+/// what it does: 14 → 30 at the authored colour takes midtone R−B 33.89 → 31.93
+/// (`_poppy_lookv6/n1`, row `a30c`). With the colour warm the same lux runs the
+/// other way, 33.89 → 46.26 at 26 lux, and the shade floor comes with it
+/// (21.78 → 24.46) because a flat term lifts the faces that have the least of
+/// everything else.
+///
+/// 26 AND NOT 50, WHICH MEASURES WARMER. The flat term is also the separation
+/// tax: 50 lux reads warmth 48.68 with spread 87.02, under the 90.79 bar the
+/// v2 plate sets, and 80 lux is 85.16. A flat light gives every face the same
+/// number, which is the one thing a night frame lit by a single campfire must
+/// not do. 26 lux clears the warmth bar by +3.07 while separation stays ABOVE
+/// the before plate (91.95 vs 90.79) — the first round this scene has held both.
+pub const AMBIENT_LUX_V3_NIGHT: f32 = 26.0;
+
+/// Colour of the v3 flat fill at night, sRGB (v2/shared: [`Hour::NIGHT`]'s own
+/// `ambient`, [0.42, 0.52, 0.78]).
+///
+/// THE CAMPFIRE WAS ASSUMED TO COVER THIS AND IT DOES NOT. `Hour::NIGHT`'s note
+/// on `ambient_lux` argues that lanterns and the fire should be the only warm
+/// light in frame, and the flat term was left cool to enforce it. What the
+/// plates show is that the fire lights what it can reach and the rest of the
+/// frame's shade is lit by a rig whose every term is B > G > R — `sky_fill`
+/// [0.44, 0.58, 0.98], `bounce` [0.55, 0.56, 0.68], the moon key, the kicker,
+/// and the environment map both halves of it (see [`IBL_NITS_NIGHT`], which
+/// records that no size of that constant changes its hue). The scene had no warm
+/// light with a free colour at all, which is why v5's −9.82 could not be fixed
+/// by moving any amount of any existing one.
+///
+/// [1.00, 0.62, 0.20] is the fire's own bounce, one step deeper than GOLDEN's
+/// ground bounce ([1.00, 0.78, 0.50]) because it is coming off ground lit by a
+/// small orange source rather than by the sun. R−B +0.80, the warmest thing in
+/// the rig, spent at 26 lux against night's ~150-lux shade budget.
+///
+/// V3-ONLY, VIA [`hour`], NOT BY EDITING [`Hour::NIGHT`]. The night pair's
+/// before plate is v2, and v2 runs this same field at 42 lux — three times the
+/// v3 level — so warming the shared constant would have warmed the BAR harder
+/// than the reading and made the clause harder to pass while looking like a fix.
+/// Set after the generation fork and before the env overrides, so
+/// `VOXELFORGE_LOOK_LIGHT` still wins over it.
+pub const AMBIENT_COLOR_V3_NIGHT: [f32; 3] = [1.00, 0.62, 0.20];
 
 /// PCSS penumbra width, v3 (v2: [`PCSS_WIDTH`] 8.0, v1: [`PCSS_WIDTH_V1`] 16.0).
 ///
@@ -1180,7 +1224,42 @@ mod grade {
     /// above records 1.30 crushing open shade toward black, and while
     /// [`SHADOW_GAIN_V3`] now puts a floor under exactly that failure, a floor
     /// is a reason to step toward the cliff, not to jump off it.
-    pub const MIDTONE_CONTRAST_V3: f32 = 1.18;
+    ///
+    /// 1.18 → 1.10, 2026-08-15. THIS KNOB WAS THE SEPARATION REGRESSION, AND IT
+    /// MOVES THE OPPOSITE WAY FROM WHAT THE 1.18 NOTE ABOVE ASSUMES. v5 shipped
+    /// `evening-raking` separating WORSE after than before (71.66 → 70.46) and
+    /// the write-up guessed [`super::CONTACT_SHADOW_LENGTH_V3`] paid for it.
+    /// It did not. Swept on one binary through `VOXELFORGE_LOOK_GRADE`
+    /// (`scripts/_poppy_lookv6_sweep.sh`, dirs `_poppy_lookv6/n4`,`n5`,`e1`), the
+    /// spread estimator against this constant is monotone DOWNWARD:
+    ///
+    ///   midtone contrast   1.50   1.42   1.34   1.26   1.18   1.10   1.00
+    ///   night spread      70.53  75.99  80.92  85.16  89.32  93.07  99.08
+    ///
+    /// (one base for every rung — `_poppy_lookv6/n3..n5`, night-firelit, warm
+    /// ambient held, only this knob moving. The same ladder shot on the SHIPPED
+    /// v5 rig instead reads 82.75 / 91.13 / 94.99 / 100.83 at 1.34 / 1.18 / 1.10
+    /// / 1.00, i.e. the slope is the constant's, not the base's.)
+    ///
+    /// Bevy grades in sections, and on these plates the p25 band the estimator
+    /// takes its dark median from sits INSIDE the midtone section while the p75
+    /// band has already crossed into the highlights — so pushing midtone
+    /// contrast up lifts the dark end of the measurement and leaves the bright
+    /// end where it is, closing the gap the knob was raised to open. 1.10 buys
+    /// back +4.02 of evening separation (70.34 → 74.36 on one binary, everything
+    /// else held) and +3.75 at night, and it is the ONLY lever measured this
+    /// round that adds separation without spending the shade floor: p05 moved
+    /// 21.69 → 21.57 evening and 21.78 → 21.77 night across that same step.
+    ///
+    /// NOT 1.00, which measures better still (+8.29 night spread). 1.00 is no
+    /// midtone contrast at all — the section becomes a pass-through and the p50
+    /// argument at the top of this note, which is still true, goes unanswered.
+    /// 1.10 is the last rung that keeps a midtone push while giving separation
+    /// back, and it is a retreat from 1.18, not from 1.12: it lands under the
+    /// shared [`MIDTONE_CONTRAST`] because the v3 stack has [`SHADOW_GAIN_V3`]
+    /// and [`HIGHLIGHT_CONTRAST_V3`] widening the ends that v2 asked this one
+    /// knob to widen alone.
+    pub const MIDTONE_CONTRAST_V3: f32 = 1.10;
 
     /// Highlight contrast, v3 (shared: [`HIGHLIGHT_CONTRAST`] 1.12).
     ///
@@ -1208,7 +1287,72 @@ mod grade {
     /// plate that can go achromatic if all three channels rail. 0.98 stays a
     /// shoulder, just a shoulder sized to a measured top end instead of an
     /// assumed one.
-    pub const HIGHLIGHT_GAIN_V3: f32 = 0.98;
+    ///
+    /// 0.98 → 1.06, 2026-08-15. The note above says 0.98 is a shoulder sized to
+    /// a measured top end; the same measurement re-run a round later says the
+    /// top end is still not being reached, and this is the cheapest warmth on
+    /// the sheet. One binary, only this knob moving (`_poppy_lookv6/e3`,`o2`,
+    /// `n7`): evening-raking midtone R−B 80.73 → 81.92 and its shade floor
+    /// 21.12 → 21.55 — warmth AND floor, up together, which no other lever this
+    /// round managed. It goes past 1.00 because the shoulder is what was costing
+    /// the warmth: the highlight section is where the warm key's own band lands,
+    /// and compressing it was pulling R down toward B on exactly the pixels that
+    /// carry the hour's colour.
+    ///
+    /// THE BOUND IS NOW ON THE OTHER SIDE, AND IT IS NOT THE SKY. The 0.98 note
+    /// keeps 1.00 as a ceiling for fear of railing all three channels achromatic;
+    /// measured, the sky is not what moves — noon's separation is what pays,
+    /// 74.32 → 73.39 across this step, because a lifted highlight section pulls
+    /// the bright end of the frame together as it clears the shoulder. Noon has
+    /// +7.57 of separation margin to spend and evening's warmth clause has failed
+    /// two rounds running, so the trade is taken deliberately and in that
+    /// direction. Past ~1.10 it would be spending margin that is not there.
+    pub const HIGHLIGHT_GAIN_V3: f32 = 1.06;
+
+    /// White balance, v3 (shared: [`TEMPERATURE`] 0.05).
+    ///
+    /// THE ONLY LEVER THAT MOVES EVENING WARMTH, AND v5's PLAN HAD IT LAST.
+    /// `docs/look-gap-v5-2026-08-15.md` reasoned that evening's −4.20 warmth was
+    /// the day kicker ([`super::RIM_LUX`] 600, unshadowed, cool) and that a white
+    /// balance was the backstop. Swept on one binary, that is backwards. Dimming
+    /// the kicker does not warm the frame — it cools it:
+    ///
+    ///   evening-raking, one exe, only `VOXELFORGE_LOOK_RIM` moving
+    ///   rim lux      600    420    300
+    ///   warmth     74.06  73.93  74.45      (bar: 79.01)
+    ///
+    /// Every light-side lever measured the same way came back inside a point:
+    /// ambient 620 → 1150 bought +1.40, the sky-fill/bounce split 1400/1100 →
+    /// 800/1700 bought +1.34. The kicker was never the payer, so trimming it
+    /// spends separation for nothing. This constant moves warmth 74.06 → 80.68 in
+    /// one step, and it is the only thing on the sheet that clears the bar.
+    ///
+    /// 0.07 IS ONE RUNG UNDER A CLIFF AND THE CLIFF IS MEASURED, NOT INHERITED.
+    /// The shared [`TEMPERATURE`] note pins the ceiling at 0.05 off a 2026-08-01
+    /// frame that ran `POST_SATURATION` 1.90; that note also says do not raise
+    /// this without re-running `scripts/colour_gate.py` on a real frame, so it was
+    /// re-run on four, shot through a sky-facing pose on this binary
+    /// (`_poppy_lookv6/sky`, `VOXELFORGE_CINE` look-at raised to y=30):
+    ///
+    ///   temperature      0.05    0.07    0.08    0.09
+    ///   magenta frac    0.01%   0.05%  23.62%  69.38%
+    ///   colour gate      PASS    PASS    FAIL    FAIL
+    ///
+    /// 0.05 → 0.07 is 40× under the 2 % bar; 0.08 is over it by 12×. The onset
+    /// really is that sharp, which is why this is 0.07 and not 0.075 and why the
+    /// next round does not get to nudge it "a little more" without shooting that
+    /// sweep again. Gate B (sky ordering / sky gain) SKIPPED on all four frames —
+    /// the flat `ClearColor` it reads has been replaced by the sky dome, so the
+    /// check that originally caught the magenta cast is structurally unmeasurable
+    /// now and Gate A is carrying it alone. Disclosed, not glossed.
+    ///
+    /// V3-ONLY, and that is the whole reason it is a separate constant: the
+    /// before plate of every pair is v2, [`TEMPERATURE`] is shared, and a white
+    /// balance that moved both sides would move the bar and the reading together
+    /// and measure nothing. Same shape as [`MIDTONE_CONTRAST_V3`], forked in
+    /// [`super::grade_knobs`] rather than at the `ColorGrading` literal so
+    /// `VOXELFORGE_LOOK_GRADE` still overrides it under both generations.
+    pub const TEMPERATURE_V3: f32 = 0.07;
 }
 
 /// The hour of the day, as ONE object.
@@ -1595,6 +1739,14 @@ fn hour() -> Hour {
             } else {
                 AMBIENT_LUX_V3
             };
+            // Night only: the flat term's COLOUR is forked too, because at night
+            // it is the rig's one warm-capable light and the shared `Hour::NIGHT`
+            // value is cool. Day keeps `Hour::GOLDEN`'s own ambient — it is
+            // already the warmest thing in the rig, which is the whole reason
+            // [`AMBIENT_LUX_V3`] is spent on it. See [`AMBIENT_COLOR_V3_NIGHT`].
+            if night {
+                h.ambient = AMBIENT_COLOR_V3_NIGHT;
+            }
         }
     }
     if let Some([elev, azim, illum]) = env_floats::<3>("VOXELFORGE_LOOK_SUN") {
@@ -1674,7 +1826,11 @@ fn env_floats<const N: usize>(key: &str) -> Option<[f32; N]> {
 /// debug hook, not a config file.
 fn grade_knobs() -> (f32, f32, f32, f32) {
     let d = (
-        grade::TEMPERATURE,
+        if v3() {
+            grade::TEMPERATURE_V3
+        } else {
+            grade::TEMPERATURE
+        },
         grade::POST_SATURATION,
         // The v3 default is swapped HERE and not at the `ColorGrading` literal
         // so that `VOXELFORGE_LOOK_GRADE` keeps overriding it under both
@@ -2690,8 +2846,19 @@ fn apply_fill_rig(mut commands: Commands, existing: Query<(), With<LookFill>>) {
     // One provenance line, same rule as the `LOOK` line on the sun: a fill that is
     // zeroed by `VOXELFORGE_LOOK_GEN=v1` and a fill that failed to spawn look
     // identical in the frame, and only one of them is a bug.
+    //
+    // `ev100` RIDES ALONG HERE, AND IT IS APPENDED, NOT INSERTED. Exposure is
+    // now a v3 rig constant ([`grade::EV100_V3`]) rather than something only the
+    // capture harness sets, so "which exposure did this frame actually run at"
+    // has to be answerable from the frame's own log line instead of from the
+    // batch file that was believed to have set it. The other provenance line
+    // that carries `ev100` (the sky-dome spawn) only prints when the dome
+    // spawns, which under the shipped default it does not. Appended at the END
+    // because `_poppy_lookv6_chain.sh` greps this line with a prefix-anchored
+    // pattern (`gen=V3 ambient=[0-9]*`); a new field in the middle would break
+    // a check in another script.
     println!(
-        "LOOK_FILL gen={:?} ambient={:.0} sky={:.0}lux@{:.0}deg bounce={:.0}lux@{:.0}deg rim={:.0}lux@{:.0}deg contact_sky={}",
+        "LOOK_FILL gen={:?} ambient={:.0} sky={:.0}lux@{:.0}deg bounce={:.0}lux@{:.0}deg rim={:.0}lux@{:.0}deg contact_sky={} ev100={:.2}",
         look_gen(),
         h.ambient_lux,
         h.sky_fill_lux,
@@ -2701,6 +2868,7 @@ fn apply_fill_rig(mut commands: Commands, existing: Query<(), With<LookFill>>) {
         if v3() { rim_lux() } else { 0.0 },
         RIM_ELEV,
         contact,
+        h.ev100,
     );
 }
 
