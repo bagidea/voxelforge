@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Rebuild files destroyed by `git clean -fd` (2026-08-16) out of Claude Code transcripts.
 
-WHY THIS CAN WORK AT ALL. The 174 files were untracked, so git has nothing. But
+WHY THIS CAN WORK AT ALL. The 175 destroyed paths were untracked, so git has
+nothing on them (the manifest in 21e28a8 reads 174 to a line-anchored grep; two
+entries are wrapped into prose -- see docs/RECOVERY-2026-08-16.md). But
 every Write/Edit an agent ever performed is recorded verbatim in the session
 transcripts under C:\\Users\\BagIdea\\.claude\\projects\\*\\*.jsonl -- a different
 drive, untouched by the clean. A Write tool_use carries the FULL file content;
