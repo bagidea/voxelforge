@@ -29,6 +29,13 @@
 //! before moving — the "it noticed me" read `combat.rs` §4.1 established) and
 //! the same honest-telegraph rule: the strike direction locks at the END of
 //! the windup and cannot turn, so a dodge is real.
+//!
+//! The telegraph is also POSed, not just timed. A pose channel rides the same
+//! system (see `pose_for`): alert flinch → windup coil that leans AWAY from the
+//! prey and squashes → whip into a stretched lean-in strike → damped recover
+//! wobble. It is a pure function of state + time-in-state — no RNG, no writes
+//! to translation — so behaviour output is bit-identical with or without it;
+//! only the body read changes.
 
 use bevy::prelude::*;
 use fastrand::Rng;
@@ -180,6 +187,169 @@ pub fn tuning(a: Archetype) -> &'static Tuning {
         Archetype::Swarm => &TUNING[0],
         Archetype::Bruiser => &TUNING[1],
         Archetype::Pouncer => &TUNING[2],
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The pose channel — how a mind CARRIES itself while the state machine runs.
+//
+// Position + yaw alone made the telegraph unreadable: a windup looked like a
+// enemy merely stopping. These curves give every beat a body read, the classic
+// anticipation → strike → recovery arc:
+//
+//   Alert   — one-frame squash flinch, easing back out (the "it noticed" pop)
+//   Windup  — coils AWAY from the target: leans back, squashes down and wide,
+//             quadratic ease-in so the gathering ACCELERATES into the commit
+//   Crouch  — drops into the coil fast and HOLDS (the held stillness is the
+//             pouncer's whole tell)
+//   Strike  — the whip: sweeps coil→full lean-in with a fast ease-out, so most
+//             of the swing lands in the first third of the dash, then holds
+//   Recover — damped settle that continues EXACTLY from the strike pose and
+//             wobbles through neutral — committed mass reeling back
+//
+// Contract: a PURE function of (state, t-in-state, tuning table). No RNG, no
+// reads of the world, no writes to translation — behaviour (what the CSV trace
+// records) is bit-identical with or without this channel, so a proof A/B can
+// diff the traces and see nothing but pose.
+// ---------------------------------------------------------------------------
+
+/// Per-archetype pose amplitudes, parallel to `TUNING` and indexed the same
+/// way. Angles in radians; scales are multipliers on the root transform.
+struct PoseTuning {
+    /// windup/crouch: how far the coil leans BACK (rearing away from prey)
+    lean_back: f32,
+    /// strike: how far the whip leans IN (committed weight into the lunge)
+    lean_in: f32,
+    /// y-scale at full coil (squash) and full dash (stretch)
+    coil_sy: f32,
+    dash_sy: f32,
+    /// xz-scale at full coil (widens as it compresses) and full dash
+    coil_sxz: f32,
+    dash_sxz: f32,
+}
+
+const POSE: &[PoseTuning] = &[
+    // Swarm — quick and light: small coil, snappy hop of a hit
+    PoseTuning {
+        lean_back: 0.10,
+        lean_in: 0.19,
+        coil_sy: 0.92,
+        dash_sy: 1.07,
+        coil_sxz: 1.04,
+        dash_sxz: 0.96,
+    },
+    // Bruiser — the heavy read is the point: deepest coil, longest lean,
+    // loudest landing wobble
+    PoseTuning {
+        lean_back: 0.22,
+        lean_in: 0.28,
+        coil_sy: 0.86,
+        dash_sy: 1.12,
+        coil_sxz: 1.08,
+        dash_sxz: 0.94,
+    },
+    // Pouncer — the arrow: modest coil, biggest lean-in and stretch
+    PoseTuning {
+        lean_back: 0.15,
+        lean_in: 0.34,
+        coil_sy: 0.78,
+        dash_sy: 1.16,
+        coil_sxz: 1.10,
+        dash_sxz: 0.92,
+    },
+];
+
+fn pose_tuning(a: Archetype) -> &'static PoseTuning {
+    match a {
+        Archetype::Swarm => &POSE[0],
+        Archetype::Bruiser => &POSE[1],
+        Archetype::Pouncer => &POSE[2],
+    }
+}
+
+/// One frame's pose. `pitch` is body-local around +X after the yaw: positive
+/// tips the forward (−Z) axis upward = leaning back; negative noses down into
+/// the strike.
+struct Pose {
+    pitch: f32,
+    sy: f32,
+    sxz: f32,
+}
+
+impl Pose {
+    const NEUTRAL: Pose = Pose {
+        pitch: 0.0,
+        sy: 1.0,
+        sxz: 1.0,
+    };
+}
+
+fn pose_for(mind: &EnemyMind, t: &Tuning) -> Pose {
+    let p = pose_tuning(mind.archetype);
+    match mind.state {
+        // free movement carries itself neutral — the pose only speaks on the
+        // beats, so an interruption reads as an interruption
+        AiState::Patrol | AiState::Chase | AiState::Advance | AiState::Stalk => Pose::NEUTRAL,
+
+        AiState::Alert => {
+            // startle: head snaps up + squash in one frame, eases back out
+            let k = (mind.t / t.alert_beat.max(1e-4)).min(1.0);
+            let dip = (1.0 - k) * (1.0 - k);
+            Pose {
+                pitch: 0.06 * dip,
+                sy: 1.0 - 0.05 * dip,
+                sxz: 1.0 + 0.03 * dip,
+            }
+        }
+
+        AiState::Windup => {
+            // anticipation: quadratic ease-in, the coil tightens right up to
+            // the commit (continuous with the neutral it comes from)
+            let k = (mind.t / t.windup.max(1e-4)).min(1.0);
+            let e = k * k;
+            Pose {
+                pitch: p.lean_back * e,
+                sy: 1.0 + (p.coil_sy - 1.0) * e,
+                sxz: 1.0 + (p.coil_sxz - 1.0) * e,
+            }
+        }
+
+        AiState::Crouch => {
+            // the freeze drops into the coil fast (ease-out) and holds it
+            let k = (mind.t / t.crouch.max(1e-4)).min(1.0);
+            let e = 1.0 - (1.0 - k) * (1.0 - k);
+            Pose {
+                pitch: p.lean_back * e,
+                sy: 1.0 + (p.coil_sy - 1.0) * e,
+                sxz: 1.0 + (p.coil_sxz - 1.0) * e,
+            }
+        }
+
+        AiState::Strike | AiState::Pounce => {
+            // the whip: coil extremes → lean-in extremes, ease-out so the
+            // swing front-loads. Continuous with the coil at k=0 (values
+            // match; VELOCITY is the snap, which is the point)
+            let k = (mind.t / t.strike_time.max(1e-4)).min(1.0);
+            let e = 1.0 - (1.0 - k) * (1.0 - k);
+            Pose {
+                pitch: p.lean_back + (-p.lean_in - p.lean_back) * e,
+                sy: p.coil_sy + (p.dash_sy - p.coil_sy) * e,
+                sxz: p.coil_sxz + (p.dash_sxz - p.coil_sxz) * e,
+            }
+        }
+
+        AiState::Recover => {
+            // damped settle: env·cos starts at EXACTLY the strike-end pose and
+            // wobbles through neutral — the weight of the commit reeling back
+            let k = (mind.t / t.recover.max(1e-4)).min(1.0);
+            let env = (-4.5 * k).exp();
+            let w = (9.0 * k).cos();
+            Pose {
+                pitch: -p.lean_in * env * w,
+                sy: 1.0 + (p.dash_sy - 1.0) * env * w,
+                sxz: 1.0 + (p.dash_sxz - 1.0) * env * w,
+            }
+        }
     }
 }
 
@@ -467,7 +637,10 @@ pub fn enemy_ai(
         tf.translation.y = 0.0; // flat-arena contract; combat wiring owns real ground
 
         mind.facing = turn_toward(mind.facing, want_yaw, 10.0 * dt);
-        tf.rotation = Quat::from_axis_angle(Vec3::Y, mind.facing);
+        let pose = pose_for(mind, t);
+        tf.rotation = Quat::from_axis_angle(Vec3::Y, mind.facing)
+            * Quat::from_axis_angle(Vec3::X, pose.pitch);
+        tf.scale = Vec3::new(pose.sxz, pose.sy, pose.sxz);
 
         mind.t += dt;
         if mind.wander_left > 0.0 {
