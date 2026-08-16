@@ -242,9 +242,25 @@ error: linking with `link.exe` failed: exit code: 1104
     if (-not $heldForced.refused) { Say "CONFIRMED: -Force overrides the held dir (no REFUSING)." }
     else { Say "MISS: -Force did not override a held dir."; $fail++ }
 
+    # (c) mtime gate must judge in UTC. Rose's 2026-08-16 run relinked a real,
+    # bigger exe and still read mtime_stale: the before-snapshot was re-parsed
+    # from its own "…Z" string, which comes back Kind=Local (shifted +7h here),
+    # and -ge compares raw ticks. Freshness must survive that.
+    Say "=== (c) mtime gate compares UTC to UTC, not UTC to a local-shifted parse ==="
+    $beforeStr = '2026-08-15T20:17:18.2574970Z'
+    $beforeUtc = ([DateTime]::Parse($beforeStr, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
+    $afterUtc  = ([DateTime]::Parse('2026-08-16T01:03:18.3275289Z', $null, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
+    $naiveDt   = [DateTime]::Parse($beforeStr)   # the old, broken read
+    Say ("naive parse Kind={0} -> gate would say fresh={1}; UTC-to-UTC says fresh={2}" -f $naiveDt.Kind, ($afterUtc -ge $naiveDt), ($afterUtc -ge $beforeUtc))
+    if ($afterUtc -ge $beforeUtc) { Say "CONFIRMED: a relink 4h47m after the previous exe reads FRESH." }
+    else { Say "MISS: a genuinely newer exe still reads stale -> false FAIL on every lane."; $fail++ }
+    $olderUtc = ([DateTime]::Parse('2026-08-15T19:00:00.0000000Z', $null, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
+    if (-not ($olderUtc -ge $beforeUtc)) { Say "CONFIRMED: an exe OLDER than the before-snapshot still reads stale (gate not just always-true)." }
+    else { Say "MISS: the mtime gate passes an untouched exe -- it proves nothing."; $fail++ }
+
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
-    if ($fail -eq 0) { Say "SELFTEST PASS: (a), (b) and the lane-busy gate are all caught."; exit 0 }
+    if ($fail -eq 0) { Say "SELFTEST PASS: (a), (b), (c) and the lane-busy gate are all caught."; exit 0 }
     else { Say "SELFTEST FAIL: $fail assertion(s) missed."; exit 1 }
 }
 
@@ -278,10 +294,14 @@ Write-Output ("LANE_BUILD START lane={0} target={1} bin={2} profile={3} jobs={4}
 Write-Output ("BUILD_START {0}" -f $StartUtc.ToString("o"))
 
 # --- before snapshot, so "the exe is new" is a comparison, not a vibe -------
-$before = @{ exists = $false; mtime = "(absent)"; size = 0 }
+# mtimeUtc is kept as a real DateTime, never re-parsed from its own string:
+# [DateTime]::Parse on a round-trip "…Z" string hands back Kind=Local shifted
+# into local time, and -ge against a Kind=Utc value compares raw ticks — so on
+# a UTC+7 box every fresh relink inside 7h read as "stale" (false FAIL).
+$before = @{ exists = $false; mtime = "(absent)"; mtimeUtc = [DateTime]::MinValue; size = 0 }
 if (Test-Path $Exe) {
     $i = Get-Item $Exe
-    $before = @{ exists = $true; mtime = $i.LastWriteTimeUtc.ToString("o"); size = $i.Length }
+    $before = @{ exists = $true; mtime = $i.LastWriteTimeUtc.ToString("o"); mtimeUtc = $i.LastWriteTimeUtc; size = $i.Length }
 }
 Write-Output ("EXE_BEFORE exists={0} mtime={1} size={2}" -f $before.exists, $before.mtime, $before.size)
 
@@ -350,8 +370,7 @@ $gateExit  = ($realExit -eq 0)
 $gateMtime = $false
 if ($exeExists -and $exeSize -gt 0) {
     if ($before.exists) {
-        $beforeDt = [DateTime]::Parse($before.mtime)
-        $gateMtime = ($ei.LastWriteTimeUtc -ge $beforeDt)
+        $gateMtime = ($ei.LastWriteTimeUtc -ge $before.mtimeUtc)
     } else {
         $gateMtime = $true   # first-ever build: any real exe is fresh enough
     }
