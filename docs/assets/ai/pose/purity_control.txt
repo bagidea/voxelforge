@@ -1,6 +1,8 @@
-enemy 1: common prefix 98 transitions IDENTICAL (tape lengths 98/98), max phase-aligned |ddist|=1.610
-enemy 2: common prefix 106 transitions IDENTICAL (tape lengths 106/114), max phase-aligned |ddist|=0.690
-enemy 3: common prefix 44 transitions IDENTICAL (tape lengths 44/48), max phase-aligned |ddist|=1.250
-enemy 4: common prefix 56 transitions IDENTICAL (tape lengths 62/56), max phase-aligned |ddist|=14.260
-PURITY PASS: all common-prefix sequences identical, worst |ddist|=14.260
+# Pose-channel purity CONTROL — same before-binary run twice, regenerated from the committed pair
+# $ python scripts/_rose_ai_pose_purity.py trace_before.csv trace_control_samebinary.csv
+enemy 1: common prefix 98 transitions IDENTICAL (tape lengths 98/102), max phase-aligned |ddist|=1.080
+enemy 2: common prefix 106 transitions IDENTICAL (tape lengths 106/114), max phase-aligned |ddist|=1.330
+enemy 3: common prefix 44 transitions IDENTICAL (tape lengths 44/49), max phase-aligned |ddist|=0.770
+enemy 4: common prefix 58 transitions IDENTICAL (tape lengths 62/58), max phase-aligned |ddist|=14.130
+PURITY PASS: all common-prefix sequences identical, worst |ddist|=14.130
 exit=0

@@ -1,5 +1,5 @@
-raw row-level diff (common lines), 2026-08-16:
-control before1 vs before2 = 9597/9604 differing rows
-A/B     before1 vs after   = 9579/9604 differing rows
+raw row-level diff (common lines), 2026-08-16, computed from the committed CSVs:
+control trace_before vs trace_control_samebinary = 9600/9604 differing rows
+A/B     trace_before vs trace_after           = 9579/9604 differing rows
 
-=> A/B sits UNDER the same-binary noise floor. Wall-clock dt (vsync) makes ANY two runs differ at this level; the decisive identity test is the transition-sequence gate in purity_gate.txt / purity_control.txt.
+=> A/B sits UNDER the same-binary noise floor. Wall-clock dt (vsync) makes ANY two runs differ at this level; the decisive identity test is the transition-sequence gate in purity_gate.txt / purity_control.txt (both PASS, no mid-sequence divergence).

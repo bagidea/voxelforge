@@ -153,42 +153,7 @@ Amplitude ต่อ archetype (`POSE` table ขนาน `TUNING`): Swarm เบ
 - **build:** `scripts/lane-build.ps1 -Lane rose -Bin voxelforge_enemyai_proof` → `VERDICT PASS` (gate ใหม่ post-93b9876): `BUILD_DONE exit=0 errors=0`, `GATE errors=0:True exit=0:True mtime_fresh:True`; `grep -c '^error' _rose_build.log` = 0
 - **captures:** `VOXELFORGE_AIEND=2400 VOXELFORGE_AICAM=actor` ทั้งสองฝั่ง (before = pre-pose binary 117941c, after = 9809338) — รันละ 2401 เฟรม / 9604 แถว trace
 - **contact sheets (ภาพคู่ก่อน/หลัง ต่อ archetype):** `pose-sheet_bruiser.png` / `pose-sheet_pouncer.png` / `pose-sheet_swarm.png` — หน้าต่างเฟรมถูกเลือกจาก trace ของแต่ละรันเอง (`sheet_pick.txt`) กรอบส้ม = commit (whip) Bruiser: coil เอียงหลัง-หุบ → whip เอียงหน้า → คลาย; Pouncer: crouch แบนลงชัด → ยืดพุ่ง; Swarm อ่านบางตามดีไซน์ท่าเบา (หลักฐานหลักอยู่สองตัวใหญ่)
-- **purity (pose ไม่แตะพฤติกรรม):** ตัวตัดสิน = transition sequence ต้องตรงกันทุก index ใน common prefix — **ผ่านทั้ง A/B และ control** (ศัตรู 1-4: 98/106/44/58 transitions identical, ไม่มี divergence กลางเทป; `purity_gate.txt`, `purity_control.txt`) raw row-diff: A/B 9579/9604 **ต่ำกว่า** control (binary เดียวกันรันสองรอบ) 9597/9604 — wall-clock dt (vsync) ทำให้ทุกคู่รันต่างกันระดับนี้อยู่แล้ว (`rowdiff_numbers.txt`)
-
-## 7.5 Pose channel — ท่าขู่-ท่าเข้าตี (2026-08-16)
-
-ปัญหา: telegraph เดิมอ่านไม่ออก — windup ดูเหมือน "ศัตรูหยุด" เฉยๆ (มีแต่ position+yaw) `pose_for(state, t, tuning)` เพิ่มช่องทางท่าทาง: pure function ของ state+เวลาใน state ไม่แตะ translation ไม่มี RNG ขับที่ root เป็น pitch เฉพาะที่ (หลัง yaw) + squash/stretch scale:
-
-| state | ท่า | curve |
-|---|---|---|
-| Alert | สะดุ้ 1 เฟรม (หุบ 5%+เงยหัวเล็กน้อย) แล้วคลาย | ease-out |
-| Windup | ขมิบ: เอียงหลัง + หุบลึก-กว้าง | p² (กระชับถึงจุด commit) |
-| Crouch | หุบแรงแล้วค้าง (freeze คือ tell ของ pouncer) | ease-out + hold |
-| Strike/Pounce | whip: coil → เอียงหน้าเต็ม + ยืด | ease-out (75% ในครึ่งแรก) |
-| Recover | สปริงดับ สั่นผ่านเป็นกลาง ต่อเนื่องจากท่า strike พอดี | e^(−4.5k)·cos(9k) |
-
-Amplitude ต่อ archetype (`POSE` ตารางขนาน `TUNING`): Swarm เบา (lean_back 0.10 rad, coil 0.92) · Bruiser หนักสุด (0.22, coil 0.86) · Pouncer ลูกศร (lean_in 0.34, dash ยืด 1.16) — ค่าต่อเนื่องกันทุกจุดสลับ state (ไม่มีกระโดดค่า นอกจากความเร็วเปลี่ยนที่ whip ซึ่งคือจุดขาย)
-
-### การพิสูจน์ (ทั้งหมดใน `docs/assets/ai/pose/`)
-
-build: `lane-build.ps1 -Lane rose -Bin voxelforge_enemyai_proof` → `grep -c '^error'` = **0** (log `_rose_build_after.log`), cargo exit 0, exe relink จริง (mtime ขยับ, size เปลี่ยน)
-
-captures: binary ก่อน/หลัง (source ที่ `9809338^` vs `9809338`) รันด้วย env เดียวกัน `VOXELFORGE_AIEND=2400 VOXELFORGE_AICAM=actor` (seed เดียวกัน RPSE, route เดียวกัน) ได้ trace ฝั่งละ 9,605 แถว (2,401 เฟรม × 4 minds)
-
-**ภาพ (contact sheet 8 ช่องต่อ cycle เดียวกัน ก่อน/หลัง ตัดจาก trace ของแต่ละรันเอง):**
-`pose-sheet_swarm.png` · `pose-sheet_bruiser.png` · `pose-sheet_pouncer.png` — แถวล่าง (posed) เห็น coil→whip→settle แถวบน (ก่อนแก้) ยืนนิ่งตลอด
-
-**สัญญา purity (pose ไม่แตะพฤติกรรม) — วัด 3 ชั้นเทียบ control รันซ้ำ binary เดิม:**
-
-| มิติ | control (binary เดิม ×2) | A/B (ก่อน vs หลัง) |
-|---|---|---|
-| transition common-prefix ต่อ enemy | 98/106/44/58 เหมือนเป๊ะ | 98/106/44/58 **เหมือนเป๊ะ** |
-| max phase-aligned \|Δdist\| | 14.13 | **12.92** (≤ control) |
-| row-diff ดิบ | ~100% ของแถว (17,486/8,749) | ~100% (19,158/9,605) |
-
-คำอธิบาย row-diff: เครื่องมือ (wall-clock dt จาก vsync) ไม่ deterministic — **binary เดียวกันรันสองรอบก็ต่างกันเกือบทุกแถว** (ตำแหน่งทศนิยมที่ 2 ขยับตาม jitter ของ dt) ดังนั้น "bit-identical" พิสูจน์ไม่ได้แม้กับตัวเครื่องมือเอง หลักฐานที่มีความหมายคือ prefix identity + \|Δdist\| ที่**ไม่เกิน** noise floor ของ control — ผ่านทั้งคู่ (`purity_gate.txt`, `purity_control.txt`; ความยาว tape ต่างกัน ±4-6 transition ทั้งสองคู่ ทิศสุ่ม = ผลของ Σdt ต่างกัน ไม่ใช่พฤติกรรม)
-
-scripts: `_rose_ai_pose_sheet.py` (ตัดหน้าต่างจาก trace, ป้ายทุกช่อง, กรอบส้ม=commit) · `_rose_ai_pose_purity.py` (prefix gate, ทดสอบบน control บวก/ลบแล้ว)
+- **purity (pose ไม่แตะพฤติกรรม):** ตัวตัดสิน = transition sequence ต้องตรงกันทุก index ใน common prefix — **ผ่านทั้ง A/B และ control** (ศัตรู 1-4: 98/106/44/58 transitions identical, ไม่มี divergence กลางเทป; `purity_gate.txt`, `purity_control.txt` — ทุกตัวเลข regenerate ได้จาก CSV คู่ที่ commit) raw row-diff: A/B 9579/9604 **ต่ำกว่า** control (binary เดียวกันรันสองรอบ) 9600/9604 — wall-clock dt (vsync) ทำให้ทุกคู่รันต่างกันระดับนี้อยู่แล้ว (`rowdiff_numbers.txt`)
 
 ## 8. Open / next (combat lane's call)
 
