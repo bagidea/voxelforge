@@ -1,0 +1,13 @@
+[2m2026-08-16T13:54:30.029146Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-08-16T13:54:30.418018Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+[2m2026-08-16T13:54:30.546918Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-08-16T13:54:30.547209Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-08-16T13:54:30.547887Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — hero shot (65v0)
+G2_PANE=block
+VOXEL_NOCAST=0
+VOXEL_CELLS=2080
+SHADOW_MAP=4096
+G4_CONTACT=off
+VOXEL_OVERLAPS=0
+SHOT saved to _fl_g2g4_20260816/before-nohud2.png (frame 185)
+[2m2026-08-16T13:54:33.899221Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to _fl_g2g4_20260816/before-nohud2.png

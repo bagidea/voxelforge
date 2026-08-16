@@ -1,0 +1,42 @@
+# _fl_g2g4_20260816/before-nohud2.png = 1280x720
+
+## G3 [MEASURED] bounce/shade not black, not blue
+   interior p05-L=14.3% (need >=8)  p50-L=25.0%
+   darkest shade RGB=(45,22,7) R-B=+38
+   -> PASS
+
+## G5 [MEASURED] window not blown-out (gradient survives)
+   brightest px @(1230,0) RGB=(246, 205, 124) min(G,B)=124 (<=245)  spread=43.8
+   -> PASS
+
+## G6 [MEASURED] warm golden tone (R>G>B, R-B 40..210)
+   brightest warm patch RGB=(232,211,181) R-B=+51
+   -> PASS
+
+## G4a [MEASURED] soft-shadow penumbra (floor 10-90% fall px)
+   edges found=73  penumbra median=4px  p25=3px (need median>=5)
+   -> FAIL
+## G4b [INDICATOR only] contact-AO groove strength (confounded by checker floor)
+   grooves=1603  top-40 mean dip=68.7 L-units
+   -> VISUAL call (compare under-bowl darkening old vs new)
+   G4a penumbra=4px is the objective half; G4b AO = eyeball
+
+## G2 [MEASURED] key-light has a bright directional beam
+   top5% mean L=73.0  median L=25.0  delta=48.0 (need>=18)
+   beam x-centroid bias=0.05 (0=centre,1=edge; ref light is off to one side)
+   -> PASS
+
+## G1 [VISUAL] voxel hard 90-deg edges — eyeball at 100%, not scored here
+
+====================================================
+GATE SUMMARY  (M=measured objective / V=visual call):
+  G2 key-dir  [M] = PASS
+  G3 shade    [M] = PASS
+  G4a penumbra[M] = FAIL  (4px, need>=5)
+  G4b AO      [V] = eyeball (groove indicator 69)
+  G5 window   [M] = PASS
+  G6 warm     [M] = PASS
+  G1 voxel    [V] = eyeball at 100%
+  => G4/G1 are visual determinations; G2/G3/G4a/G5/G6 objective above.
+
+VERDICT: FAIL — 1 of 5 measured gates red: G4a
