@@ -1,0 +1,426 @@
+[legB] lever VOXELFORGE_LOOK_EXPOSURE=8.6 - expect ev100=8.60 
+2026-08-16T14:04:41.762378Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+2026-08-16T14:04:42.047424Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+EDITOR_CONFIG loaded editor_config.json — 16 actions, grid_snap=1
+CINE eye Vec3(36.0, 3.6, 34.0)->Vec3(36.0, 3.6, 34.0) aim Vec3(32.5, 1.8, 29.5)->Vec3(32.5, 1.8, 29.5) secs=1 start=1 exit=None
+AI_MODE tactics (perception + squad pass)
+SETTINGS loaded settings.json
+2026-08-16T14:04:42.175967Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
+2026-08-16T14:04:42.176045Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on this device.
+2026-08-16T14:04:42.176510Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
+2026-08-16T14:04:42.176709Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
+STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
+MAP_LOAD ok path=maps/edhari.json name="edhari" blocks=9537 size=2x2 chunks
+MESH_PATH split (one mesh + material per block type)
+MAP_APPLY set=9537 skipped=0 total_quads=9262
+QUEST_INIT start=q1_embers
+QUEST_INIT quests_loaded=5
+ENEMY_SPAWN kind=sentinel parts=30 height=3.38b feet=(32.0,1.0,25.0) yaw=0.00
+HUSK2_SPAWN kind=sentinel at (32.0,1.0,25.0)
+SPAWN_ENCOUNTER husk at (32.0,_,25.0) on Edhari surface
+SPAWN_GROUND col=(32,32) top=0 feet=1 => PASS
+SCENE_READY source=maps/edhari.json spawn=(32.5,2.6,32.5) surface=0 campfire=(32.5,1.0,29.5)
+SPAWN_NPC id=maren name="Elder Maren" pos=(32,2,4)
+SPAWN_NPC id=toma name="Toma" pos=(16,1.5,24)
+QUEST_LOAD ok path=quest_save.json flags=5 quests=1
+ENTER_PLAY
+AUDIO_PLAY:audio/music_theme.wav t=0.00 pos=(non-spatial)
+AUDIO_PLAY:audio/ambient_wind.wav t=0.00 pos=(omnipresent)
+AUDIO_PLAY:audio/ambient_campfire.wav t=0.00 pos=(32.5,1.0,29.5)
+AUDIO_PLAY:audio/ambient_village.wav t=0.00 pos=(47.5,2.6,22.5)
+LOOK_IBL gen=V3 nits=14
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+QUEST_FEEDBACK q1_embers complete → text + sound
+AUDIO_ZONE:Campfire t=0.00 pos=(32.5,2.6,32.5)
+VFX campfire lit at (32.5,1.0,29.5)
+LOOK_FILL gen=V3 ambient=26 sky=62lux@76deg bounce=16lux@28deg rim=20lux@14deg contact_sky=true ev100=8.60
+LOOK atmosphere spawned mode=lut aerial_max=72
+QUEST_AREA enter=spawn_shelter player=(32.5,32.5)
+AUDIO_PLAY:audio/player_respawn.wav t=0.00 pos=(0.0,0.0,0.0)
+ANIM_RIG_WEAPON spawn actor=Player entity=667v0
+CAST_SPAWN who=maren root=623v0 body_boxes=24 gear_boxes=0 slots_filled=0/6 height=1.96b feet=(32.0,13.0,4.0) yaw=3.14
+CAST_WEAR who=maren head=- torso=- legs=- hands=- weapon=- back=-
+QUEST_DIALOGUE fire id=dlg_maren_first_call trigger=on_objective
+CAST_MATERIALS who=maren total=24 cloth=11 hair=4 skin=3 metal=2 wood=2 leather=1 glow=1
+ANIM_RIG_NPC dressed entity=613v0 look=Villager
+CAST_DRESSED id=maren placeholder_mesh=removed body=maren feet=(32.0,13.0,4.0)
+ANIM_RIG_NPC dressed entity=614v0 look=Villager
+CAST_SPAWN who=toma root=754v0 body_boxes=17 gear_boxes=0 slots_filled=0/6 height=1.34b feet=(16.0,3.0,24.0) yaw=3.14
+CAST_WEAR who=toma head=- torso=- legs=- hands=- weapon=- back=-
+CAST_MATERIALS who=toma total=17 cloth=8 skin=3 hair=3 wood=3
+CAST_DRESSED id=toma placeholder_mesh=removed body=toma feet=(16.0,3.0,24.0)
+CAST_SPAWN who=toma root=778v0 body_boxes=17 gear_boxes=0 slots_filled=0/6 height=1.34b feet=(16.5,3.0,24.5) yaw=-1.57
+CAST_WEAR who=toma head=- torso=- legs=- hands=- weapon=- back=-
+CAST_MATERIALS who=toma total=17 cloth=8 skin=3 hair=3 wood=3
+CAST_SPAWN_NPC id=toma feet=(16.5,3.0,24.5) region=west_house
+LOOK play FogVolume spawned density=0.030 (god-ray medium)
+LOOK tier=Ultra pcss=Some(12.0) shadow_map=4096 sun=-8deg/205deg illum=260 contact=true
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+VFX_RIG_WEAPON_TRAIL attach actor=Player entity=667v0
+ANIM_RIG_NPC dressed entity=802v0 look=Villager
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+SHOT saved to E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ev100night_twoleg\legB.png
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+2026-08-16T14:04:45.551997Z  INFO bevy_render::view::window::screenshot: Screenshot saved to E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ev100night_twoleg\legB.png
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE BEFORE inject  R_just_pressed=false R_held=false jp=[] demo_fid=0
+INPUT_TRACE AFTER  handler R_just_pressed=false R_held=false jp=[] demo_fid=0
