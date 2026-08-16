@@ -40,6 +40,15 @@ path = "src/audio_proof_main.rs"
 name = "voxelforge_charshot"
 path = "src/char_shot_main.rs"
 
+# Enemy-AI proof (rose) — drives Monanisa's enemy bodies (enemies.rs,
+# #[path]-included unmodified) with rose's behaviour module through a scripted
+# player chase and captures frames for the clip. Links enemies.rs +
+# enemy_ai.rs only, so it cannot be blocked by (or block) combat.rs / main.rs
+# mid-edit. See src/enemy_ai_proof_main.rs.
+[[bin]]
+name = "voxelforge_enemyai_proof"
+path = "src/enemy_ai_proof_main.rs"
+
 # VFX proof (kevin) — renders vfx::setup_showcase ONLY, linking vfx.rs verbatim
 # and no other module, so the before/after pairs can be rebuilt while main.rs
 # (main_menu.rs / combat.rs breakage from two OTHER lanes) and even voxelforge_shot
@@ -48,6 +57,16 @@ path = "src/char_shot_main.rs"
 [[bin]]
 name = "voxelforge_vfx_proof"
 path = "src/vfx_proof_main.rs"
+
+# Enemy design shot (Monanisa) — carries the SAME `VOXELFORGE_ENEMYSHOT` stage
+# wiring that shot_main.rs does, but links only enemies.rs. Same isolation
+# trick as voxelforge_charshot: `voxelforge_shot` also `#[path]`-includes
+# hero.rs, vfx.rs and characters.rs, so a lane mid-edit in any of those stops
+# the enemy contact sheet from rendering at all. This bin cannot be blocked
+# by a lane it does not link. See src/enemy_shot_main.rs.
+[[bin]]
+name = "voxelforge_enemyshot"
+path = "src/enemy_shot_main.rs"
 
 [features]
 # PCSS soft shadows (bible pass #4 / gate G4) are behind an experimental Bevy
