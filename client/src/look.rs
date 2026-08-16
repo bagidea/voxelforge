@@ -1658,6 +1658,51 @@ impl Hour {
         // to keep undersides from going to pure fill-black, nothing more.
         bounce: [0.55, 0.56, 0.68],
         bounce_lux: 16.0,
+        // STAYS 7.5. An 8.6 was tried and MEASURED AND REJECTED; the numbers are
+        // kept here so the next person does not spend the same six boots on it.
+        //
+        // The A/B was single-binary: `VOXELFORGE_LOOK_EXPOSURE` is applied after
+        // the `Hour` constant is picked, so one exe shoots both legs and only
+        // this float moves. The no-lever leg printed `ev100=8.60` against the
+        // lever leg's `ev100=7.50` at runtime, which is what proves the lever and
+        // this constant are the same knob (log pinned at
+        // `_poppy_ev100night_pinned/_shoot.log`).
+        //
+        // 8.6 fails the v7 measurability bars outright, on night-firelit:
+        //
+        //                p05      warmth   separation   band
+        //   7.5        24.46       46.41        91.99  32.75
+        //   8.6        19.26       38.51        51.36  13.07
+        //   bar     >= 20.40   >= before    >= before
+        //
+        // Raising ev100 darkens, so the obvious correction is to go the other
+        // way -- and a 5-rung ladder (8.6/7.5/7.0/6.5/6.0, all on one binary,
+        // `scripts/_poppy_ev100_night_sweep.*`) does clear every bar all the way
+        // down to 6.0, with p05/warmth/separation rising monotonically. THAT
+        // LADDER MUST NOT BE READ AS "6.0 WINS". `_poppy_lookv7_gate.py` says in
+        // its own docstring that its clauses ask "does the ESTIMATOR still have a
+        // signal to work with", not "does it look nice" -- they are monotone in
+        // exposure, so they nominate the bottom rung of whatever range is swept.
+        // They can reject a value; they cannot pick one.
+        //
+        // What picks one is the reference this comment already named below: the
+        // BSL night plate, whose property is tonal, not per-pixel -- most of the
+        // mass dark, a small isolated bright tail. Scored as EMD between luma
+        // histograms (`scripts/_poppy_ev100_night_anchor.py`), distance to the
+        // reference gets WORSE the further the exposure is ridden down:
+        //
+        //   rung        6.0     6.5     7.0     7.5    8.6   | day control
+        //   meanEMD  11.277   8.981   6.856   4.927  2.452   |     12.253
+        //   dark%      2.64    6.75   12.05   17.01  27.30   |      4.76
+        //
+        // At 6.0 the frame is nearly as far from the night reference as a NOON
+        // frame is (11.277 vs 12.253) and the near-black wall faces this comment
+        // asks for are gone (dark% 17.01 -> 2.64). The two metrics are opposed,
+        // so the value has to maximise night-ness SUBJECT TO the bars holding --
+        // and because warmth/separation are graded as "no worse than 7.5",
+        // monotonicity excludes every darker rung, while every brighter rung buys
+        // measurability by spending the night. The constrained optimum inside the
+        // swept range is the value that was already here.
         ev100: 7.5,
         fog: FOG_COLOR_NIGHT,
     };
