@@ -102,6 +102,8 @@ pair impact  impact  || rc=1
 pair parry   parry   || rc=1
 # stagger — the reel + the ground reaction; the reel is in BOTH plates
 pair stagger stagger || rc=1
+# landing — ground-contact dust from a hard fall (AnimLand, full strength)
+pair landing landing || rc=1
 
 # ---- the control ----------------------------------------------------------
 # A SECOND copy of the impact before-plate, same command, same env. It is the
@@ -113,9 +115,9 @@ pair stagger stagger || rc=1
 shoot impact 1 "impact-a-before-control.png" || rc=1
 
 if [ "$rc" -eq 0 ]; then
-  # 7, not 6: three pairs plus the control. The control is a rendered plate that
+  # 9, not 8: four pairs plus the control. The control is a rendered plate that
   # can fail like any other, so it belongs in the count that says how many passed.
-  echo "RENDER_VFX_PAIRS PASS 7/7 (3 pairs + control) -> $OUT"
+  echo "RENDER_VFX_PAIRS PASS 9/9 (4 pairs + control) -> $OUT"
 else
   echo "RENDER_VFX_PAIRS FAIL"
 fi

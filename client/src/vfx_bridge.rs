@@ -27,7 +27,9 @@
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
 
-use crate::anim::{Actor, AnimDodge, AnimFootstep, AnimSwing, DodgePhase, RigWeapon, SwingPhase};
+use crate::anim::{
+    Actor, AnimDodge, AnimFootstep, AnimLand, AnimSwing, DodgePhase, RigWeapon, SwingPhase,
+};
 use crate::audio::SfxEvent;
 use crate::combat::{Enemy, ImpactEvent, ImpactWeight, PlayerCombat};
 use crate::scene::Campsite;
@@ -81,6 +83,7 @@ impl Plugin for VfxBridgePlugin {
                 drive_rig_weapon_trail,
                 footstep_dust,
                 dodge_dust,
+                landing_dust,
             ),
         );
     }
@@ -389,6 +392,41 @@ fn dodge_dust(
             Actor::Husk => {
                 for tf in &enemies {
                     dust.write(FootDust { pos: feet_of(tf, Actor::Husk), power: 2.2 });
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ⑧ — landing dust (a fall hitting the ground, not a mid-stride footfall)
+// ---------------------------------------------------------------------------
+//
+// `anim.rs` has driven a landing-squash POSE off a hard fall (`rig.land`/
+// `rig.land_amp`) since that system was built, but until `AnimLand` (added
+// alongside this system) nothing told the VFX lane the moment it happened —
+// a body dropping onto the ground kicked up nothing. `amp` mirrors the same
+// `|fall speed| / LAND_FULL` the squash pose uses, so the dust and the pose
+// read the same impact strength instead of two different numbers for one
+// beat. Scaled well past a footstep (`power` 1.0) and a dodge kick-off (2.2)
+// so even a light stumble reads as ground contact, not another footfall.
+fn landing_dust(
+    mut lands: MessageReader<AnimLand>,
+    mut dust: MessageWriter<FootDust>,
+    player: Query<&Transform, With<PlayerCombat>>,
+    enemies: Query<&Transform, With<Enemy>>,
+) {
+    for l in lands.read() {
+        let power = 1.4 + l.amp.clamp(0.0, 1.0) * 2.0;
+        match l.actor {
+            Actor::Player => {
+                for tf in &player {
+                    dust.write(FootDust { pos: feet_of(tf, Actor::Player), power });
+                }
+            }
+            Actor::Husk => {
+                for tf in &enemies {
+                    dust.write(FootDust { pos: feet_of(tf, Actor::Husk), power });
                 }
             }
         }

@@ -32,6 +32,7 @@ ROWS = [
     ("impact", "impact", "weapon trail + contact sparks / voxel debris"),
     ("parry", "parry", "parry ring flash"),
     ("stagger", "stagger", "stagger reel + ground reaction"),
+    ("landing", "landing", "hard-fall ground dust (AnimLand, full strength)"),
 ]
 
 # A pixel counts as changed when any channel moves by more than this. Below it the

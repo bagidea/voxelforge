@@ -1629,6 +1629,12 @@ pub enum VfxShot {
     /// else fires. Isolates the swing-trail for a before/after that a debris-laden
     /// impact frame would drown out.
     Trail,
+    /// A hard fall hitting the ground — the husk drops back onto its feet and the
+    /// ground kicks up dust at full strength (`AnimLand`'s `amp = 1.0`, the same
+    /// signal `vfx_bridge::landing_dust` turns into `FootDust` in game). Isolated
+    /// from `Stagger`'s reel-and-hit beat on purpose: this is ground contact,
+    /// not an impact.
+    Landing,
 }
 
 impl VfxShot {
@@ -1641,6 +1647,7 @@ impl VfxShot {
             "parry" | "riposte" => Some(VfxShot::Parry),
             "stagger" | "stun" | "dust" => Some(VfxShot::Stagger),
             "trail" | "ribbon" => Some(VfxShot::Trail),
+            "landing" | "land" => Some(VfxShot::Landing),
             _ => None,
         }
     }
@@ -1720,6 +1727,10 @@ const STAGGER_REEL: f32 = 0.42;
 /// When the parry ring fires. Late on purpose: the ring lives ~160 ms by design
 /// (a parry read has to be a *flash*), so it must be caught close to its peak.
 const PARRY_AT: f32 = 3.13;
+/// When the landing beat's feet hit the ground. Fired close to the grab frame:
+/// `FootDust` motes live only 0.25-0.45 s (`on_footdust`), so a beat much
+/// earlier than the shot would already be dead by 3.2 s.
+const LANDING_AT: f32 = 3.02;
 
 /// Drives the shot so the chosen beat peaks at the 3.2 s screenshot.
 #[derive(Resource, Default)]
@@ -2010,6 +2021,7 @@ pub fn showcase_timeline(
     mut tl: ResMut<ShowcaseTimeline>,
     mut impacts: bevy::ecs::message::MessageWriter<Impact>,
     mut unravels: bevy::ecs::message::MessageWriter<Unravel>,
+    mut dusts: bevy::ecs::message::MessageWriter<FootDust>,
     mut blades: Query<(&mut SwingTrail, &mut Transform), With<ShowcaseBlade>>,
     mut husks: Query<&mut Transform, (With<ShowcaseHusk>, Without<ShowcaseBlade>)>,
 ) {
@@ -2142,6 +2154,15 @@ pub fn showcase_timeline(
                     flavor: HitFlavor::Husk,
                     body_half: Some(Vec3::new(0.48, 1.15, 0.32)),
                 });
+            }
+        }
+        VfxShot::Landing => {
+            // Same signal `vfx_bridge::landing_dust` sends on `AnimLand { amp: 1.0 }`
+            // — a hard fall, full strength — thrown at the husk's own feet so this
+            // pair isolates ground-contact dust from every other beat's debris.
+            if t >= LANDING_AT && tl.fired == 0 {
+                tl.fired = 1;
+                dusts.write(FootDust { pos: Vec3::new(0.0, 0.0, -1.2), power: 1.4 + 1.0 * 2.0 });
             }
         }
     }
