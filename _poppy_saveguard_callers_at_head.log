@@ -1,0 +1,90 @@
+Save-guard caller list, re-derived AT HEAD (correction evidence for 0d734c0)
+============================================================================
+
+WHY THIS FILE EXISTS. 0d734c0's message claimed "TRACKED files at HEAD already
+named them" and then listed four call sites. Two of those four were read out of
+the WORKING TREE, not out of HEAD. Both files are still ` M` (other lanes'
+in-flight edits), so their line numbers describe a state git does not carry.
+0d734c0 is a permanent record and cannot be rewritten, so the corrected list is
+recorded here and in the body of the commit that adds this file.
+
+FRAME. "HEAD" below means 800f1a9 -- the commit 0d734c0 was made against, i.e.
+the tree as it stood BEFORE the four modules were committed. That is the only
+frame in which the question "would a clean clone build?" is meaningful.
+
+Every line below is reproducible with git alone; no working tree is consulted.
+
+
+--- WRONG IN 0d734c0: cited, but not present at HEAD ------------------------
+
+  $ git show 800f1a9:client/src/anim.rs | grep -c cutscene
+  0
+
+    0d734c0 cited "client/src/anim.rs:40 use crate::cutscene::{..}".
+    anim.rs at HEAD does not mention cutscene ANYWHERE. Line 40 exists only in
+    the modified working-tree copy.
+
+  $ git show 800f1a9:client/src/shot_main.rs | grep -n '#\[path'
+  15:#[path = "hero.rs"]
+  22:#[path = "vfx.rs"]
+
+    0d734c0 cited "client/src/shot_main.rs:22,28 #[path] characters/equipment".
+    At HEAD shot_main.rs includes hero.rs and vfx.rs and nothing else; line 22
+    is vfx.rs, not characters.rs. The characters/equipment includes exist only
+    in the modified working-tree copy.
+
+    CONSEQUENCE: the claim that voxelforge_shot was uncompilable at HEAD is
+    WITHDRAWN. It built fine. Only two bins were actually broken (below).
+
+
+--- RIGHT, AND UNDERSTATED: what HEAD really required -----------------------
+
+  $ git show 800f1a9:client/src/main.rs | grep -nE '^mod (characters|equipment|cutscene);'
+  14:mod characters;
+  16:mod cutscene;
+  24:mod equipment;
+
+  $ git show 800f1a9:client/src/char_shot_main.rs \
+      | grep -nE 'mod (characters|equipment);|path = "(characters|equipment)\.rs"'
+  22:#[path = "characters.rs"]
+  23:mod characters;
+  25:#[path = "equipment.rs"]
+  26:mod equipment;
+
+    0d734c0 cited only main.rs:16 for main.rs. main.rs at HEAD declared all
+    THREE modules, so the game binary was missing three files, not one. The
+    original message understated its own strongest evidence while overstating
+    the weak part.
+
+
+--- enemy_shot_main.rs: no HEAD caller at all, and that is expected ---------
+
+  $ for b in main shot_main perf_main audio_proof_main char_shot_main \
+             enemy_ai_proof_main vfx_proof_main; do
+      git show 800f1a9:client/src/$b.rs | grep -c 'enemy_shot_main'
+    done
+  (all zero)
+
+    Nothing #[path]-includes a bin root. enemy_shot_main.rs becomes a build
+    input only through the [[bin]] entry in client/Cargo.toml, which was
+    uncommitted until 0d734c0 landed it. 0d734c0 described this correctly.
+
+
+--- CORRECTED VERDICT ------------------------------------------------------
+
+  Unbuildable from a clean clone at 800f1a9:
+    voxelforge            main.rs:14,16,24  -> characters.rs, cutscene.rs, equipment.rs
+    voxelforge_charshot   char_shot_main.rs:22-23,25-26 -> characters.rs, equipment.rs
+
+  NOT broken at 800f1a9 (0d734c0 wrongly said it was):
+    voxelforge_shot       includes only hero.rs + vfx.rs at HEAD
+
+  The save-guard commit's PURPOSE is unaffected: two shipped bins genuinely
+  could not build, ~3.5k lines were reachable by `git clean -fd`, and the
+  manifest still had to land with the file it names. Only the evidence list
+  was wrong, and it was wrong in a way that inflated the blast radius.
+
+LESSON. A line number is meaningless without the tree it was read from. Six of
+the eight files in play here are ` M`, so `grep client/src/...` answers a
+different question than `git show HEAD:client/src/...` -- and only the second
+one belongs in a commit message.
