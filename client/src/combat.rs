@@ -20,6 +20,7 @@
 
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
+use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 
 use crate::audio::SfxEvent;
 use crate::{FlyCam, PLAYER_HALF_W};
@@ -127,12 +128,44 @@ pub struct CombatConfig {
     pub husk_combo_pause: f32,
     pub husk_aggro_range: f32,
     pub husk_leash: f32,
+    /// How long a husk sweeps the last-seen spot before giving up (§4.1 trail).
+    pub husk_search_time: f32,
 
     // -- Guard Husk rhythm (§4.1 extended) ----------------------------------
     pub husk_telegraph_delayed: f32,
     pub husk_feint_hold: f32,
     pub husk_feint_recover: f32,
     pub husk_step_in: f32,
+
+    // -- Guard Husk perception & tactics (§4.1 extended) -------------------
+    // The "feels like a real enemy" pass: a detect→alert beat, a second
+    // (gap-closing) attack, circling re-engagement, and squad separation so a
+    // pack never stacks into one swinging blob.
+    pub husk_alert_time: f32,        // "noticed you" beat before the chase commits
+    pub husk_sight_half: f32,        // vision cone half-angle (deg)
+    pub husk_hear_range: f32,        // aggro radius when the player is noisy
+    pub husk_close_sense: f32,       // always-sense radius (behind the cone)
+    pub husk_sprint_noise: f32,      // player speed (b/s) above which it is "heard"
+    pub husk_lunge_range: f32,       // closes from mid-range where melee can't reach
+    pub husk_lunge_dmg: f32,
+    pub husk_lunge_poise: f32,
+    pub husk_lunge_wind: f32,        // lunge telegraph hold (longer, readable)
+    pub husk_lunge_dash: f32,        // dash travel time
+    pub husk_lunge_speed: f32,       // dash speed (b/s)
+    pub husk_lunge_cooldown: f32,
+    pub husk_reposition_time: f32,   // how long it circles before re-committing
+    pub husk_strafe_speed: f32,      // circling speed (× walk)
+    pub husk_backoff_range: f32,     // backs off when closer than this while circling
+    pub husk_separation: f32,        // desired min spacing between squadmates
+    pub husk_separation_strength: f32,
+    pub husk_attack_slots: u32,      // max husks whose swings may be live at once
+
+    // -- Evade (the "it dodged me" beat) -----------------------------------
+    pub husk_evade_range: f32,       // only bothers when the swing could reach it
+    pub husk_evade_time: f32,        // burst duration
+    pub husk_evade_speed: f32,       // burst speed (b/s)
+    pub husk_evade_cooldown: f32,    // per-husk, so it cannot chain-dodge
+    pub husk_evade_back: f32,        // how much of the hop is backwards vs lateral
 
     // -- Feedback (§5.2 / §5.3) ---------------------------------------------
     pub hitstop_light: f32,
@@ -249,12 +282,40 @@ pub const COMBAT: CombatConfig = CombatConfig {
     husk_combo_pause: 1.5,
     husk_aggro_range: 12.0,
     husk_leash: 6.0,
+    husk_search_time: 3.0,
 
     // -- Guard Husk rhythm (§4.1 extended) ----------------------------------
     husk_telegraph_delayed: 1.55,
     husk_feint_hold: 0.42,
     husk_feint_recover: 0.55,
     husk_step_in: 0.5,
+
+    // -- Guard Husk perception & tactics (§4.1 extended) -------------------
+    husk_alert_time: 0.45,
+    husk_sight_half: 55.0,
+    husk_hear_range: 18.0,
+    husk_close_sense: 4.5,
+    husk_sprint_noise: 4.2,
+    husk_lunge_range: 8.0,
+    husk_lunge_dmg: 22.0,
+    husk_lunge_poise: 30.0,
+    husk_lunge_wind: 0.55,
+    husk_lunge_dash: 0.30,
+    husk_lunge_speed: 9.0,
+    husk_lunge_cooldown: 4.5,
+    husk_reposition_time: 1.1,
+    husk_strafe_speed: 0.9,
+    husk_backoff_range: 2.3,
+    husk_separation: 2.4,
+    husk_separation_strength: 1.0,
+    husk_attack_slots: 2,
+
+    // -- Evade (the "it dodged me" beat) -----------------------------------
+    husk_evade_range: 3.6,
+    husk_evade_time: 0.30,
+    husk_evade_speed: 7.5,
+    husk_evade_cooldown: 3.0,
+    husk_evade_back: 0.55,
 
     // -- Feedback (§5.2 / §5.3) ---------------------------------------------
     hitstop_light: 0.080,
@@ -379,6 +440,7 @@ pub const HUSK_GAP: f32 = COMBAT.husk_gap;
 pub const HUSK_COMBO_PAUSE: f32 = COMBAT.husk_combo_pause;
 pub const HUSK_AGGRO_RANGE: f32 = COMBAT.husk_aggro_range;
 pub const HUSK_LEASH: f32 = COMBAT.husk_leash;
+pub const HUSK_SEARCH_TIME: f32 = COMBAT.husk_search_time;
 
 // -- Feedback (§5.2 / §5.3) -------------------------------------------------
 pub const HITSTOP_LIGHT: f32 = COMBAT.hitstop_light;
@@ -422,6 +484,34 @@ pub const HUSK_FEINT_RECOVER: f32 = COMBAT.husk_feint_recover;
 /// half walk speed). Standing still through a 1.5 s wind-up would let the player
 /// simply back off, and it would let hit-knockback slide the fight apart.
 pub const HUSK_STEP_IN: f32 = COMBAT.husk_step_in;
+
+// -- Guard Husk perception & tactics (§4.1 extended) ------------------------
+pub const HUSK_ALERT_TIME: f32 = COMBAT.husk_alert_time;
+pub const HUSK_SIGHT_HALF: f32 = COMBAT.husk_sight_half;
+pub const HUSK_HEAR_RANGE: f32 = COMBAT.husk_hear_range;
+pub const HUSK_CLOSE_SENSE: f32 = COMBAT.husk_close_sense;
+pub const HUSK_SPRINT_NOISE: f32 = COMBAT.husk_sprint_noise;
+pub const HUSK_LUNGE_RANGE: f32 = COMBAT.husk_lunge_range;
+pub const HUSK_LUNGE_DMG: f32 = COMBAT.husk_lunge_dmg;
+pub const HUSK_LUNGE_POISE: f32 = COMBAT.husk_lunge_poise;
+pub const HUSK_LUNGE_WIND: f32 = COMBAT.husk_lunge_wind;
+pub const HUSK_LUNGE_DASH: f32 = COMBAT.husk_lunge_dash;
+pub const HUSK_LUNGE_SPEED: f32 = COMBAT.husk_lunge_speed;
+pub const HUSK_LUNGE_COOLDOWN: f32 = COMBAT.husk_lunge_cooldown;
+pub const HUSK_REPOSITION_TIME: f32 = COMBAT.husk_reposition_time;
+pub const HUSK_STRAFE_SPEED: f32 = COMBAT.husk_strafe_speed;
+pub const HUSK_BACKOFF_RANGE: f32 = COMBAT.husk_backoff_range;
+pub const HUSK_SEPARATION: f32 = COMBAT.husk_separation;
+pub const HUSK_SEPARATION_STRENGTH: f32 = COMBAT.husk_separation_strength;
+pub const HUSK_ATTACK_SLOTS: u32 = COMBAT.husk_attack_slots;
+
+// -- Evade ------------------------------------------------------------------
+pub const HUSK_EVADE_RANGE: f32 = COMBAT.husk_evade_range;
+pub const HUSK_EVADE_TIME: f32 = COMBAT.husk_evade_time;
+pub const HUSK_EVADE_SPEED: f32 = COMBAT.husk_evade_speed;
+pub const HUSK_EVADE_COOLDOWN: f32 = COMBAT.husk_evade_cooldown;
+pub const HUSK_EVADE_BACK: f32 = COMBAT.husk_evade_back;
+
 
 // ===========================================================================
 // Pure combat model — the testable core (no Bevy scheduling, headless-proofable)
@@ -776,6 +866,11 @@ impl PlayerCombat {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HuskState {
     Patrol,
+    /// Spotted the player this frame — the observable "noticed you" beat. The
+    /// husk plants its feet and snaps to face the player for `HUSK_ALERT_TIME`
+    /// before committing to a chase. Anything that closes from aggro straight
+    /// into a sprint reads as a homing missile, not a thing that *saw* you.
+    Alert,
     Chase,
     Telegraph, // wind-up (honest — no active hitbox yet)
     Feint,     // wind-up aborted on purpose — no hitbox ever appears
@@ -783,6 +878,24 @@ pub enum HuskState {
     Gap,
     Swing2,
     Recover,
+    /// Circling / backing off between commitments. After a combo (or when the
+    /// melee attack-slot is taken by a squadmate) the husk strafes around the
+    /// player instead of beelining back in — it re-engages from a flank, so a
+    /// pack never collapses into one clump swinging in unison.
+    Reposition,
+    /// Lost the player (leashed, or detection dropped while still committed):
+    /// walks to the last place the player was *detected* (`Enemy::last_seen`),
+    /// sweeps its sight cone around that spot for [`HUSK_SEARCH_TIME`], then
+    /// gives up and walks home. Without this state a lost husk either kept
+    /// homing on the true player position (wallhack chase) or snapped straight
+    /// back to patrol (amnesia) — neither reads as a creature that lost a trail.
+    Search,
+    /// Wind-up for the gap-closing lunge — a distinct, longer telegraph (crouch
+    /// back) so a kiting player reads the leap coming and can sidestep.
+    LungeWind,
+    /// The dash itself — travels forward and carries an active hitbox across its
+    /// travel, punishing a player who keeps the husk at whip-range.
+    LungeDash,
     Staggered,
     Dead,
 }
@@ -848,6 +961,52 @@ pub struct Enemy {
     /// True while the *current* wind-up is the follow-up to a feint, so the husk
     /// can never fake twice in a row (that reads as a broken enemy, not a mind game).
     pub feinted: bool,
+    /// Lunge cooldown remaining (counts down each frame). A husk that can leap
+    /// on demand every step reads as a tickle-gun; the cooldown keeps the lunge
+    /// a committed, readable threat.
+    pub lunge_cd: f32,
+    /// +1 / -1 — which way this husk circles the player while repositioning.
+    /// Picked at spawn and occasionally flipped after a circuit so a pack orbits
+    /// in mixed directions instead of marching in lockstep.
+    pub strafe_dir: f32,
+    /// Last state the AI logger reported for this husk. Tracks transitions: the
+    /// log system prints exactly once per `state != logged_state`, so every
+    /// patrol→alert→chase→telegraph→… move is surfaced without spamming.
+    pub logged_state: HuskState,
+    /// Which silhouette this body wears (`enemies.rs`, Monanisa's lane). The AI
+    /// is kind-agnostic except for the telegraph arm pick (see `husk_telegraph`)
+    /// — behaviour differences between kinds are a later decision, not baked in.
+    pub kind: crate::enemies::EnemyKind,
+    /// Where the player was last *actually detected*. A husk that loses the
+    /// player (out of the sight cone, beyond close-sense, not heard) walks to
+    /// this spot and sweeps for [`HUSK_SEARCH_TIME`] before giving up — the
+    /// "followed my trail" beat, instead of omnisciently beelining or amnesiac
+    /// snapping back to patrol.
+    pub last_seen: Vec3,
+}
+
+impl Enemy {
+    /// A fresh husk standing at `feet` on `surface`, wearing `kind`.
+    fn at(feet: Vec3, surface: f32, kind: crate::enemies::EnemyKind) -> Self {
+        Self {
+            state: HuskState::Patrol,
+            timer: 0.0,
+            patrol_origin: feet,
+            patrol_dir: 1.0,
+            facing: 0.0,
+            hitstop: 0.0,
+            hit_applied: false,
+            surface_y: surface,
+            rhythm: HuskRhythm::Straight,
+            combo_no: 0,
+            feinted: false,
+            lunge_cd: 0.0,
+            strafe_dir: 1.0,
+            logged_state: HuskState::Patrol,
+            kind,
+            last_seen: feet,
+        }
+    }
 }
 
 /// Marker for the enemy's telegraph/arm mesh (child), so the telegraph system
@@ -1272,6 +1431,58 @@ pub struct FeelLog {
     pub enabled: bool,
 }
 
+/// Player movement feed for the husks' hearing channel. `husk_ai` refreshes it
+/// every frame; a player moving faster than [`HUSK_SPRINT_NOISE`] (or mid-attack
+/// / dodge) counts as "noisy" and can be detected out to [`HUSK_HEAR_RANGE`],
+/// beyond the sight cone's reach.
+#[derive(Resource, Default)]
+pub struct PlayerKinematics {
+    pub last_pos: Vec3,
+    pub speed: f32,
+    /// False until the first frame has seeded `last_pos` (so the first speed
+    /// sample isn't measured against the world origin).
+    pub seeded: bool,
+}
+
+/// Enables the AI state-transition log (`VOXELFORGE_AI_LOG`). Prints exactly one
+/// `AI_HUSK` line per state change per husk — the observable evidence layer for
+/// the perception/tactics pass: patrol→alert→chase→telegraph→attack→reposition.
+#[derive(Resource, Default)]
+pub struct AiLog {
+    pub enabled: bool,
+}
+
+/// The before/after lever for the perception & tactics pass (`VOXELFORGE_AI_LEGACY`).
+///
+/// With `legacy` set, [`husk_ai`] falls back to the pre-pass behaviour it
+/// replaced: aggro on raw distance in any direction (no sight cone, no
+/// hearing), straight from patrol into a chase with no "noticed you" beat,
+/// beeline approach with no separation steering, no squad attack-slot ceiling,
+/// no gap-closing lunge, and back to a chase the instant a combo recovers
+/// instead of circling. That is one binary that can shoot **both** sides of the
+/// A/B — a separate "before" build would differ in link stamps and scene drift
+/// too, and could not be trusted to isolate the AI change.
+///
+/// It is a proof lever, not a gameplay option: unset (the default) is the
+/// shipping behaviour.
+#[derive(Resource, Default)]
+pub struct AiTactics {
+    pub legacy: bool,
+}
+
+/// Per-frame husk position/state trace (`VOXELFORGE_AI_TRACE=<path.csv>`).
+///
+/// The AI state log proves the *state machine* moves; it says nothing about
+/// where the bodies went. This dumps `t,entity,x,z,state,dist` every frame so
+/// the same run can be plotted top-down — which is the only way "they fan out
+/// and take turns" vs "they stack into one clump" is visible as evidence
+/// rather than as a claim. Rows are buffered and flushed on app exit.
+#[derive(Resource, Default)]
+pub struct AiTrace {
+    pub path: Option<String>,
+    pub rows: Vec<String>,
+}
+
 // ===========================================================================
 // Spawning
 // ===========================================================================
@@ -1288,8 +1499,11 @@ pub fn player_bundle() -> (PlayerCombat, Stamina, Health, Poise) {
 }
 
 /// Spawn a Guard Husk (§4.1) standing on Kevin's real terrain surface at
-/// `(wx,wz)`. Body is a stack of voxel cuboids (~2.5 blocks tall) with a raised
-/// arm child used for the telegraph. Returns nothing — pure world spawn.
+/// `(wx,wz)`. The body is the **Bone Sentinel** silhouette (`enemies.rs`,
+/// Monanisa's design — the exact swap `docs/enemy-design.md` leaves to this
+/// lane): the old three-flat-grey-cuboid husk is gone from the live game.
+/// Same signature as ever, so every call site (scene, quest, demos) swaps in
+/// one move. Returns nothing — pure world spawn.
 pub fn spawn_guard_husk(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -1298,65 +1512,45 @@ pub fn spawn_guard_husk(
     wz: f32,
     surface_y: Option<f32>,
 ) {
+    spawn_husk_of_kind(
+        commands,
+        meshes,
+        materials,
+        crate::enemies::EnemyKind::Sentinel,
+        wx,
+        wz,
+        surface_y,
+    );
+}
+
+/// Spawn one enemy of any authored [`enemies::EnemyKind`] with the full combat
+/// kit (`Enemy` AI + `Health` + `Poise`) on the same root `enemies::spawn_enemy`
+/// built. The AI is kind-agnostic; only `husk_telegraph`'s arm pick reads
+/// `Enemy::kind`. The vanilla game spawns `Sentinel`; the AI squad/demo may mix
+/// kinds in later without touching this function again.
+pub fn spawn_husk_of_kind(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    kind: crate::enemies::EnemyKind,
+    wx: f32,
+    wz: f32,
+    surface_y: Option<f32>,
+) {
     let surface = surface_y.unwrap_or_else(|| terrain_height(wx, wz) as f32 + 1.0);
     let feet = Vec3::new(wx, surface, wz);
 
-    let armor = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.32, 0.34, 0.40),
-        perceptual_roughness: 0.55,
-        metallic: 0.3,
-        ..default()
-    });
-    let head_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.18, 0.19, 0.24),
-        perceptual_roughness: 0.5,
-        ..default()
-    });
-    let torso = meshes.add(Cuboid::new(0.9, 1.4, 0.6));
-    let head = meshes.add(Cuboid::new(0.55, 0.55, 0.55));
-    let arm = meshes.add(Cuboid::new(0.28, 1.0, 0.28));
-
-    commands
-        .spawn((
-            Transform::from_translation(feet),
-            Visibility::default(),
-            Enemy {
-                state: HuskState::Patrol,
-                timer: 0.0,
-                patrol_origin: feet,
-                patrol_dir: 1.0,
-                facing: 0.0,
-                hitstop: 0.0,
-                hit_applied: false,
-                surface_y: surface,
-                rhythm: HuskRhythm::Straight,
-                combo_no: 0,
-                feinted: false,
-            },
-            Health::new(HP_HUSK),
-            Poise::new(POISE_HUSK),
-        ))
-        .with_children(|p| {
-            // Torso (centre ~1.0 above feet).
-            p.spawn((
-                Mesh3d(torso),
-                MeshMaterial3d(armor.clone()),
-                Transform::from_xyz(0.0, 1.0, 0.0),
-            ));
-            // Head (~2.0 above feet → ~2.5 block silhouette with the helm).
-            p.spawn((
-                Mesh3d(head),
-                MeshMaterial3d(head_mat),
-                Transform::from_xyz(0.0, 2.0, 0.0),
-            ));
-            // Weapon arm — starts lowered at the side; the telegraph raises it.
-            p.spawn((
-                Mesh3d(arm),
-                MeshMaterial3d(armor),
-                Transform::from_xyz(0.55, 1.1, -0.2),
-                HuskArm,
-            ));
-        });
+    // The silhouette + root entity come from the design lane; the combat kit
+    // rides on the same root so hit detection, poise, knockback and the AI all
+    // keep working on the transform they always worked on.
+    let root =
+        crate::enemies::spawn_enemy(commands, meshes, materials, kind, feet, 0.0);
+    commands.entity(root).insert((
+        Enemy::at(feet, surface, kind),
+        Health::new(HP_HUSK),
+        Poise::new(POISE_HUSK),
+    ));
+    println!("HUSK2_SPAWN kind={} at ({wx:.1},{surface:.1},{wz:.1})", kind.id());
 }
 
 /// Spawn the two HUD bars (health, stamina) + numeric readouts + the lock-on reticle.
@@ -1732,6 +1926,130 @@ pub fn husk_should_leash(dist: f32) -> bool {
     dist > HUSK_LEASH
 }
 
+/// Smallest absolute angle between two yaw angles (radians), the short way
+/// round — the same normalisation [`turn`] applies, but as a distance, for the
+/// husk's sight-cone check.
+#[inline]
+pub fn angle_delta(a: f32, b: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let d = (b - a).rem_euclid(TAU);
+    if d > PI {
+        TAU - d
+    } else {
+        d
+    }
+}
+
+/// Is this AI state one that is *committed to an attack* — i.e. it occupies one
+/// of the squad's [`HUSK_ATTACK_SLOTS`]? Recover / Gap / Reposition deliberately
+/// do not count: those between-commitment beats are exactly when a squadmate is
+/// allowed to step in, which is what makes a pack flow instead of pulsing.
+#[inline]
+pub fn husk_attacking(s: HuskState) -> bool {
+    matches!(
+        s,
+        HuskState::Telegraph
+            | HuskState::Feint
+            | HuskState::Swing1
+            | HuskState::Swing2
+            | HuskState::LungeWind
+            | HuskState::LungeDash
+    )
+}
+
+/// Separation steering: a push away from squadmates closer than
+/// [`HUSK_SEPARATION`], strengthening as a neighbour closes. Pure — the unit
+/// tests grade the anti-clumping direction and reach off this, not off a copy.
+pub fn husk_separation(squad: &[(Entity, Vec3, HuskState)], me: Entity, pos: Vec3) -> Vec3 {
+    let mut push = Vec3::ZERO;
+    for &(other, opos, _) in squad {
+        if other == me {
+            continue;
+        }
+        let d = Vec3::new(pos.x - opos.x, 0.0, pos.z - opos.z);
+        let len = d.length();
+        if len > 1e-4 && len < HUSK_SEPARATION {
+            push += d / len * ((HUSK_SEPARATION - len) / HUSK_SEPARATION);
+        }
+    }
+    push * HUSK_SEPARATION_STRENGTH
+}
+
+/// Per-husk evade bookkeeping — the "it dodged me" beat.
+///
+/// **Why a resource and not two fields on [`Enemy`].** `anim.rs` (Flamingo's
+/// lane) builds an `Enemy` with an exhaustive struct literal in its own test,
+/// so *every* added field is a compile break in a file this lane does not own.
+/// Same for a new [`HuskState`] variant — `anim.rs::husk_beat` matches the enum
+/// exhaustively. Keeping the evade timer in a side table owned by `combat.rs`
+/// buys the behaviour without reaching across the lane fence at all.
+///
+/// Entries are dropped when the husk despawns (see [`husk_evade_gc`]), so this
+/// cannot grow without bound across respawns.
+#[derive(Resource, Default)]
+pub struct HuskEvade {
+    pub per: std::collections::HashMap<Entity, EvadeSlot>,
+}
+
+/// One husk's evade state: burst time left, cooldown left, and the direction it
+/// committed to when the hop started (locked at the start so the hop is a
+/// readable commitment, not a homing slide).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EvadeSlot {
+    pub left: f32,
+    pub cd: f32,
+    pub dir: Vec3,
+}
+
+/// Is the player mid-commitment to a swing the husk could plausibly react to?
+/// Blocking / idle / already-recovering do not count — a husk that hops away
+/// from a player just standing there reads as jitter, not as a read.
+#[inline]
+pub fn player_is_swinging(s: CombatState) -> bool {
+    matches!(s, CombatState::Light | CombatState::Heavy | CombatState::Charged)
+}
+
+/// Should this husk start an evade hop *this frame*?
+///
+/// Deliberately conservative: only while the player is actually swinging, only
+/// inside the range that swing could reach, only if this husk is not itself
+/// mid-commitment (the honest-telegraph contract cuts both ways — a husk that
+/// could cancel its own wind-up by dodging would make every tell a lie), and
+/// only once per [`HUSK_EVADE_COOLDOWN`].
+#[inline]
+pub fn husk_should_evade(
+    player_state: CombatState,
+    husk_state: HuskState,
+    dist: f32,
+    slot: EvadeSlot,
+) -> bool {
+    player_is_swinging(player_state)
+        && dist <= HUSK_EVADE_RANGE
+        && slot.left <= 0.0
+        && slot.cd <= 0.0
+        && matches!(husk_state, HuskState::Chase | HuskState::Reposition)
+}
+
+/// The hop vector: mostly sideways (so it clears the arc rather than backing
+/// straight down the swing's line), part backwards. `radial` points from the
+/// husk toward the player; `side` is ±1 and normally the husk's own orbit
+/// direction, so a dodging pack keeps fanning out instead of converging.
+#[inline]
+pub fn husk_evade_vector(radial: Vec3, side: f32) -> Vec3 {
+    let tangent = Vec3::new(-radial.z, 0.0, radial.x) * side.signum();
+    (tangent * (1.0 - HUSK_EVADE_BACK) - radial * HUSK_EVADE_BACK).normalize_or_zero()
+}
+
+/// Drops evade slots whose husk no longer exists, so the side table cannot grow
+/// across deaths and respawns.
+pub fn husk_evade_gc(mut evade: ResMut<HuskEvade>, q: Query<Entity, With<Enemy>>) {
+    if evade.per.is_empty() {
+        return;
+    }
+    let live: std::collections::HashSet<Entity> = q.iter().collect();
+    evade.per.retain(|e, _| live.contains(e));
+}
+
 /// Guard Husk AI + attack resolution (§4.1 / §9). Patrols, aggros, telegraphs
 /// honestly, swings twice, and only lands damage during active frames — negated
 /// if the player is i-framing, reduced if blocking, parryable in the window.
@@ -1745,7 +2063,11 @@ pub fn husk_ai(
     mut impacts: MessageWriter<ImpactEvent>,
     mut staggers: MessageWriter<StaggerEvent>,
     feel: Res<FeelLog>,
+    ailog: Res<AiLog>,
     mut dp: ResMut<crate::dodge_parry::DodgeParryState>,
+    mut kin: ResMut<PlayerKinematics>,
+    tac: Res<AiTactics>,
+    mut evade: ResMut<HuskEvade>,
     mut enemy_q: Query<
         (Entity, &mut Transform, &mut Enemy, &Health, &mut Poise, Option<&Knockback>),
         (With<Enemy>, Without<FlyCam>),
@@ -1759,6 +2081,40 @@ pub fn husk_ai(
     let Ok((player, ptf, mut php, mut pc, mut pstam, mut ppoise)) = player_q.single_mut() else {
         return;
     };
+
+    // Hearing channel input: a sprinting or attacking player is "loud" and can
+    // be detected well past the vision cone. Seeded on the first frame so the
+    // very first speed sample isn't measured against the world origin.
+    if !kin.seeded {
+        kin.last_pos = ptf.translation;
+        kin.seeded = true;
+    }
+    kin.speed = (ptf.translation.distance(kin.last_pos) / dt.max(1e-4)).min(64.0);
+    kin.last_pos = ptf.translation;
+    let player_noisy = kin.speed >= HUSK_SPRINT_NOISE
+        || matches!(
+            pc.state,
+            CombatState::Light | CombatState::Heavy | CombatState::Charged | CombatState::Dodge
+        );
+
+    // Squad snapshot (immutable pre-pass): who is where, and who currently
+    // occupies an attack slot. Powers separation steering and attack-slot
+    // arbitration in the mutable pass below. Taken once per frame so the two
+    // query borrows stay sequential, not nested.
+    let squad: Vec<(Entity, Vec3, HuskState)> = enemy_q
+        .iter()
+        .map(|(e, t, en, _, _, _)| (e, t.translation, en.state))
+        .collect();
+    // Legacy (`VOXELFORGE_AI_LEGACY`) had no squad arbitration at all, so every
+    // husk could commit at once. Expressing that as an unreachable ceiling —
+    // rather than as a second copy of each branch — keeps the A/B honest: both
+    // sides run the *same* code path, differing only in this number and the
+    // handful of `tac.legacy` gates below.
+    let slots = if tac.legacy { u32::MAX } else { HUSK_ATTACK_SLOTS };
+    let attackers_now = squad
+        .iter()
+        .filter(|(_, _, s)| husk_attacking(*s))
+        .count() as u32;
 
     for (entity, mut etf, mut e, ehp, mut ep, shove) in enemy_q.iter_mut() {
         ep.tick(dt);
@@ -1814,6 +2170,73 @@ pub fn husk_ai(
         let to_player = ptf.translation - etf.translation;
         let dist = Vec3::new(to_player.x, 0.0, to_player.z).length();
         e.timer += dt;
+        e.lunge_cd = (e.lunge_cd - dt).max(0.0);
+        let facing_target = to_player.z.atan2(to_player.x);
+
+        // Perception: sight is a forward cone (where the model is looking), a
+        // player inside CLOSE_SENSE is felt regardless of facing, and a noisy
+        // (sprinting / attacking) player is heard out to HEAR_RANGE. The old
+        // code aggroed on raw distance in any direction — a husk with its back
+        // turned still snapped into a chase, which reads as a proximity mine,
+        // not a creature that saw you.
+        let seen = dist <= HUSK_AGGRO_RANGE
+            && angle_delta(e.facing, facing_target) <= HUSK_SIGHT_HALF.to_radians();
+        let sensed = dist <= HUSK_CLOSE_SENSE;
+        let heard = dist <= HUSK_HEAR_RANGE && player_noisy;
+        // Legacy aggroed on raw distance in any direction — that is the whole
+        // "walks straight at you like a proximity mine" read this pass removes.
+        let detected = if tac.legacy {
+            dist <= HUSK_AGGRO_RANGE
+        } else {
+            seen || sensed || heard
+        };
+        // Every *actual* detection refreshes the trail. A husk that loses the
+        // player walks to this spot, not to the player's true position — the
+        // chase must be honest about what the creature can know.
+        if detected {
+            e.last_seen = ptf.translation;
+        }
+
+        // -- Evade: the "it dodged me" beat ---------------------------------
+        // Runs *before* the state machine and, while a hop is live, replaces
+        // that state's own movement. It never changes `e.state`: a husk mid
+        // wind-up keeps its wind-up (the tell must not lie), and no new
+        // `HuskState` variant means `anim.rs` stays untouched.
+        let slot = evade.per.get(&entity).copied().unwrap_or_default();
+        let radial = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
+        let mut slot = EvadeSlot {
+            left: (slot.left - dt).max(0.0),
+            cd: (slot.cd - dt).max(0.0),
+            dir: slot.dir,
+        };
+        if !tac.legacy && husk_should_evade(pc.state, e.state, dist, slot) {
+            slot.left = HUSK_EVADE_TIME;
+            slot.cd = HUSK_EVADE_COOLDOWN;
+            slot.dir = husk_evade_vector(radial, e.strafe_dir);
+            if ailog.enabled {
+                println!(
+                    "AI_HUSK_EVADE entity={} dist={dist:.2} player={:?} from={}",
+                    entity.to_bits(),
+                    pc.state,
+                    husk_state_name(e.state),
+                );
+            }
+        }
+        let evading = slot.left > 0.0;
+        if evading && !shoved {
+            etf.translation += slot.dir * HUSK_EVADE_SPEED * dt;
+            // Keep the eyes on the player through the hop — a husk that dodges
+            // facing away looks like it slipped, not like it read the swing.
+            e.facing = turn(e.facing, facing_target, HUSK_TURN * dt);
+        }
+        evade.per.insert(entity, slot);
+
+        // Mid-range gap-closer: only worth committing when melee can't reach,
+        // the cooldown has spun, and a squad attack slot is open.
+        let can_lunge = !tac.legacy
+            && dist > MELEE_RANGE + 0.5
+            && dist <= HUSK_LUNGE_RANGE
+            && e.lunge_cd <= 0.0;
 
         match e.state {
             HuskState::Patrol => {
@@ -1822,21 +2245,81 @@ pub fn husk_ai(
                 if !shoved {
                     etf.translation.x += step;
                 }
-                e.facing = if e.patrol_dir > 0.0 { std::f32::consts::FRAC_PI_2 } else { -std::f32::consts::FRAC_PI_2 };
+                // Face the direction of the walk. atan2(z,x) convention: 0 = +X,
+                // π = −X — the old ±π/2 here made the husk strut sideways along
+                // its patrol line for the grey boxes' whole life.
+                e.facing = if e.patrol_dir > 0.0 { 0.0 } else { std::f32::consts::PI };
                 if (etf.translation.x - e.patrol_origin.x).abs() > 6.0 {
                     e.patrol_dir = -e.patrol_dir;
                 }
-                if dist <= HUSK_AGGRO_RANGE {
+                if detected {
+                    // Detected ≠ chasing. The husk first buys the observable
+                    // "noticed you" beat — a player watching from range sees the
+                    // patrol stop and the head snap over. Legacy skipped this
+                    // entirely and snapped straight into the chase.
+                    e.state = if tac.legacy {
+                        HuskState::Chase
+                    } else {
+                        HuskState::Alert
+                    };
+                    e.timer = 0.0;
+                }
+            }
+            HuskState::Alert => {
+                // The "noticed you" beat: plant, snap to face the player, hold
+                // for HUSK_ALERT_TIME. The turn runs 1.5× the normal rate — an
+                // attentive snap, not a lazy drift.
+                e.facing = turn(e.facing, facing_target, HUSK_TURN * 1.5 * dt);
+                if e.timer >= HUSK_ALERT_TIME {
                     e.state = HuskState::Chase;
+                    e.timer = 0.0;
+                } else if dist > HUSK_HEAR_RANGE {
+                    // The player vanished mid-beat — stand down.
+                    e.state = HuskState::Patrol;
                     e.timer = 0.0;
                 }
             }
             HuskState::Chase => {
-                let want = to_player.z.atan2(to_player.x);
-                e.facing = turn(e.facing, want, HUSK_TURN * dt);
-                if husk_should_leash(dist) {
-                    e.state = HuskState::Patrol; // leashed back to patrol (§4.1)
-                } else if dist <= MELEE_RANGE {
+                e.facing = turn(e.facing, facing_target, HUSK_TURN * dt);
+                // The leash measures distance from the patrol origin (home), not
+                // from the player: aggro reaches 12 blocks out, so a player-based
+                // leash of 6 made a husk at 7–12 blocks flicker Patrol↔Chase every
+                // frame. A husk chases as far as it is willing to leave home.
+                let leash_ref = if tac.legacy {
+                    dist // legacy leashed off the player, which flickered
+                } else {
+                    etf.translation.distance(e.patrol_origin)
+                };
+                if husk_should_leash(leash_ref) {
+                    // Leashed: too far from home to keep chasing. Legacy amnesia
+                    // walked straight home; the tactics pass first walks the
+                    // trail (last-seen spot) — the player who broke away at
+                    // range is followed to where they were last *seen*, not
+                    // forgotten on the spot.
+                    e.state = if tac.legacy {
+                        HuskState::Patrol
+                    } else {
+                        HuskState::Search
+                    };
+                    e.timer = 0.0;
+                } else if !tac.legacy
+                    && !detected
+                    && etf.translation.distance(e.last_seen) > 1.0
+                {
+                    // Lost mid-chase: player left the sight cone, is beyond
+                    // close-sense and not heard, and the husk hasn't even
+                    // reached the last place it saw them. Keep following the
+                    // trail instead of homing on a position it cannot know.
+                    e.state = HuskState::Search;
+                    e.timer = 0.0;
+                } else if can_lunge && attackers_now < slots {
+                    // Mid-range gap-closer: a kiting player gets the lunge — with
+                    // its own longer telegraph, so the leap stays dodgeable.
+                    e.state = HuskState::LungeWind;
+                    e.timer = 0.0;
+                    e.hit_applied = false;
+                    e.lunge_cd = HUSK_LUNGE_COOLDOWN;
+                } else if dist <= MELEE_RANGE && attackers_now < slots {
                     // Opening a combo — pick how it will be played *now*, before
                     // the blade goes up, so the wind-up itself carries the lie.
                     e.combo_no += 1;
@@ -1852,9 +2335,31 @@ pub fn husk_ai(
                             telegraph_hold(e.rhythm)
                         );
                     }
-                } else if !shoved {
-                    let dir = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
-                    etf.translation += dir * HUSK_WALK * dt;
+                } else if !shoved && !evading {
+                    // Approach with separation steering so a pack fans out around
+                    // the player instead of stacking into one clump. Legacy is the
+                    // bare radial beeline — three husks converging on one point.
+                    // Suppressed mid-hop so the evade burst isn't cancelled out by
+                    // the approach pulling in the opposite direction.
+                    let radial = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
+                    let mut move_dir = if tac.legacy {
+                        radial
+                    } else {
+                        radial + husk_separation(&squad, entity, etf.translation)
+                    };
+                    let mut speed = HUSK_WALK;
+                    if !tac.legacy && attackers_now >= slots && dist <= MELEE_RANGE + 0.6 {
+                        // Melee is fully booked: orbit at the rim instead of
+                        // pressing into a body-block clump. This is what makes a
+                        // squad take turns instead of swinging in unison.
+                        let tangent = Vec3::new(-radial.z, 0.0, radial.x) * e.strafe_dir;
+                        move_dir = tangent + radial * 0.2
+                            + husk_separation(&squad, entity, etf.translation);
+                        speed = HUSK_WALK * HUSK_STRAFE_SPEED;
+                    }
+                    if move_dir.length_squared() > 1e-6 {
+                        etf.translation += move_dir.normalize() * speed * dt;
+                    }
                 }
             }
             HuskState::Telegraph => {
@@ -1881,6 +2386,11 @@ pub fn husk_ai(
                         e.state = HuskState::Swing1;
                         e.timer = 0.0;
                         e.hit_applied = false;
+                        // The blade comes down — the whoosh belongs to the swing
+                        // itself, not to the hit (a whiffed dodge still hears
+                        // the cleaver cut air). Layered per Yamamoto's table:
+                        // `swing_light.wav` + `swing_whoosh.wav`.
+                        sfx.write(SfxEvent::SwingLight { position: etf.translation });
                     }
                 }
             }
@@ -1940,6 +2450,9 @@ pub fn husk_ai(
                     e.state = HuskState::Swing2;
                     e.timer = 0.0;
                     e.hit_applied = false;
+                    // The heavier half of the combo gets the heavier whoosh —
+                    // `swing_heavy.wav` + a louder `swing_whoosh.wav` layer.
+                    sfx.write(SfxEvent::SwingHeavy { position: etf.translation });
                 }
             }
             HuskState::Swing2 => {
@@ -1969,9 +2482,132 @@ pub fn husk_ai(
                     e.timer = 0.0;
                 }
             }
+            HuskState::Search => {
+                // Follow the trail: walk to the last place the player was
+                // actually detected, then sweep the sight cone around that spot
+                // — a slow rotation is what "looking for them" reads as. Give up
+                // after HUSK_SEARCH_TIME and walk home. Any re-detection snaps
+                // back through the Alert beat, same as spotting from patrol.
+                let to_last = e.last_seen - etf.translation;
+                let flat = Vec3::new(to_last.x, 0.0, to_last.z);
+                let arrived = flat.length() <= 0.9;
+                if !arrived && !shoved && e.timer < HUSK_SEARCH_TIME * 0.6 {
+                    // Hustle to the spot first; the sweep only starts on arrival
+                    // (or once most of the budget is spent still walking).
+                    e.facing = turn(e.facing, flat.z.atan2(flat.x), HUSK_TURN * dt);
+                    etf.translation += flat.normalize_or_zero() * HUSK_WALK * dt;
+                } else {
+                    // Sweep: rotate the sight cone at a quarter turn per second,
+                    // outward-in — the search pattern, not an idle spin.
+                    e.facing += HUSK_TURN * 0.8 * dt;
+                }
+                if e.timer >= HUSK_SEARCH_TIME || detected {
+                    e.state = if detected {
+                        HuskState::Alert // found them again — the noticed-you beat
+                    } else {
+                        HuskState::Patrol // trail gone cold — walk home
+                    };
+                    e.timer = 0.0;
+                    if ailog.enabled && detected {
+                        println!(
+                            "AI_HUSK_TRAIL entity={} re_acquired_at dist={dist:.2}",
+                            entity.to_bits(),
+                        );
+                    }
+                }
+            }
             HuskState::Recover => {
                 if e.timer >= HUSK_COMBO_PAUSE {
-                    e.state = HuskState::Chase; // re-evaluate (§4.1 pause between combos)
+                    // Circle before re-committing (perception/tactics pass): a
+                    // straight line in → swing → straight line in again reads as
+                    // a pendulum, not a fighter sizing you up. Legacy went
+                    // straight back to the chase, which is that pendulum.
+                    e.state = if tac.legacy {
+                        HuskState::Chase
+                    } else {
+                        HuskState::Reposition
+                    };
+                    e.timer = 0.0;
+                }
+            }
+            HuskState::Reposition => {
+                // Orbit the player, peel off when crowded, lean in when drifted
+                // out — then re-commit from whatever flank it lands on. Also the
+                // waiting room for a squadmate whose attack slot is taken.
+                e.facing = turn(e.facing, facing_target, HUSK_TURN * dt);
+                if !shoved && !evading {
+                    let radial = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
+                    let tangent = Vec3::new(-radial.z, 0.0, radial.x) * e.strafe_dir;
+                    // Too close → peel outward; past melee reach → lean back in.
+                    let radial_bias = if dist < HUSK_BACKOFF_RANGE {
+                        0.7
+                    } else if dist > MELEE_RANGE * 1.7 {
+                        -0.6
+                    } else {
+                        0.0
+                    };
+                    let mut move_dir = tangent * HUSK_STRAFE_SPEED + radial * radial_bias
+                        + husk_separation(&squad, entity, etf.translation);
+                    if move_dir.length_squared() > 1e-6 {
+                        etf.translation += move_dir.normalize() * HUSK_WALK * dt;
+                    }
+                }
+                if e.timer >= HUSK_REPOSITION_TIME {
+                    e.state = HuskState::Chase;
+                    e.timer = 0.0;
+                    // Flip the orbit direction about half the time (seeded, so a
+                    // headless proof stays deterministic) — mixed orbits, not a
+                    // carousel riding one way forever.
+                    if pick_rhythm((entity.to_bits() as u32) ^ e.combo_no) == HuskRhythm::Delayed {
+                        e.strafe_dir = -e.strafe_dir;
+                    }
+                }
+            }
+            HuskState::LungeWind => {
+                // The leap's tell: face the player through the whole (longer)
+                // wind-up. The arm pulls back low — a distinct crouch-and-coil
+                // pose next to the overhead melee telegraph.
+                e.facing = turn(e.facing, facing_target, HUSK_TURN * dt);
+                if e.timer >= HUSK_LUNGE_WIND {
+                    e.state = HuskState::LungeDash;
+                    e.timer = 0.0;
+                    e.hit_applied = false;
+                    // The leap itself: a heavy whoosh at the moment the coil
+                    // releases, so a sidestepping player hears the pass-by even
+                    // when the hitbox never touches them.
+                    sfx.write(SfxEvent::SwingHeavy { position: etf.translation });
+                }
+            }
+            HuskState::LungeDash => {
+                // Charge forward. The hitbox is live across the travel, so the
+                // lunge connects on whichever frame it actually reaches the
+                // player — and only once per leap.
+                if !shoved {
+                    let dir = Vec3::new(to_player.x, 0.0, to_player.z).normalize_or_zero();
+                    etf.translation += dir * HUSK_LUNGE_SPEED * dt;
+                }
+                if !e.hit_applied && e.timer <= HUSK_LUNGE_DASH {
+                    let (connected, outcome, broke) = try_hit_player(
+                        HUSK_LUNGE_DMG, HUSK_LUNGE_POISE, dist, &mut php, &mut pc,
+                        &mut pstam, &mut ppoise, &mut shake,
+                    );
+                    crate::dodge_parry::resolve_defence(
+                        outcome, HUSK_LUNGE_DMG, &feel, &mut dp, &mut commands, entity,
+                        &mut e, &mut ep, &mut pc, &php, etf.translation, to_player,
+                        &mut shake, &mut staggers,
+                    );
+                    if connected {
+                        e.hitstop = e.hitstop.max(HITSTOP_ENEMY);
+                        emit_enemy_hit_sfx(&outcome, etf.translation, &mut sfx);
+                        taken_feel(
+                            ImpactWeight::Heavy, broke, outcome, &to_player, ptf.translation,
+                            entity, player, &mut pc, &mut shake, &mut impacts, &mut staggers,
+                        );
+                        e.hit_applied = true;
+                    }
+                }
+                if e.timer >= HUSK_LUNGE_DASH {
+                    e.state = HuskState::Recover;
                     e.timer = 0.0;
                 }
             }
@@ -1980,7 +2616,14 @@ pub fn husk_ai(
 
         // Keep the Husk planted on the terrain surface it spawned on (no drift).
         etf.translation.y = e.surface_y;
-        etf.rotation = Quat::from_axis_angle(Vec3::Y, e.facing);
+        // `e.facing` uses the atan2(z,x) convention (facing 0 = looking +X —
+        // see the sight-cone unit test), but a yaw of 0 points the model's −Z
+        // front at −Z. The −π/2 offset reconciles them, so the *asymmetric*
+        // bodies (Sentinel's eye-slits face −Z, weapon rides +X) actually look
+        // where the sight cone says they look. On the old symmetric grey boxes
+        // this 90° skew was invisible; on the new silhouettes it is the
+        // difference between being stared at and being side-eyed.
+        etf.rotation = Quat::from_axis_angle(Vec3::Y, e.facing - std::f32::consts::FRAC_PI_2);
     }
 }
 
@@ -2144,30 +2787,79 @@ fn impact_sfx(weight: ImpactWeight, pos: Vec3) -> SfxEvent {
     }
 }
 
+/// Local-space translation of each kind's weapon-arm box — the telegraph's
+/// "arm" that rises during wind-up. Mirrors the authored arrays in `enemies.rs`
+/// (centre of the Bx range × `VX`): the design doc explicitly names the
+/// Sentinel's weapon forearm/gauntlet as the natural `HuskArm` substitute and
+/// leaves the pick to this lane. `husk_telegraph` finds the child mesh sitting
+/// at this offset; if Monanisa re-authors the geometry, this table is the only
+/// thing to re-measure.
+fn weapon_arm_offset(kind: crate::enemies::EnemyKind) -> Vec3 {
+    use crate::enemies::EnemyKind;
+    match kind {
+        // b(4.6, 4.2, -2.4, 6.4, 8.8, 2.4) → centre (5.5, 6.5, 0.0) × 0.125
+        EnemyKind::Sentinel => Vec3::new(0.6875, 0.8125, 0.0),
+        // the overlong right forearm b(2.6, 2.2, -2.0, 3.8, 10.2, 1.0)
+        EnemyKind::Reaver => Vec3::new(0.4, 0.775, -0.0625),
+        // the sickle-arm upper b(2.2, 6.8, -3.0, 3.6, 9.2, 0.6)
+        EnemyKind::Stalker => Vec3::new(0.3625, 1.0, -0.15),
+    }
+}
+
 /// Move the enemy's telegraph arm up during wind-up so the incoming swing reads
 /// at a distance (§5.1 honest visual telegraph — a big pose change).
+///
+/// The legacy body marked its arm child with [`HuskArm`]; the new silhouettes
+/// are spawned wholesale by `enemies::spawn_enemy`, which has no combat-lane
+/// marker, so the arm is found by geometry instead: the child whose local
+/// translation sits at [`weapon_arm_offset`] for this body's kind. A marker
+/// match (if one ever exists) still wins over the geometric pick.
 pub fn husk_telegraph(
     enemy_q: Query<(&Enemy, &Children)>,
-    mut arm_q: Query<&mut Transform, With<HuskArm>>,
+    mut arm_q: Query<&mut Transform>,
+    marker_q: Query<Entity, With<HuskArm>>,
 ) {
     for (e, children) in enemy_q.iter() {
         let raised = matches!(e.state, HuskState::Telegraph);
         let mid_swing = matches!(e.state, HuskState::Swing1 | HuskState::Swing2);
+        // The lunge reads as a different move from the melee combo on purpose:
+        // the coil pulls the arm back low (vs. the overhead raise), and the dash
+        // thrusts it past the melee slam angle.
+        let coiling = matches!(e.state, HuskState::LungeWind);
+        let thrusting = matches!(e.state, HuskState::LungeDash);
+        // Pick the arm child: a `HuskArm`-marked one if present, else the child
+        // nearest this kind's weapon-arm offset (an exact authored position, so
+        // the nearest match is the intended box by a wide margin).
+        let want = weapon_arm_offset(e.kind);
+        let mut best: Option<(f32, Entity)> = None;
         for child in children.iter() {
-            if let Ok(mut t) = arm_q.get_mut(child) {
-                // Raise the arm overhead while winding up; slam down on the swing.
-                let target = if raised {
-                    -1.1 // rotate back/up (radians about X)
-                } else if mid_swing {
-                    0.6
-                } else {
-                    0.0
-                };
-                let cur = t.rotation.to_scaled_axis().x;
-                let next = cur + (target - cur) * 0.35;
-                t.rotation = Quat::from_axis_angle(Vec3::X, next);
+            if marker_q.get(child).is_ok() {
+                best = Some((f32::NEG_INFINITY, child)); // marker always wins
+                break;
+            }
+            let Ok(t) = arm_q.get(child) else { continue };
+            let d = t.translation.distance_squared(want);
+            if best.map_or(true, |(bd, _)| d < bd) {
+                best = Some((d, child));
             }
         }
+        let Some((_, arm)) = best else { continue };
+        let Ok(mut t) = arm_q.get_mut(arm) else { continue };
+        // Raise the arm overhead while winding up; slam down on the swing.
+        let target = if raised {
+            -1.1 // rotate back/up (radians about X)
+        } else if mid_swing {
+            0.6
+        } else if coiling {
+            -0.7
+        } else if thrusting {
+            0.9
+        } else {
+            0.0
+        };
+        let cur = t.rotation.to_scaled_axis().x;
+        let next = cur + (target - cur) * 0.35;
+        t.rotation = Quat::from_axis_angle(Vec3::X, next);
     }
 }
 
@@ -2583,6 +3275,178 @@ fn set_key(keys: &mut ButtonInput<KeyCode>, key: KeyCode, down: bool) {
 }
 
 // ---------------------------------------------------------------------------
+// Enemy probe (VOXELFORGE_ENEMY_PROBE=before|after) — the deterministic
+// before/after still of the LIVE enemy, through the real spawn path.
+// ---------------------------------------------------------------------------
+
+/// Which side of the silhouette swap the probe shoots.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EnemyProbeMode {
+    /// The retired body: the three grey cuboids the old `spawn_guard_husk`
+    /// built, spawned without an `enemies::EnemyBody` so the anim rig dresses
+    /// them exactly as the shipped game did — this is what players actually
+    /// saw before the swap, not the raw boxes.
+    Before,
+    /// The live body: `spawn_guard_husk` as it stands now (Bone Sentinel).
+    After,
+}
+
+/// Bookkeeping for [`enemy_probe`].
+#[derive(Resource, Default)]
+pub struct EnemyProbe {
+    pub mode: Option<EnemyProbeMode>,
+    pub spawned: bool,
+    pub shot: bool,
+}
+
+/// Spawn one enemy straight ahead of the player through the real spawn path,
+/// let the scene settle, snap one still, exit. Deterministic framing, no demo
+/// scripting, no dialogue in the way — the A/B pair the AI-demo shots cannot
+/// guarantee (their camera follows a scripted player that rarely faces the
+/// fight).
+#[allow(clippy::type_complexity)]
+pub fn enemy_probe(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut probe: ResMut<EnemyProbe>,
+    mut lock: ResMut<LockOn>,
+    player_q: Query<&Transform, (With<FlyCam>, Without<Enemy>)>,
+    enemies: Query<(Entity, &Transform), With<Enemy>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let Some(mode) = probe.mode else { return };
+    let t = time.elapsed_secs();
+    let Ok(ptf) = player_q.single() else { return };
+
+    if !probe.spawned && t >= 1.5 {
+        // Dead ahead, 5 blocks out, on the terrain — centre of the view.
+        let fwd = ptf.rotation * Vec3::NEG_Z;
+        let flat = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero();
+        let (wx, wz) = (ptf.translation.x + flat.x * 5.0, ptf.translation.z + flat.z * 5.0);
+        // Same ground as the PLAYER, not `terrain_height` of the target column:
+        // the demo world has a 13-block stone structure two columns ahead, and a
+        // probe body spawned on its roof is invisible from a level camera for a
+        // completely non-rendering reason. The eye sits EYE_HEIGHT above the
+        // feet, so the player's own ground is eye.y − EYE_HEIGHT.
+        let ground = ptf.translation.y - crate::EYE_HEIGHT;
+        match mode {
+            EnemyProbeMode::Before => spawn_legacy_husk_body(&mut commands, &mut meshes, &mut materials, wx, wz, Some(ground)),
+            EnemyProbeMode::After => spawn_guard_husk(&mut commands, &mut meshes, &mut materials, wx, wz, Some(ground)),
+        }
+        probe.spawned = true;
+        println!(
+            "ENEMY_PROBE mode={:?} spawned at ({wx:.1},{wz:.1}) player_facing=({:.2},{:.2})",
+            mode, flat.x, flat.z,
+        );
+        return;
+    }
+    // Hold the real lock-on on the probe's enemy: the orbit camera aims at the
+    // lock target (`lock_on_camera`), which is what actually guarantees the
+    // body is framed — the camera's own yaw is not the player's facing.
+    if probe.spawned && !probe.shot {
+        if let Some((entity, _)) = enemies
+            .iter()
+            .min_by(|a, b| {
+                a.1.translation
+                    .distance_squared(ptf.translation)
+                    .partial_cmp(&b.1.translation.distance_squared(ptf.translation))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        {
+            lock.target = Some(entity);
+        }
+    }
+    if probe.spawned && !probe.shot && t >= 3.3 && !enemies.is_empty() {
+        // Framing diagnostic: where the camera actually sits versus the body.
+        // The A/B is only honest if the numbers say the enemy is inside the
+        // frustum — "no creature visible" in a still can mean a rendering bug
+        // OR a camera that never turned, and these two lines tell them apart.
+        if let Some((entity, etf)) = enemies
+            .iter()
+            .min_by(|a, b| {
+                a.1.translation
+                    .distance_squared(ptf.translation)
+                    .partial_cmp(&b.1.translation.distance_squared(ptf.translation))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        {
+            let to = etf.translation - ptf.translation;
+            println!(
+                "ENEMY_PROBE eye=({:.1},{:.1},{:.1}) enemy#{:?}=({:.1},{:.1},{:.1}) dist={:.1} lock={:?}",
+                ptf.translation.x, ptf.translation.y, ptf.translation.z,
+                entity.to_bits(),
+                etf.translation.x, etf.translation.y, etf.translation.z,
+                to.length(),
+                lock.target,
+            );
+        }
+        let dir = std::env::var("VOXELFORGE_ENEMY_PROBE_DIR")
+            .unwrap_or_else(|_| "_rose_probe".to_string());
+        let path = std::path::Path::new(&dir)
+            .join(match mode { EnemyProbeMode::Before => "enemy_before.png", EnemyProbeMode::After => "enemy_after.png" });
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(path.clone()));
+        println!("ENEMY_PROBE shot -> {}", path.display());
+        probe.shot = true;
+        return;
+    }
+    if probe.shot && t >= 3.8 {
+        println!("ENEMY_PROBE done mode={:?}", mode);
+        exit.write(AppExit::Success);
+    }
+}
+
+/// The retired three-cuboid Guard Husk body, verbatim — kept ONLY as the
+/// probe's "before" so one binary can shoot both sides of the swap. The rig
+/// hides these boxes and renders the shipped guard over them, which is the
+/// honest before: that is what the game looked like.
+fn spawn_legacy_husk_body(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    wx: f32,
+    wz: f32,
+    surface_y: Option<f32>,
+) {
+    let surface = surface_y.unwrap_or_else(|| terrain_height(wx, wz) as f32 + 1.0);
+    let feet = Vec3::new(wx, surface, wz);
+    let armor = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.32, 0.34, 0.40),
+        perceptual_roughness: 0.55,
+        metallic: 0.3,
+        ..default()
+    });
+    let head_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.18, 0.19, 0.24),
+        perceptual_roughness: 0.5,
+        ..default()
+    });
+    let torso = meshes.add(Cuboid::new(0.9, 1.4, 0.6));
+    let head = meshes.add(Cuboid::new(0.55, 0.55, 0.55));
+    let arm = meshes.add(Cuboid::new(0.28, 1.0, 0.28));
+    commands
+        .spawn((
+            Transform::from_translation(feet),
+            Visibility::default(),
+            Enemy::at(feet, surface, crate::enemies::EnemyKind::Sentinel),
+            Health::new(HP_HUSK),
+            Poise::new(POISE_HUSK),
+        ))
+        .with_children(|p| {
+            p.spawn((Mesh3d(torso), MeshMaterial3d(armor.clone()), Transform::from_xyz(0.0, 1.0, 0.0)));
+            p.spawn((Mesh3d(head), MeshMaterial3d(head_mat), Transform::from_xyz(0.0, 2.0, 0.0)));
+            p.spawn((Mesh3d(arm), MeshMaterial3d(armor), Transform::from_xyz(0.55, 1.1, -0.2), HuskArm));
+        });
+    println!("ENEMY_SPAWN kind=legacy_husk parts=3 height=2.28b feet=({wx:.1},{surface:.1},{wz:.1})");
+}
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -2595,6 +3459,398 @@ fn set_key(keys: &mut ButtonInput<KeyCode>, key: KeyCode, down: bool) {
 ///    reads the keyboard this frame (`just_pressed` is cleared next `PreUpdate`).
 ///  * `apply_knockback` must sit *between* `player_combat` (which books the
 ///    impulse) and `husk_ai` (which re-plants the body and walks it back in).
+// ===========================================================================
+// AI evidence layer — state-transition log + scripted AI exercise
+// (VOXELFORGE_AI_LOG / VOXELFORGE_AI_DEMO)
+// ===========================================================================
+
+/// Lower-case name for one [`HuskState`], as the AI log prints it.
+pub fn husk_state_name(s: HuskState) -> &'static str {
+    match s {
+        HuskState::Patrol => "patrol",
+        HuskState::Alert => "alert",
+        HuskState::Chase => "chase",
+        HuskState::Telegraph => "telegraph",
+        HuskState::Feint => "feint",
+        HuskState::Swing1 => "attack(swing1)",
+        HuskState::Gap => "gap",
+        HuskState::Swing2 => "attack(swing2)",
+        HuskState::Recover => "recover",
+        HuskState::Reposition => "reposition",
+        HuskState::Search => "search",
+        HuskState::LungeWind => "telegraph(lunge)",
+        HuskState::LungeDash => "attack(lunge-dash)",
+        HuskState::Staggered => "staggered",
+        HuskState::Dead => "dead",
+    }
+}
+
+/// Prints exactly one `AI_HUSK` line per state change per husk, plus a periodic
+/// `AI_SQUAD` census once there is more than one husk alive — the attack-slot
+/// ceiling is only observable as a population, never from one husk's log. This
+/// is the perception/tactics pass's evidence layer; run with `VOXELFORGE_AI_LOG`
+/// (or the AI demo, which turns it on).
+/// Buffers one CSV row per husk per frame for `VOXELFORGE_AI_TRACE`, and flushes
+/// the file once the run ends. Position is what the top-down A/B plot is drawn
+/// from — the state log alone cannot show a pack clumping or fanning out.
+pub fn husk_ai_trace(
+    time: Res<Time>,
+    mut trace: ResMut<AiTrace>,
+    evade: Res<HuskEvade>,
+    player_q: Query<&Transform, (With<FlyCam>, Without<Enemy>)>,
+    enemy_q: Query<(Entity, &Transform, &Enemy), With<Enemy>>,
+) {
+    if trace.path.is_none() {
+        return;
+    }
+    let Ok(ptf) = player_q.single() else {
+        return;
+    };
+    let t = time.elapsed_secs();
+    // The player is written as its own row (entity `player`) so the plot can
+    // draw what the husks were actually converging on, not an assumed origin.
+    trace.rows.push(format!(
+        "{t:.3},player,{:.3},{:.3},player,0.000,0",
+        ptf.translation.x, ptf.translation.z
+    ));
+    for (entity, etf, e) in enemy_q.iter() {
+        let d = Vec3::new(
+            etf.translation.x - ptf.translation.x,
+            0.0,
+            etf.translation.z - ptf.translation.z,
+        )
+        .length();
+        // Evade is not a `HuskState` (see `HuskEvade`), so it needs its own
+        // column — otherwise the one behaviour that has no state name would be
+        // the one behaviour the plot could not show.
+        let evading = evade.per.get(&entity).is_some_and(|s| s.left > 0.0);
+        trace.rows.push(format!(
+            "{t:.3},{},{:.3},{:.3},{},{d:.3},{}",
+            entity.to_bits(),
+            etf.translation.x,
+            etf.translation.z,
+            husk_state_name(e.state),
+            u8::from(evading),
+        ));
+    }
+}
+
+/// Writes the buffered trace out when the app is shutting down. Buffering and
+/// flushing once keeps a per-frame `File::write` out of the sampled run — an
+/// AI trace that changes the frame timing would be measuring itself.
+///
+/// Gated on an actual `AppExit` rather than "every frame in `Last`": the latter
+/// would rewrite a growing CSV once per frame, which is exactly the per-frame
+/// disk cost the buffering exists to avoid.
+pub fn husk_ai_trace_flush(
+    mut exits: bevy::ecs::message::MessageReader<AppExit>,
+    trace: Res<AiTrace>,
+) {
+    if exits.read().next().is_none() {
+        return;
+    }
+    let Some(path) = trace.path.as_ref() else {
+        return;
+    };
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        if !dir.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+    }
+    let mut out = String::from("t,entity,x,z,state,dist,evading\n");
+    out.push_str(&trace.rows.join("\n"));
+    out.push('\n');
+    match std::fs::write(path, out) {
+        Ok(()) => println!("AI_TRACE wrote {} rows -> {}", trace.rows.len(), path),
+        Err(err) => println!("AI_TRACE FAILED {path}: {err}"),
+    }
+}
+
+pub fn husk_ai_log(
+    time: Res<Time>,
+    log: Res<AiLog>,
+    mut census: Local<f32>,
+    mut q: Query<(Entity, &mut Enemy, &Health)>,
+) {
+    if !log.enabled {
+        return;
+    }
+    for (entity, mut e, hp) in q.iter_mut() {
+        if e.state != e.logged_state {
+            println!(
+                "AI_HUSK entity={:?} t={:6.2} hp={:3.0} state: {} -> {}",
+                entity.to_bits(),
+                time.elapsed_secs(),
+                hp.cur,
+                husk_state_name(e.logged_state),
+                husk_state_name(e.state),
+            );
+            e.logged_state = e.state;
+        }
+    }
+    if q.iter().count() > 1 {
+        *census += time.delta_secs();
+        if *census >= 0.5 {
+            *census = 0.0;
+            let (mut total, mut attacking, mut circling) = (0, 0, 0);
+            for (_, e, hp) in q.iter() {
+                if hp.dead() {
+                    continue;
+                }
+                total += 1;
+                if husk_attacking(e.state) {
+                    attacking += 1;
+                } else if e.state == HuskState::Reposition {
+                    circling += 1;
+                }
+            }
+            println!(
+                "AI_SQUAD total={} attacking={} (slots={}) circling={}",
+                total, attacking, HUSK_ATTACK_SLOTS, circling
+            );
+        }
+    }
+}
+
+/// Scripted headless AI exercise (`VOXELFORGE_AI_DEMO`, alongside
+/// `VOXELFORGE_PLAY`): drives the *player* through the ranges that light up
+/// each AI state — far (patrol), sprinting in (heard → alert → chase), standing
+/// ground under melee (telegraph → swings → reposition), kiting out to mid-range
+/// (lunge telegraph → dash) — then reports a per-state PASS/FAIL checklist and
+/// exits. The husk AI itself is untouched: this only moves the player and holds
+/// block, exactly like a human tester would. Each state seen for the first time
+/// also saves an in-engine still (`VOXELFORGE_AI_SHOTS`, default
+/// `_ai_demo_shots/`) so the run carries its own picture evidence.
+#[derive(Resource, Default)]
+pub struct HuskAiDemo {
+    pub phase: u8,
+    pub done: bool,
+    pub logged: bool,
+    /// Phase-start timestamp (elapsed seconds).
+    pub t0: f32,
+    /// Observed-state checklist, marked off the live enemy states every frame.
+    /// Index order = [`HUSK_AI_STATES`].
+    pub saw: [bool; 8],
+}
+
+/// Checklist labels, in `HuskAiDemo::saw` index order.
+pub const HUSK_AI_STATES: [&str; 8] = [
+    "patrol",
+    "alert",
+    "chase",
+    "telegraph",
+    "attack(swing)",
+    "reposition",
+    "lunge telegraph",
+    "lunge dash",
+];
+
+/// Place the player's eye flush above the terrain surface at `(x, z)` — the
+/// same convention `main.rs`'s spawn uses (`surface + 1 + EYE_HEIGHT`). Gravity
+/// re-settles anything the terrain height field disagrees with by a fraction.
+fn set_ground_eye(ptf: &mut Transform, x: f32, z: f32) {
+    ptf.translation = Vec3::new(
+        x,
+        terrain_height(x, z) as f32 + 1.0 + crate::EYE_HEIGHT,
+        z,
+    );
+}
+
+#[allow(clippy::type_complexity)]
+pub fn husk_ai_demo(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut demo: ResMut<HuskAiDemo>,
+    mut intent: ResMut<CombatIntent>,
+    mut player_q: Query<
+        (&mut Transform, &mut Health),
+        (With<FlyCam>, Without<Enemy>),
+    >,
+    enemy_q: Query<(&Transform, &Enemy), (With<Enemy>, Without<FlyCam>)>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if demo.done {
+        return;
+    }
+    let t = time.elapsed_secs();
+    let dt = time.delta_secs();
+    let Ok((mut ptf, mut php)) = player_q.single_mut() else {
+        return;
+    };
+    if enemy_q.is_empty() {
+        return;
+    }
+
+    // Mark the observed-state checklist off the live states, every frame. The
+    // first frame a state appears, snap an in-engine still of it.
+    let shot_dir = std::env::var("VOXELFORGE_AI_SHOTS")
+        .unwrap_or_else(|_| "_ai_demo_shots".to_string());
+    for (_, e) in enemy_q.iter() {
+        let idx = match e.state {
+            HuskState::Patrol => Some(0),
+            HuskState::Alert => Some(1),
+            HuskState::Chase => Some(2),
+            HuskState::Telegraph | HuskState::Feint => Some(3),
+            HuskState::Swing1 | HuskState::Swing2 => Some(4),
+            HuskState::Reposition => Some(5),
+            HuskState::LungeWind => Some(6),
+            HuskState::LungeDash => Some(7),
+            _ => None,
+        };
+        if let Some(i) = idx {
+            if !demo.saw[i] {
+                demo.saw[i] = true;
+                let path = std::path::Path::new(&shot_dir).join(format!(
+                    "ai_{}.png",
+                    HUSK_AI_STATES[i].replace('(', "_").replace(')', "").replace(' ', "_")
+                ));
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path.clone()));
+                println!("AI_DEMO shot -> {}", path.display());
+            }
+        }
+    }
+
+    // Nearest living husk — the anchor all the range scripting measures against.
+    let anchor = enemy_q
+        .iter()
+        .filter(|(_, e)| e.state != HuskState::Dead)
+        .min_by(|a, b| {
+            a.0.translation
+                .distance_squared(ptf.translation)
+                .partial_cmp(&b.0.translation.distance_squared(ptf.translation))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(tf, _)| tf.translation)
+        .unwrap_or(ptf.translation);
+    let to_anchor = anchor - ptf.translation;
+    let flat = Vec3::new(to_anchor.x, 0.0, to_anchor.z);
+    let dist = flat.length();
+    let dir_to = if dist > 1e-3 { flat / dist } else { Vec3::Z };
+
+    // No keys headless — the demo owns the intent every frame.
+    *intent = CombatIntent::default();
+    let phase_age = t - demo.t0;
+
+    match demo.phase {
+        0 => {
+            // Seed: jump 21 blocks out (beyond every sense), and give the tester
+            // a fat HP pool — this proof grades AI states, not damage numbers
+            // (combat_demo already owns those). Fat enough that surviving does
+            // not depend on whether the demo's block input wins the frame
+            // ordering race against `gather_input`.
+            let away = ptf.translation - anchor;
+            let away = if away.length_squared() < 1e-4 {
+                Vec3::Z
+            } else {
+                Vec3::new(away.x, 0.0, away.z).normalize()
+            };
+            set_ground_eye(&mut ptf, anchor.x + away.x * 21.0, anchor.z + away.z * 21.0);
+            php.max = 1000.0;
+            php.cur = 1000.0;
+            demo.phase = 1;
+            demo.t0 = t;
+        }
+        1 => {
+            // Hold at range: the squad leashes home and patrols.
+            if phase_age >= 5.0 {
+                demo.phase = 2;
+                demo.t0 = t;
+            }
+        }
+        2 => {
+            // Sprint in at 7 b/s — above HUSK_SPRINT_NOISE, so the squad hears
+            // the player before it ever sees them.
+            if dist > 8.0 {
+                let step = (7.0 * dt).min(dist - 8.0);
+                let (x, z) = (ptf.translation.x + dir_to.x * step, ptf.translation.z + dir_to.z * step);
+                set_ground_eye(&mut ptf, x, z);
+            } else {
+                demo.phase = 3;
+                demo.t0 = t;
+            }
+        }
+        3 => {
+            // Stand ground, guard up: watch alert→chase→telegraph→swing→reposition.
+            intent.block = true;
+            if (demo.saw[3] && demo.saw[4] && demo.saw[5]) || phase_age >= 14.0 {
+                demo.phase = 4;
+                demo.t0 = t;
+            }
+        }
+        4 => {
+            // Kite out to mid-range and hold: bait the lunge.
+            intent.block = true;
+            if dist < 7.2 {
+                let step = (7.0 * dt).min(7.2 - dist);
+                let (x, z) = (ptf.translation.x - dir_to.x * step, ptf.translation.z - dir_to.z * step);
+                set_ground_eye(&mut ptf, x, z);
+            } else if (demo.saw[6] && demo.saw[7]) || phase_age >= 10.0 {
+                demo.phase = 5;
+                demo.t0 = t;
+            }
+        }
+        5 => {
+            // Let the lunge land, walk back in, and let a second exchange (and
+            // the lunge cooldown firing again) play out on the log.
+            intent.block = true;
+            if phase_age >= 2.0 && dist > 2.8 {
+                let step = (7.0 * dt).min(dist - 2.8);
+                let (x, z) = (ptf.translation.x + dir_to.x * step, ptf.translation.z + dir_to.z * step);
+                set_ground_eye(&mut ptf, x, z);
+            }
+            if phase_age >= 9.0 {
+                demo.phase = 6;
+                demo.t0 = t;
+            }
+        }
+        _ => {
+            if !demo.logged {
+                demo.logged = true;
+                demo.done = true;
+                for (i, name) in HUSK_AI_STATES.iter().enumerate() {
+                    println!(
+                        "AI_DEMO state {name}: {}",
+                        if demo.saw[i] { "PASS" } else { "FAIL" }
+                    );
+                }
+                let all = demo.saw.iter().all(|&ok| ok);
+                println!("AI_DEMO overall => {}", if all { "PASS" } else { "FAIL" });
+                exit.write(AppExit::Success);
+            }
+        }
+    }
+}
+
+/// Demo-only (`VOXELFORGE_AI_DEMO`): tops the encounter up to a 3-husk squad so
+/// separation steering and attack-slot arbitration are actually exercised.
+/// Normal play is untouched — `spawn_encounter`'s single husk stands.
+fn spawn_ai_squad(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    player: Query<&Transform, With<FlyCam>>,
+) {
+    let Ok(tf) = player.single() else {
+        return;
+    };
+    // Two extra husks on flanking angles: inside aggro, outside melee, and
+    // spaced from each other so the separation force has room to be seen working.
+    let offs = [(6.0, 2.0), (-5.0, 4.0)];
+    for &(dx, dz) in &offs {
+        spawn_guard_husk(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            tf.translation.x + dx,
+            tf.translation.z + dz,
+            None,
+        );
+    }
+    println!("AI_DEMO squad spawned: 2 flanking husks added (3 total)");
+}
+
 pub struct CombatFeelPlugin;
 
 impl Plugin for CombatFeelPlugin {
@@ -2606,6 +3862,26 @@ impl Plugin for CombatFeelPlugin {
         let r_probe_env = std::env::var("VOXELFORGE_RKEY_PROBE").ok();
         let r_probe = r_probe_env.is_some();
         let r_log = r_probe || std::env::var("VOXELFORGE_RKEY_LOG").is_ok();
+        // AI evidence layer: transition log + the scripted exercise. The demo
+        // turns the log on too — a run should never have to remember two flags.
+        let ai_demo = std::env::var("VOXELFORGE_AI_DEMO").is_ok();
+        let ai_log = ai_demo || std::env::var("VOXELFORGE_AI_LOG").is_ok();
+        // The before/after lever + the top-down trace the A/B plot is drawn from.
+        // Both default off, so shipping play is untouched by either.
+        let ai_legacy = std::env::var("VOXELFORGE_AI_LEGACY").is_ok();
+        let ai_trace = std::env::var("VOXELFORGE_AI_TRACE").ok();
+        // Deterministic enemy-silhouette still (VOXELFORGE_ENEMY_PROBE=before|after).
+        let probe_mode = match std::env::var("VOXELFORGE_ENEMY_PROBE").as_deref() {
+            Ok("before") => Some(EnemyProbeMode::Before),
+            Ok("after") => Some(EnemyProbeMode::After),
+            _ => None,
+        };
+        let ai_tracing = ai_trace.is_some();
+        if ai_legacy {
+            println!("AI_MODE legacy (pre-perception/tactics behaviour)");
+        } else {
+            println!("AI_MODE tactics (perception + squad pass)");
+        }
         app.add_message::<ImpactEvent>()
             .add_message::<StaggerEvent>()
             .add_message::<DodgeEvent>()
@@ -2619,12 +3895,26 @@ impl Plugin for CombatFeelPlugin {
                     .map(RKeyProbe::from_env)
                     .unwrap_or_default(),
             )
+            .insert_resource(PlayerKinematics::default())
+            .insert_resource(AiLog { enabled: ai_log })
+            .insert_resource(AiTactics { legacy: ai_legacy })
+            .insert_resource(HuskEvade::default())
+            .insert_resource(AiTrace { path: ai_trace, rows: Vec::new() })
+            .insert_resource(HuskAiDemo::default())
+            .insert_resource(EnemyProbe { mode: probe_mode, spawned: false, shot: false })
             // Not state-gated: a claim left over from the last Play frame would
             // silently eat the first press of the next one.
             .add_systems(First, reset_r_route)
             .add_systems(
+                OnEnter(crate::editor::AppState::Play),
+                spawn_ai_squad.run_if(move || ai_demo),
+            )
+            .add_systems(
                 Update,
                 (
+                    enemy_probe
+                        .before(crate::fly_camera)
+                        .run_if(move || probe_mode.is_some()),
                     feel_probe
                         .before(gather_input)
                         .before(crate::fly_camera)
@@ -2635,12 +3925,34 @@ impl Plugin for CombatFeelPlugin {
                     apply_knockback
                         .after(player_combat)
                         .before(husk_ai),
+                    // The demo moves the player *before* the husks perceive, so a
+                    // scripted step registers the same frame it happens — and
+                    // *after* gather_input, so its held block intent is what
+                    // player_combat reads rather than being overwritten by the
+                    // (keyless) keyboard gather in the same frame.
+                    husk_ai_demo
+                        .after(gather_input)
+                        .before(husk_ai)
+                        .run_if(move || ai_demo),
+                    husk_ai_log
+                        .after(husk_ai)
+                        .run_if(|l: Res<AiLog>| l.enabled),
+                    // Sampled after the AI has moved the bodies, so a row is
+                    // where the husk ended the frame, not where it started.
+                    husk_ai_trace
+                        .after(husk_ai)
+                        .run_if(move || ai_tracing),
                     combat_feel_log
                         .after(husk_ai)
                         .run_if(|f: Res<FeelLog>| f.enabled),
                 )
                     .run_if(in_state(crate::editor::AppState::Play)),
-            );
+            )
+            // Not Play-gated and not in Update: the demo writes `AppExit` from
+            // inside Update, so a Play-gated flush in the same schedule can lose
+            // the final frames. `Last` runs after the exit is booked but before
+            // the app actually tears down.
+            .add_systems(Last, husk_ai_trace_flush.run_if(move || ai_tracing));
     }
 }
 
@@ -3331,5 +4643,88 @@ mod tests {
         assert!(!route.claim(RKeyUse::LockOn, "second"));
         assert_eq!(route.route(), RKeyUse::QuestPlace);
         assert_eq!(route.claimed_by(), "first");
+    }
+
+    // -- Perception & tactics pass -------------------------------------------
+
+    #[test]
+    fn sight_cone_only_covers_the_front_half_the_husk_looks_at() {
+        // Facing yaw 0 (atan2(z,x) convention → +X): a player at +X is in the
+        // 55° cone; a player behind (-X, 180° away) is not — a husk with its
+        // back turned must not "see", it has to hear or be crowded first.
+        let facing = 0.0f32;
+        let player_ahead = 0.0f32; // atan2(0, 1)
+        let player_behind = std::f32::consts::PI; // atan2(0, -1)
+        assert!(angle_delta(facing, player_ahead) <= HUSK_SIGHT_HALF.to_radians());
+        assert!(angle_delta(facing, player_behind) > HUSK_SIGHT_HALF.to_radians());
+        // The delta itself is the short way round and never negative-signed big.
+        assert!((angle_delta(0.0, std::f32::consts::TAU - 0.1) - 0.1).abs() < 1e-4);
+    }
+
+    #[test]
+    fn separation_pushes_away_from_a_close_squadmate() {
+        // Two squadmates a block apart: the push points away from the neighbour
+        // and is non-trivial — this is the anti-clump force.
+        let a = Entity::from_bits(1);
+        let b = Entity::from_bits(2);
+        let squad = vec![(a, Vec3::new(0.0, 0.0, 0.0), HuskState::Chase)];
+        let push = husk_separation(&squad, b, Vec3::new(1.0, 0.0, 0.0));
+        assert!(push.x < 0.0, "push must point away from the squadmate");
+        assert!((push.z - 0.0).abs() < 1e-6);
+        assert!(push.length() > 0.1);
+    }
+
+    #[test]
+    fn separation_fades_to_zero_past_the_radius_and_ignores_self() {
+        let a = Entity::from_bits(1);
+        let far = vec![(a, Vec3::new(50.0, 0.0, 0.0), HuskState::Chase)];
+        assert_eq!(husk_separation(&far, a, Vec3::ZERO), Vec3::ZERO);
+        // Beyond HUSK_SEPARATION apart: no force either.
+        let me = Entity::from_bits(2);
+        let edge = vec![(a, Vec3::new(HUSK_SEPARATION + 0.5, 0.0, 0.0), HuskState::Chase)];
+        assert_eq!(husk_separation(&edge, me, Vec3::ZERO), Vec3::ZERO);
+    }
+
+    #[test]
+    fn only_committed_states_hold_an_attack_slot() {
+        // Wind-ups and swings (melee and lunge alike) occupy a slot; the
+        // between-commitment beats do not — that gap is what lets a squadmate
+        // step in, so a pack flows instead of pulsing in unison.
+        for held in [
+            HuskState::Telegraph,
+            HuskState::Feint,
+            HuskState::Swing1,
+            HuskState::Swing2,
+            HuskState::LungeWind,
+            HuskState::LungeDash,
+        ] {
+            assert!(husk_attacking(held), "{held:?} must hold a slot");
+        }
+        for free in [
+            HuskState::Patrol,
+            HuskState::Alert,
+            HuskState::Chase,
+            HuskState::Gap,
+            HuskState::Recover,
+            HuskState::Reposition,
+            HuskState::Staggered,
+            HuskState::Dead,
+        ] {
+            assert!(!husk_attacking(free), "{free:?} must not hold a slot");
+        }
+    }
+
+    #[test]
+    fn alert_beat_outruns_the_human_reaction_it_mimics() {
+        // The "noticed you" pause must be long enough to read (>0.3 s) but
+        // short enough to feel like surprise, not idle (<1 s).
+        assert!(HUSK_ALERT_TIME >= 0.3 && HUSK_ALERT_TIME <= 1.0);
+        // And the lunge telegraph must be *longer* than the melee one — it
+        // covers more ground, so the player needs more warning to sidestep.
+        assert!(HUSK_LUNGE_WIND > HUSK_TELEGRAPH);
+        // The lunge only exists as a gap-closer: its band sits beyond melee.
+        assert!(HUSK_LUNGE_RANGE > MELEE_RANGE);
+        // Attack slots must actually limit something (>= 2 lets a pair press).
+        assert!(HUSK_ATTACK_SLOTS >= 1);
     }
 }

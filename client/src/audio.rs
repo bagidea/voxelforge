@@ -204,6 +204,19 @@ pub enum SfxEvent {
 
 impl Message for SfxEvent {}
 
+/// A beauty-tour phase change request, written by `main.rs`'s tour timeline and
+/// read here to override the position-derived ambient zone. A message (not a
+/// resource) so the tour stays on the Bevy 0.19 message API like every other
+/// cross-lane signal in this file — see [`beauty_tour_ambience`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BeautyTourPhase {
+    Noon,
+    Cool,
+    Night,
+}
+
+impl Message for BeautyTourPhase {}
+
 // ---------------------------------------------------------------------------
 // Helper — block ID → footstep surface
 // ---------------------------------------------------------------------------
@@ -286,6 +299,13 @@ fn zone_for_region(region_id: &str) -> AmbientZone {
 #[derive(Resource, Default)]
 pub struct CurrentAmbientZone(pub AmbientZone);
 
+/// Overrides the position-derived [`AmbientZone`] while a beauty tour is playing
+/// (the tour camera flies where the player never stands, so following the player
+/// body would keep the ambience pinned to the campsite). `None` ⇒ normal play,
+/// [`track_ambient_zone`] buckets by player position exactly as before.
+#[derive(Resource, Default)]
+struct AmbientZoneOverride(pub Option<AmbientZone>);
+
 /// Live crossfade state — current mix weight per ambient track, each
 /// `0.0..=1.0`. Starts at all-zero so ambience fades *in* on entering Play
 /// rather than popping at whatever the spawn zone's target is.
@@ -349,17 +369,20 @@ impl Plugin for AudioPlugin {
             .insert_resource(AmbientEnts::default())
             .insert_resource(MusicEnt::default())
             .insert_resource(CurrentAmbientZone::default())
+            .insert_resource(AmbientZoneOverride::default())
             .insert_resource(ZoneAmbientMix::default())
             .insert_resource(SfxCounter::default())
             .insert_resource(SfxProof { frames: 0 })
             .insert_resource(AudioProofMode(proof_mode))
             .add_message::<SfxEvent>()
+            .add_message::<BeautyTourPhase>()
             .add_systems(Update, (
                 attach_listener,
                 sfx_proof_driver.run_if(audio_proof_enabled),
                 play_sfx,
                 footstep_tracker,
                 update_volumes,
+                beauty_tour_ambience,
                 track_ambient_zone,
                 crossfade_ambient,
                 update_music_volume,
@@ -686,6 +709,25 @@ fn update_music_volume(
 // Zone ambient crossfade
 // ---------------------------------------------------------------------------
 
+/// Read a [`BeautyTourPhase`] message and pin the ambient-zone override to the
+/// matching [`AmbientZone`] until the next message: noon = open wind, cool =
+/// village murmur, night = campfire crackle. The override is what lets the tour
+/// camera fly away from the campsite without the ambience snapping back to the
+/// player's position every frame.
+fn beauty_tour_ambience(
+    mut phases: MessageReader<BeautyTourPhase>,
+    mut ovr: ResMut<AmbientZoneOverride>,
+) {
+    for phase in phases.read() {
+        let zone = match phase {
+            BeautyTourPhase::Noon => AmbientZone::Wilds,
+            BeautyTourPhase::Cool => AmbientZone::Village,
+            BeautyTourPhase::Night => AmbientZone::Campfire,
+        };
+        ovr.0 = Some(zone);
+    }
+}
+
 /// Bucket the player's position into an [`AmbientZone`] via the same region
 /// boxes `quest.rs` uses for its own triggers. No story data (e.g. a bare
 /// test scene) or standing outside every region → [`AmbientZone::Wilds`].
@@ -693,34 +735,42 @@ fn update_music_volume(
 fn track_ambient_zone(
     story: Option<Res<StoryDataRes>>,
     player_q: Query<&Transform, With<FlyCam>>,
+    ovr: Res<AmbientZoneOverride>,
     mut current: ResMut<CurrentAmbientZone>,
     time: Res<Time>,
 ) {
-    let Ok(tf) = player_q.single() else { return };
-    let pos = tf.translation;
-    let zone = story
-        .and_then(|s| {
-            s.data
-                .regions
-                .iter()
-                .find(|r| {
-                    region_contains(
-                        r.bounds.x0 as f32,
-                        r.bounds.z0 as f32,
-                        r.bounds.x1 as f32,
-                        r.bounds.z1 as f32,
-                        pos.x,
-                        pos.z,
-                    )
-                })
-                .map(|r| zone_for_region(&r.id))
-        })
-        .unwrap_or(AmbientZone::Wilds);
+    let pos = player_q.single().ok().map(|t| t.translation);
+    // A beauty tour drives the camera far from the player body; while it runs,
+    // the tour's explicit zone wins over the position bucket below.
+    let zone = if let Some(z) = ovr.0 {
+        z
+    } else {
+        let Some(pos) = pos else { return };
+        story
+            .and_then(|s| {
+                s.data
+                    .regions
+                    .iter()
+                    .find(|r| {
+                        region_contains(
+                            r.bounds.x0 as f32,
+                            r.bounds.z0 as f32,
+                            r.bounds.x1 as f32,
+                            r.bounds.z1 as f32,
+                            pos.x,
+                            pos.z,
+                        )
+                    })
+                    .map(|r| zone_for_region(&r.id))
+            })
+            .unwrap_or(AmbientZone::Wilds)
+    };
     if zone != current.0 {
         current.0 = zone;
+        let p = pos.unwrap_or(Vec3::ZERO);
         println!(
             "AUDIO_ZONE:{zone:?} t={:.2} pos=({:.1},{:.1},{:.1})",
-            time.elapsed_secs(), pos.x, pos.y, pos.z
+            time.elapsed_secs(), p.x, p.y, p.z
         );
     }
 }

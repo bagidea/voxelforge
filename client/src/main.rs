@@ -11,13 +11,17 @@
 
 mod anim;
 mod audio;
+mod characters;
 mod combat;
+mod cutscene;
 mod dialogue_ui;
 mod dodge_parry;
 mod editor;
 mod editor_camera;
 mod editor_config;
 mod editor_ui;
+mod enemies;
+mod equipment;
 mod gizmo;
 mod hero;
 mod hud;
@@ -39,8 +43,10 @@ mod voxel;
 // submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
 // Declaring it here too would compile the file twice into two distinct type sets.
 
+use bevy::camera::Exposure;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::ecs::message::{MessageReader, MessageWriter};
+use bevy::ecs::system::ParamSet;
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
@@ -99,6 +105,13 @@ pub(crate) struct Cfg {
     /// shoots `menu-b-after.png` (save present → Continue lit + slot data). Both
     /// boot to [`AppState::MainMenu`] and exit right after the frame lands.
     pub(crate) menushot: Option<String>,
+    /// `--beauty-tour`: a ~30s scripted cinematic of the playable scene for the
+    /// CEO to watch — outdoor noon → cool raking light → night firelight — then
+    /// auto-exit. Implies `--play` and forces a HUD-free frame.
+    pub(crate) beauty_tour: bool,
+    /// `--beauty-tour-shots <dir>`: capture a still PNG at each tour stop into
+    /// this directory (`beauty-tour-stop-{1,2,3}.png`).
+    pub(crate) beauty_tour_shots: Option<String>,
     /// `--strict-exit`: exit code ≠0 when any gate FAILs. Without this flag the
     /// process always exits 0 even when a gate prints FAIL — the caller grades the
     /// log line itself. With it, the exit code IS the verdict.
@@ -159,6 +172,18 @@ fn has_arg(flag: &str) -> bool {
     std::env::args().skip(1).any(|a| a == flag)
 }
 
+/// The value that follows `flag` on the command line, for flags that take an
+/// argument (`--beauty-tour-shots <dir>`), if present.
+fn arg_value(flag: &str) -> Option<String> {
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        if a == flag {
+            return args.next();
+        }
+    }
+    None
+}
+
 fn read_cfg() -> Cfg {
     // --play-demo is the scripted proof *of* --play, so it turns --play on too.
     let play_demo = has_arg("--play-demo") || std::env::var("VOXELFORGE_PLAY_DEMO").is_ok();
@@ -168,6 +193,12 @@ fn read_cfg() -> Cfg {
     // --quest-demo is the quest-loop proof (accept→complete→reward→next quest).
     // Also turns --play on — needs the full scene + NPCs + husk.
     let quest_demo = has_arg("--quest-demo") || std::env::var("VOXELFORGE_QUEST_DEMO").is_ok();
+    // --beauty-tour is the CEO-facing cinematic tour (noon → cool → night, then
+    // exit). Also turns --play on — needs the full scene + look stack + campfire.
+    let beauty_tour = has_arg("--beauty-tour") || std::env::var("VOXELFORGE_BEAUTY_TOUR").is_ok();
+    let beauty_tour_shots = arg_value("--beauty-tour-shots")
+        .or_else(|| std::env::var("VOXELFORGE_BEAUTY_TOUR_SHOTS").ok())
+        .filter(|s| !s.is_empty());
 
     // Hoisted so `menu` below can ask "did any OTHER lane fire?".
     let save_demo = std::env::var("VOXELFORGE_SAVE_DEMO").ok().filter(|s| !s.is_empty());
@@ -183,6 +214,7 @@ fn read_cfg() -> Cfg {
     let play = play_demo
         || combat_demo
         || quest_demo
+        || beauty_tour
         || has_arg("--play")
         || std::env::var("VOXELFORGE_PLAY").is_ok();
 
@@ -249,6 +281,8 @@ fn read_cfg() -> Cfg {
         menu,
         save_demo,
         menushot,
+        beauty_tour,
+        beauty_tour_shots,
     }
 }
 
@@ -413,6 +447,23 @@ fn main() -> AppExit {
         cfg.play = true;
     }
     let cfg = cfg;
+    // Captured before `cfg` is moved into `insert_resource` below; the beauty-tour
+    // resource is built after that move and still needs the shots dir.
+    let beauty_tour_shots = cfg.beauty_tour_shots.clone();
+
+    // The beauty tour is a capture: hide every screen-space widget + gizmo via
+    // scene.rs's existing `VOXELFORGE_NOHUD` sweep. Set BEFORE any plugin reads
+    // it — `nohud_requested` caches the value in a OnceLock on first read, which
+    // happens while `ScenePlugin` builds. Also pre-create the stills directory,
+    // because `save_to_disk` (the image crate) does not mkdir -p.
+    if cfg.beauty_tour {
+        std::env::set_var("VOXELFORGE_NOHUD", "1");
+        if let Some(dir) = &cfg.beauty_tour_shots {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                eprintln!("BEAUTY_TOUR warning: cannot create shots dir {dir}: {e}");
+            }
+        }
+    }
 
     // Pin the asset root to the executable's directory so Bevy always finds the
     // assets build.rs copies into `target/<profile>/assets/`. Without this,
@@ -515,6 +566,7 @@ fn main() -> AppExit {
             // own timers. Gated on `cfg.play` like ScenePlugin, so bench/hero/editor
             // screenshots keep the capsule they were graded against.
             anim::AnimPlugin,
+            cutscene::CutscenePlugin,
             audio::AudioPlugin,
             // Quest & dialogue engine (Poppy's lane). Gated to AppState::Play.
             quest::QuestPlugin,
@@ -647,6 +699,22 @@ fn main() -> AppExit {
                         .after(combat::lock_on_camera)
                         .run_if(in_state(AppState::Play)),
                 ),
+            )
+            // Beauty tour — a scripted cinematic over the playable scene. Runs in
+            // PostUpdate (after fly_camera / lock-on / shake, before propagation)
+            // so its pose is the one that renders, exactly like scene.rs's `Cine`.
+            .insert_resource(BeautyTour {
+                start: None,
+                shots_dir: beauty_tour_shots,
+                shots_taken: 0,
+                last_phase: -1,
+                fill_base: Vec::new(),
+            })
+            .add_systems(
+                PostUpdate,
+                beauty_tour
+                    .run_if(beauty_tour_run)
+                    .before(TransformSystems::Propagate),
             );
     }
 
@@ -2739,6 +2807,343 @@ fn bench_ramp(
     bench.side = new_side;
     bench.phase_start = now;
     let _ = &mut exit;
+}
+
+// ---------------------------------------------------------------------------
+// Beauty tour — a ~30s scripted cinematic for the CEO to watch the world
+// ---------------------------------------------------------------------------
+//
+// `--beauty-tour` boots the playable scene (Edhari map → campfire → look stack)
+// and flies the REAL gameplay camera along a placed path through three moods —
+// outdoor noon → cool raking light → night firelight — then exits on its own.
+// `--beauty-tour-shots <dir>` captures a still PNG at each of the three stops.
+//
+// No second render path: this overrides the OrbitCam transform in PostUpdate
+// (after fly_camera, before propagation) and re-colours the look stack's own
+// sun / directional fills / ambient / sky / IBL / exposure per-phase. The look
+// stack is apply-once (guarded by `LookApplied` / `LookLightApplied` markers),
+// so it sets those lights once at boot and never fights the per-frame changes.
+// The HUD is hidden through scene.rs's existing `VOXELFORGE_NOHUD` sweep (set in
+// `main` before any plugin reads the cached flag).
+
+/// One authored lighting mood. Colours are sRGB, matched against the look
+/// lane's `Hour` constants. `fill_scale` dims the look lane's directional fill
+/// rig (sky / bounce / rim) without this lane naming those private types — they
+/// are every `DirectionalLight` with `shadow_maps_enabled == false`.
+struct TourLight {
+    elev_deg: f32,
+    azim_deg: f32,
+    illuminance: f32,
+    key: [f32; 3],
+    sky: [f32; 3],
+    sky_gain: f32,
+    ambient: [f32; 3],
+    ambient_lux: f32,
+    fill_scale: f32,
+    ibl_nits: f32,
+    ev100: f32,
+}
+
+/// Outdoor noon — bright overhead key, warm-neutral, deep noon sky.
+const TOUR_NOON: TourLight = TourLight {
+    elev_deg: 62.0,
+    azim_deg: 205.0,
+    illuminance: 26_000.0,
+    key: [1.00, 0.99, 0.92],
+    sky: [0.34, 0.60, 0.93],
+    sky_gain: 3.2,
+    ambient: [0.96, 0.95, 0.90],
+    ambient_lux: 1400.0,
+    fill_scale: 1.0,
+    ibl_nits: 330.0,
+    ev100: 10.3,
+};
+
+/// Cool angled light — low raking key from a shifted azimuth, blue-leaning.
+const TOUR_COOL: TourLight = TourLight {
+    elev_deg: 20.0,
+    azim_deg: 135.0,
+    illuminance: 16_000.0,
+    key: [0.85, 0.90, 1.00],
+    sky: [0.36, 0.58, 0.92],
+    sky_gain: 2.4,
+    ambient: [0.78, 0.86, 1.00],
+    ambient_lux: 900.0,
+    fill_scale: 0.7,
+    ibl_nits: 280.0,
+    ev100: 10.3,
+};
+
+/// Night firelight — mirrors `look::Hour::NIGHT` so the campfire + lamp blocks
+/// are the only warm sources left in frame.
+const TOUR_NIGHT: TourLight = TourLight {
+    elev_deg: -8.0,
+    azim_deg: 205.0,
+    illuminance: 260.0,
+    key: [0.55, 0.66, 0.95],
+    sky: [0.03, 0.05, 0.12],
+    sky_gain: 1.0,
+    ambient: [0.42, 0.52, 0.78],
+    ambient_lux: 42.0,
+    fill_scale: 0.03,
+    ibl_nits: 14.0,
+    ev100: 7.5,
+};
+
+/// Camera path: `(seconds-since-tour-start, eye, aim)`. Consecutive keyframes at
+/// the same pose are a HOLD; the pairs that differ are a smoothstep dolly. This
+/// is what makes each of the three stops read as a "stop" rather than a pan.
+const TOUR_KEYFRAMES: &[(f32, [f32; 3], [f32; 3])] = &[
+    // Outdoor noon — high establishing vista from the south rim.
+    (0.0, [32.5, 16.0, 58.0], [32.5, 2.0, 30.0]),
+    (5.0, [32.5, 16.0, 58.0], [32.5, 2.0, 30.0]),
+    // Cool angled light — raking across the lamp colonnade from the west.
+    (8.0, [20.0, 9.0, 22.0], [34.0, 4.0, 18.0]),
+    (15.0, [20.0, 9.0, 22.0], [34.0, 4.0, 18.0]),
+    // Night firelight — fireside, the campfire warm in the foreground.
+    (18.0, [31.0, 6.0, 34.0], [32.5, 1.0, 29.0]),
+    (25.0, [31.0, 6.0, 34.0], [32.5, 1.0, 29.0]),
+    // Gentle push-in toward the fire as the tour ends.
+    (28.0, [31.5, 5.0, 32.0], [32.5, 1.0, 29.0]),
+    (30.0, [31.5, 5.0, 32.0], [32.5, 1.0, 29.0]),
+];
+
+/// Seconds of wall-clock the tour idles (camera parked on the noon vista) before
+/// it starts moving, so the map finishes streaming and the look stack settles.
+const TOUR_SETTLE: f32 = 3.0;
+
+/// Still captures, seconds since tour start — one per stop, mid-hold.
+const TOUR_SHOT_TIMES: [f32; 3] = [3.0, 12.0, 22.0];
+
+/// Wall-clock second the tour exits.
+const TOUR_EXIT_AT: f32 = 31.0;
+
+/// Tour bookkeeping. `start` anchors the timeline to the first frame the system
+/// runs; `fill_base` snapshots each directional fill's boot illuminance so the
+/// per-frame `fill_scale` never compounds.
+#[derive(Resource)]
+struct BeautyTour {
+    start: Option<f32>,
+    shots_dir: Option<String>,
+    shots_taken: usize,
+    last_phase: i32,
+    fill_base: Vec<(Entity, f32)>,
+}
+
+fn beauty_tour_run(cfg: Res<Cfg>) -> bool {
+    cfg.beauty_tour
+}
+
+fn tour_lerp(a: f32, b: f32, u: f32) -> f32 {
+    a + (b - a) * u
+}
+
+fn tour_lerp3(a: [f32; 3], b: [f32; 3], u: f32) -> [f32; 3] {
+    [tour_lerp(a[0], b[0], u), tour_lerp(a[1], b[1], u), tour_lerp(a[2], b[2], u)]
+}
+
+fn tour_lerp_light(a: &TourLight, b: &TourLight, u: f32) -> TourLight {
+    TourLight {
+        elev_deg: tour_lerp(a.elev_deg, b.elev_deg, u),
+        azim_deg: tour_lerp(a.azim_deg, b.azim_deg, u),
+        illuminance: tour_lerp(a.illuminance, b.illuminance, u),
+        key: tour_lerp3(a.key, b.key, u),
+        sky: tour_lerp3(a.sky, b.sky, u),
+        sky_gain: tour_lerp(a.sky_gain, b.sky_gain, u),
+        ambient: tour_lerp3(a.ambient, b.ambient, u),
+        ambient_lux: tour_lerp(a.ambient_lux, b.ambient_lux, u),
+        fill_scale: tour_lerp(a.fill_scale, b.fill_scale, u),
+        ibl_nits: tour_lerp(a.ibl_nits, b.ibl_nits, u),
+        ev100: tour_lerp(a.ev100, b.ev100, u),
+    }
+}
+
+fn tour_smoothstep(u: f32) -> f32 {
+    let u = u.clamp(0.0, 1.0);
+    u * u * (3.0 - 2.0 * u)
+}
+
+/// Unit vector pointing FROM the sky TO the scene — the same convention as
+/// `look::Hour::sun_dir()`, so a `DirectionalLight`'s transform looks along it.
+fn tour_sun_dir(elev_deg: f32, azim_deg: f32) -> Vec3 {
+    let e = elev_deg.to_radians();
+    let a = azim_deg.to_radians();
+    Vec3::new(a.sin() * e.cos(), -e.sin(), a.cos() * e.cos()).normalize()
+}
+
+/// Camera pose at `t` seconds since tour start — smoothstep between the two
+/// keyframes bracketing `t`.
+fn tour_camera(t: f32) -> (Vec3, Vec3) {
+    let n = TOUR_KEYFRAMES.len();
+    if t <= TOUR_KEYFRAMES[0].0 {
+        return (
+            Vec3::from(TOUR_KEYFRAMES[0].1),
+            Vec3::from(TOUR_KEYFRAMES[0].2),
+        );
+    }
+    for i in 0..n.saturating_sub(1) {
+        let (t0, e0, a0) = TOUR_KEYFRAMES[i];
+        let (t1, e1, a1) = TOUR_KEYFRAMES[i + 1];
+        if t <= t1 {
+            let u = tour_smoothstep((t - t0) / (t1 - t0).max(1e-3));
+            return (
+                tour_lerp3(e0, e1, u).into(),
+                tour_lerp3(a0, a1, u).into(),
+            );
+        }
+    }
+    let last = TOUR_KEYFRAMES[n - 1];
+    (Vec3::from(last.1), Vec3::from(last.2))
+}
+
+/// Lighting mood at `t` seconds since tour start. Two crossfade windows move
+/// noon→cool (t 5→6.5) and cool→night (t 15→16.5); elsewhere a phase is held.
+fn tour_light(t: f32) -> TourLight {
+    let (a, b, u) = if t < 5.0 {
+        (&TOUR_NOON, &TOUR_NOON, 0.0)
+    } else if t < 6.5 {
+        (&TOUR_NOON, &TOUR_COOL, tour_smoothstep((t - 5.0) / 1.5))
+    } else if t < 15.0 {
+        (&TOUR_COOL, &TOUR_COOL, 0.0)
+    } else if t < 16.5 {
+        (&TOUR_COOL, &TOUR_NIGHT, tour_smoothstep((t - 15.0) / 1.5))
+    } else {
+        (&TOUR_NIGHT, &TOUR_NIGHT, 0.0)
+    };
+    tour_lerp_light(a, b, u)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn beauty_tour(
+    time: Res<Time>,
+    mut tour: ResMut<BeautyTour>,
+    mut commands: Commands,
+    // `cam_q` and `lights_q` both write `&mut Transform`, which Bevy's schedule
+    // validation rejects as a conflicting access pair (B0001) — it is checked at
+    // schedule build time, before any `run_if`, so it panics on EVERY boot, not
+    // just `--beauty-tour`. A `ParamSet` fuses the two into one parameter, which
+    // is exactly the disjoint-TMut-writes shape Bevy accepts.
+    mut trans_q: ParamSet<(
+        Query<&mut Transform, With<OrbitCam>>,
+        Query<(Entity, &mut DirectionalLight, &mut Transform)>,
+    )>,
+    mut ambient_q: Query<&mut AmbientLight, With<OrbitCam>>,
+    mut clear: ResMut<ClearColor>,
+    mut ibl_q: Query<&mut EnvironmentMapLight, With<OrbitCam>>,
+    mut exposure_q: Query<&mut Exposure, With<OrbitCam>>,
+    mut phase_writer: MessageWriter<audio::BeautyTourPhase>,
+    mut exit: MessageWriter<AppExit>,
+    enemies: Query<Entity, With<combat::Enemy>>,
+    hbars: Query<Entity, With<combat::HealthBar>>,
+    sbars: Query<Entity, With<combat::StaminaBar>>,
+    reticles: Query<Entity, With<combat::LockReticle>>,
+    hud_roots: Query<Entity, With<hud::HudRoot>>,
+) {
+    // Strip the combat encounter (Guard Husk + HUD bars): a tour is scenery, not
+    // a fight. `VOXELFORGE_NOHUD` hides the Node UI; this removes the 3D husk the
+    // Edhari boot drops right in the middle of the night-fire framing.
+    for e in enemies
+        .iter()
+        .chain(hbars.iter())
+        .chain(sbars.iter())
+        .chain(reticles.iter())
+        .chain(hud_roots.iter())
+    {
+        commands.entity(e).despawn();
+    }
+
+    let now = time.elapsed_secs();
+    let start = *tour.start.get_or_insert(now + TOUR_SETTLE);
+    let t = (now - start).max(0.0);
+
+    // ---- camera (PostUpdate: after fly_camera, before propagation) --------
+    let (eye, aim) = tour_camera(t);
+    if let Ok(mut tf) = trans_q.p0().single_mut() {
+        *tf = Transform::from_translation(eye).looking_at(aim, Vec3::Y);
+    }
+
+    // ---- lighting ----------------------------------------------------------
+    let light = tour_light(t);
+    let dir = tour_sun_dir(light.elev_deg, light.azim_deg);
+    for (e, mut dl, mut tf) in &mut trans_q.p1() {
+        if dl.shadow_maps_enabled {
+            // The sun — point it, colour it, power it.
+            dl.illuminance = light.illuminance;
+            dl.color = Color::srgb(light.key[0], light.key[1], light.key[2]);
+            tf.translation = -dir * 200.0;
+            tf.look_to(dir, Vec3::Y);
+        } else {
+            // A directional fill (sky / bounce / rim) — dim to the phase's scale,
+            // snapshotting its boot illuminance once so the factor never compounds.
+            let base = match tour.fill_base.iter().find(|(fe, _)| *fe == e) {
+                Some((_, b)) => *b,
+                None => {
+                    let b = dl.illuminance;
+                    tour.fill_base.push((e, b));
+                    b
+                }
+            };
+            dl.illuminance = base * light.fill_scale;
+        }
+    }
+    if let Ok(mut ambient) = ambient_q.single_mut() {
+        ambient.color = Color::srgb(light.ambient[0], light.ambient[1], light.ambient[2]);
+        ambient.brightness = light.ambient_lux;
+    }
+    let sky = Color::srgb(light.sky[0], light.sky[1], light.sky[2]).to_linear();
+    clear.0 = Color::linear_rgb(
+        sky.red * light.sky_gain,
+        sky.green * light.sky_gain,
+        sky.blue * light.sky_gain,
+    );
+    if let Ok(mut env) = ibl_q.single_mut() {
+        env.intensity = light.ibl_nits;
+    }
+    if let Ok(mut exp) = exposure_q.single_mut() {
+        exp.ev100 = light.ev100;
+    }
+
+    // ---- phase-matched ambience (message → audio.rs) ------------------------
+    let phase = if t >= 15.0 {
+        audio::BeautyTourPhase::Night
+    } else if t >= 5.0 {
+        audio::BeautyTourPhase::Cool
+    } else {
+        audio::BeautyTourPhase::Noon
+    };
+    let phase_idx = match phase {
+        audio::BeautyTourPhase::Noon => 0,
+        audio::BeautyTourPhase::Cool => 1,
+        audio::BeautyTourPhase::Night => 2,
+    };
+    if phase_idx != tour.last_phase {
+        tour.last_phase = phase_idx;
+        phase_writer.write(phase);
+        println!("BEAUTY_TOUR phase={phase:?} t={t:.1}");
+    }
+
+    // ---- stills at the three stops ------------------------------------------
+    let shot_path = tour.shots_dir.as_ref().and_then(|dir| {
+        let idx = tour.shots_taken;
+        if idx < TOUR_SHOT_TIMES.len() && t >= TOUR_SHOT_TIMES[idx] {
+            Some(format!("{dir}/beauty-tour-stop-{}.png", idx + 1))
+        } else {
+            None
+        }
+    });
+    if let Some(path) = shot_path {
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(path.clone()));
+        tour.shots_taken += 1;
+        println!("BEAUTY_TOUR shot {} -> {path}", tour.shots_taken);
+    }
+
+    // ---- auto-exit ----------------------------------------------------------
+    if t >= TOUR_EXIT_AT {
+        println!("BEAUTY_TOUR done t={t:.1} => exit");
+        exit.write(AppExit::Success);
+    }
 }
 
 fn screenshot_once(
