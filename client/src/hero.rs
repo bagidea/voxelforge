@@ -33,10 +33,12 @@ pub struct GateVerdict {
 use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{
-    AmbientLight, FogVolume, ShadowFilteringMethod, VolumetricFog, VolumetricLight,
+    AmbientLight, DirectionalLightShadowMap, FogVolume, NotShadowCaster, ShadowFilteringMethod,
+    VolumetricFog, VolumetricLight,
 };
 use bevy::pbr::{
-    DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
+    ContactShadows, DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion,
+    ScreenSpaceAmbientOcclusionQualityLevel,
 };
 use bevy::post_process::bloom::Bloom;
 use bevy::post_process::dof::{DepthOfField, DepthOfFieldMode};
@@ -114,6 +116,27 @@ mod recipe {
     pub const SHOULDER: f32 = 0.64;
     /// `VOXELFORGE_DUST` — mote density in the god-ray corridor.
     pub const DUST: f32 = 3.0;
+    /// GATE G4a — directional shadow-map resolution, and the ONLY lever on this
+    /// scene that actually moves the penumbra.
+    ///
+    /// The measured penumbra on the wide plate was **4 px** against a `>=5` machine
+    /// line and **8 px** on the golden ref. It is not a plate-resolution artefact:
+    /// down-scaling the ref left its penumbra at 8→8→9 px, so the wide frame really
+    /// is twice as hard-edged.
+    ///
+    /// PCSS is NOT the lever here. `soft_shadow_size` measured FLAT from 0.02 to 400
+    /// because in a room this small the blocker→receiver depth gap is tiny and Bevy
+    /// clamps `blur_size` to its 0.5 floor. What the visible penumbra is actually made
+    /// of is `ShadowFilteringMethod::Temporal` + TAA sampling the shadow map — and
+    /// that filter's kernel is denominated in shadow-map TEXELS. So the penumbra is
+    /// proportional to texel world-size, i.e. inversely proportional to this number:
+    /// 4096 → 2048 doubles the texel and should take 4 px to ~8 px.
+    ///
+    /// `voxel_shot`/`main` insert 4096 at app-build time; this is inserted from
+    /// `setup_hero`, which runs after, so the look recipe wins — the shadow map is a
+    /// LOOK knob and belongs with the rest of the baked recipe rather than in a bin's
+    /// boilerplate. Sweep with `VOXELFORGE_SHADOWMAP=<n>` before moving it.
+    pub const SHADOW_MAP: u32 = 2048;
     /// `VOXELFORGE_BOUNCE` / `_BOUNCE2` — floor-bounce and dark-lifter cards.
     pub const BOUNCE: f32 = 1.0;
     pub const BOUNCE2: f32 = 1.7;
@@ -370,8 +393,33 @@ pub fn setup_hero(
     // Bright pane sits OUTSIDE the wall (x = 16.5); the mullion bars on the wall
     // plane (x=15.5) occlude the volumetric light => banded god rays inside.
     // Lower band (y 3..5) brighter than upper band (y 5..8) => sky gradient.
-    grid.fill(&pane_lo, 16, 17, 3, 5, 4, 10);
-    grid.fill(&pane_hi, 16, 17, 5, 8, 4, 10);
+    //
+    // GATE G2 (2026-08-16): the pane is spawned NO-CAST. It used to be an ordinary
+    // opaque cube wall sealing the opening from outside, which occluded the KEY
+    // light before it reached the mullions — see `VoxelGrid::fill_nocast`. It banded
+    // the VOLUMETRIC light (the fog pass reads the light, not the shadow map, so god
+    // rays are unaffected) but never let a single bar of sun onto the floor.
+    //
+    // `VOXELFORGE_G2_PANE=block` restores the old occluding pane. That is the BEFORE
+    // plate lever: one binary, one scene, one changed bit — so a before/after pair
+    // cannot be two different builds wearing the same caption.
+    let pane_blocks = std::env::var("VOXELFORGE_G2_PANE").as_deref() == Ok("block");
+    // Annotated as a fn POINTER on purpose: the two arms are distinct fn *items* with
+    // distinct types, and while rustc will coerce them here, spelling the pointer out
+    // means the day one of the two signatures drifts the error lands on this line
+    // instead of somewhere inside the if/else inference.
+    type PaneFill = fn(&mut VoxelGrid, &Handle<StandardMaterial>, i32, i32, i32, i32, i32, i32);
+    let pane_fill: PaneFill = if pane_blocks {
+        VoxelGrid::fill
+    } else {
+        VoxelGrid::fill_nocast
+    };
+    pane_fill(&mut grid, &pane_lo, 16, 17, 3, 5, 4, 10);
+    pane_fill(&mut grid, &pane_hi, 16, 17, 5, 8, 4, 10);
+    println!(
+        "G2_PANE={}",
+        if pane_blocks { "block" } else { "pass" }
+    );
     // Mullions across the opening (x=15 layer).
     grid.fill(&frame, 15, 16, 3, 8, 6, 7); // vertical mullion
     grid.fill(&frame, 15, 16, 5, 6, 4, 10); // horizontal mullion
@@ -634,6 +682,21 @@ pub fn setup_hero(
     let bscale: f32 = cfg.bluescale.unwrap_or(recipe::BLUESCALE);
     let (elev, azim, illum) = cfg.sun.unwrap_or(recipe::SUN).into_tuple3();
     let dir = sun_dir(elev, azim);
+    // GATE G4a penumbra — see `recipe::SHADOW_MAP` for why this, and not PCSS, is the
+    // lever. Read straight from env rather than through `Cfg`: `Cfg` is declared in
+    // `main.rs`, another lane's file, and this knob must not need an edit there.
+    let shadow_map: u32 = std::env::var("VOXELFORGE_SHADOWMAP")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        // Bevy: "must be a power of two to avoid unstable cascade positioning" — a
+        // swept 3000 would silently jitter the cascades and poison the very number
+        // the sweep is trying to read, so reject it rather than honour it.
+        .filter(|n: &u32| *n >= 256 && n.is_power_of_two())
+        .unwrap_or(recipe::SHADOW_MAP);
+    println!("SHADOW_MAP={shadow_map}");
+    commands.insert_resource(DirectionalLightShadowMap {
+        size: shadow_map as usize,
+    });
     // Position the light off the room and aim it in; direction is what matters.
     let sun_pos = Vec3::new(8.0, 6.0, 6.0) - dir * 40.0;
     commands.spawn((
@@ -807,7 +870,7 @@ pub fn setup_hero(
     // still overrides.
     let amb_col = cfg.ambcolor.unwrap_or(recipe::AMBCOLOR);
 
-    commands.spawn((
+    let mut cam = commands.spawn((
         Camera3d::default(),
         Camera {
             clear_color: ClearColorConfig::Custom(Color::srgb(0.05, 0.03, 0.02)),
@@ -935,8 +998,63 @@ pub fn setup_hero(
                 density: cfg.dfog.unwrap_or(0.008),
             },
             ..default()
-        }),
+        },
+        // GATE G4b (contact AO) — "บล็อกมิ้นต์/ชามไม่มีเงาสัมผัส นั่งลอย".
+        //
+        // SSAO above cannot close this and raising `constant_object_thickness`
+        // further will not either: SSAO attenuates the AMBIENT term, and at the
+        // foot of a sunlit block the ambient is the small half of the light, so the
+        // crease it can draw is capped by the fill's share. `ContactShadows`
+        // ray-marches the depth buffer toward the light and attenuates the DIRECT
+        // term instead — at a block's foot that is the whole key light to bite into,
+        // which is what puts the seam back that a shadow cascade covering the room
+        // is far too coarse to resolve. Same argument look.rs made for the outdoor
+        // lane; these are its proven v3 numbers, at the same 1-unit-per-block scale.
+        //
+        // Inserted AFTER the spawn rather than as a bundle item, for two reasons:
+        // the camera bundle is already at Bevy's 15-item tuple ceiling (see the
+        // comment above), and `Option<C>` is NOT a `Bundle` in Bevy 0.19 — checked,
+        // not assumed — so `None` cannot be the off-switch inside a tuple.
+        // `VOXELFORGE_G4_CONTACT=off` disables it: the BEFORE lever for this half of
+        // G4, same one-binary rule as `VOXELFORGE_G2_PANE`.
+        ),
     ));
+    if let Some(cs) = contact_shadows() {
+        cam.insert(cs);
+    }
+}
+
+/// GATE G4b — the camera's contact-shadow march, or `None` when
+/// `VOXELFORGE_G4_CONTACT=off` (the BEFORE lever).
+///
+/// Returning `Option<ContactShadows>` rather than the component itself is what makes
+/// the off-switch free: Bevy implements `Bundle` for `Option<C>`, so `None` inserts
+/// nothing at all and the BEFORE plate is the genuine no-contact-shadow scene, not a
+/// zero-length march that still costs a depth read and still nudges the pixels.
+///
+/// The three numbers are `look.rs`'s shipped v3 values (`CONTACT_SHADOW_LENGTH_V3`
+/// / `_THICKNESS_V3` / `_STEPS_V3`), copied rather than imported: `look.rs` is
+/// another lane's file and this bin does not compile it. They transfer because both
+/// scenes are authored at ONE WORLD UNIT PER BLOCK, which is the only assumption the
+/// numbers make — Bevy's own 0.3 default is metre-scale-character tuning and draws a
+/// seam thinner than the voxel it is meant to be grounding.
+fn contact_shadows() -> Option<ContactShadows> {
+    if std::env::var("VOXELFORGE_G4_CONTACT").as_deref() == Ok("off") {
+        println!("G4_CONTACT=off");
+        return None;
+    }
+    println!("G4_CONTACT=on");
+    Some(ContactShadows {
+        // 0.85 blocks: long enough that the groove under a block survives the plate
+        // downsample, short enough to stay inside one voxel so it reads as CONTACT
+        // and not as a second cast shadow.
+        length: 0.85,
+        // Thin: the depth buffer is 2.5-D, so `thickness` is a guess at how solid a
+        // fragment is. Too fat and the march self-occludes across the flat parquet
+        // and greys the whole floor.
+        thickness: 0.14,
+        linear_steps: 24,
+    })
 }
 
 /// Marks a cube that came out of [`VoxelGrid::flush`] — i.e. one that went through
@@ -965,12 +1083,20 @@ pub struct VoxelCell;
 #[derive(Default)]
 pub struct VoxelGrid {
     cells: std::collections::HashMap<(i32, i32, i32), Handle<StandardMaterial>>,
+    /// Cells that render but do NOT occlude the sun (see [`VoxelGrid::fill_nocast`]).
+    nocast: std::collections::HashSet<(i32, i32, i32)>,
 }
 
 impl VoxelGrid {
     /// Claim one cell. A later `put` on the same cell replaces the earlier one.
     fn put(&mut self, x: i32, y: i32, z: i32, mat: &Handle<StandardMaterial>) {
         self.cells.insert((x, y, z), mat.clone());
+        // Last write wins for the SHADOW flag too, not just the material: a plain
+        // `fill` over a cell previously claimed by `fill_nocast` must get an ordinary
+        // shadow-casting cube back, or the no-cast hole would outlive the pane that
+        // asked for it. (`fill_nocast` re-inserts after its own `fill`, so it is
+        // unaffected by this.)
+        self.nocast.remove(&(x, y, z));
     }
 
     /// Claim the box region [x0..x1)×[y0..y1)×[z0..z1) for one material.
@@ -993,6 +1119,43 @@ impl VoxelGrid {
         }
     }
 
+    /// Claim a box region whose cubes are VISIBLE but cast NO shadow.
+    ///
+    /// GATE G2 (`docs/VERDICT-flamingo-beauty-2026-08-16.md`): the beauty frame had
+    /// "ไม่มีแถบ mullion ทาบพื้น/ผนังเลยสักเส้น" — not one bar of window light on the
+    /// floor. The cause was not the sun and not the mullions: it was the emissive
+    /// window PANE. The pane is authored as solid cubes at x 16..17 covering the whole
+    /// opening (y 3..8, z 4..10) — i.e. a lid bolted over the window from OUTSIDE.
+    /// Being an ordinary opaque mesh it also went into the shadow map, so the key
+    /// light was stopped one block before it ever reached the mullion cross behind it.
+    /// The room was lit entirely by ambient + the two bounce cards, which is exactly
+    /// the flat, directionless read G2 scores.
+    ///
+    /// A pane is a light SOURCE, not an occluder — physically it is the sky seen
+    /// through glass. Dropping it out of the shadow pass (rather than deleting it or
+    /// making it transparent) keeps every pixel of the frame identical where the pane
+    /// is directly visible — same emissive, same bloom seed, same G5 highlight — and
+    /// changes only what the sun is allowed to reach.
+    fn fill_nocast(
+        &mut self,
+        mat: &Handle<StandardMaterial>,
+        x0: i32,
+        x1: i32,
+        y0: i32,
+        y1: i32,
+        z0: i32,
+        z1: i32,
+    ) {
+        self.fill(mat, x0, x1, y0, y1, z0, z1);
+        for x in x0..x1 {
+            for y in y0..y1 {
+                for z in z0..z1 {
+                    self.nocast.insert((x, y, z));
+                }
+            }
+        }
+    }
+
     /// Spawn one cube per occupied cell and return how many. Sorted, because a
     /// `HashMap`'s iteration order is deliberately randomised per run and this
     /// whole type exists to stop render output depending on spawn order.
@@ -1000,14 +1163,23 @@ impl VoxelGrid {
         let mut cells: Vec<((i32, i32, i32), Handle<StandardMaterial>)> =
             self.cells.into_iter().collect();
         cells.sort_by_key(|(k, _)| *k);
+        let mut nocast_placed = 0usize;
         for ((x, y, z), mat) in &cells {
-            commands.spawn((
+            let mut e = commands.spawn((
                 Mesh3d(cube.clone()),
                 MeshMaterial3d(mat.clone()),
                 Transform::from_xyz(*x as f32 + 0.5, *y as f32 + 0.5, *z as f32 + 0.5),
                 VoxelCell,
             ));
+            if self.nocast.contains(&(*x, *y, *z)) {
+                e.insert(NotShadowCaster);
+                nocast_placed += 1;
+            }
         }
+        // Printed, not silent: G2's whole fix is "N cells stopped occluding the sun",
+        // and a render driver that greps 0 here knows the bake did not take without
+        // having to eyeball a frame for it.
+        println!("VOXEL_NOCAST={nocast_placed}");
         cells.len()
     }
 }
