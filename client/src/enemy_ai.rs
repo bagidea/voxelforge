@@ -44,6 +44,13 @@ pub struct AiPlayer;
 #[derive(Resource)]
 pub struct AiRng(pub Rng);
 
+impl Default for AiRng {
+    fn default() -> Self {
+        // fixed seed = reproducible proof clips
+        AiRng(Rng::with_seed(0x52505345)) // "RPSE" — Rose's proof seed
+    }
+}
+
 /// Flat-arena bounds. The proof world is a plane; the real game replaces this
 /// with `combat.rs`'s ground query at wiring time. Kept as a resource so the
 /// clamp is one knob, not a hard-coded constant in three places.
@@ -103,7 +110,7 @@ pub struct Tuning {
 }
 
 const TUNING: &[Tuning] = &[
-    // Swarm — Reaver. Faster than the player's flee (3.8) so a chase that
+    // Swarm — Reaver. Faster than the player's flee speed so a chase that
     // starts inside aggro always ends in contact; that is the archetype's
     // whole threat model.
     Tuning {
@@ -254,11 +261,10 @@ impl EnemyMind {
         }
     }
 
-    fn go(&mut self, s: AiState, ptf: Vec3, tf: &Transform) {
+    fn go(&mut self, s: AiState, dist: f32) {
         if self.state == s {
             return;
         }
-        let dist = ptf.distance(tf.translation);
         println!(
             "AI id={} {} {} -> {} dist={:.2}",
             self.id,
@@ -278,18 +284,20 @@ fn yaw_to(dir: Vec3) -> f32 {
 }
 
 fn turn_toward(cur: f32, target: f32, max_step: f32) -> f32 {
-    let mut d = (target - cur + std::f32::consts::PI) % std::f32::consts::TAU
-        - std::f32::consts::PI;
-    if d < 0.0 {
+    let mut d = (target - cur) % std::f32::consts::TAU;
+    if d > std::f32::consts::PI {
+        d -= std::f32::consts::TAU;
+    }
+    if d < -std::f32::consts::PI {
         d += std::f32::consts::TAU;
     }
-    d = (d + std::f32::consts::PI) % std::f32::consts::TAU - std::f32::consts::PI;
     cur + d.clamp(-max_step, max_step)
 }
 
-/// The whole behaviour, one system. n enemies is small (single digits), so
-/// O(n²) separation in one pass is the honest simple shape — no spatial grid
-/// until there is a map that needs one.
+/// The whole behaviour, one system, one pass over `iter_mut()`. Peer positions
+/// for separation are snapshotted before any writes this frame (an O(n²)
+/// separation over single-digit enemy counts; a spatial grid waits until a
+/// map needs one).
 pub fn enemy_ai(
     mut minds: Query<(Entity, &mut Transform, &mut EnemyMind)>,
     player: Query<&Transform, (With<AiPlayer>, Without<EnemyMind>)>,
@@ -301,66 +309,61 @@ pub fn enemy_ai(
     let ptf = ptf.translation;
     let dt = time.delta_secs();
     let half = arena.half;
+    let positions: Vec<Vec3> = minds.iter().map(|(_, tf, _)| tf.translation).collect();
 
-    // pass 1 — decide desired velocity per mind (needs read access to peers
-    // for separation, so collect first and write after)
-    let n = minds.iter().len();
-    let mut info: Vec<(usize, Vec3, f32, f32)> = Vec::with_capacity(n); // (idx, desired, speed, target_yaw)
-    let mut positions: Vec<Vec3> = Vec::with_capacity(n);
-
-    for (i, (_, tf, mind)) in minds.iter().enumerate() {
-        positions.push(tf.translation);
+    for (idx, (_entity, mut tf, mut mind)) in minds.iter_mut().enumerate() {
         let t = tuning(mind.archetype);
         let pos = tf.translation;
         let mut to_p = ptf - pos;
         to_p.y = 0.0;
         let dist = to_p.length();
         let dir_p = if dist > 1e-4 { to_p / dist } else { Vec3::NEG_Z };
-        let mut m = mind; // Query item gives &mut via iteration below — see pass 2
 
-        // desired velocity + speed for this frame
-        let (mut desired, mut speed, mut want_yaw): (Vec3, f32, f32) = (Vec3::ZERO, 0.0, mind.facing);
+        // ---- decide: desired direction + speed + facing for this frame ----
+        let mut desired = Vec3::ZERO;
+        let mut speed = 0.0;
+        let mut want_yaw = mind.facing;
 
         match mind.state {
             AiState::Patrol => {
                 if dist < t.aggro {
-                    m.go(AiState::Alert, ptf, tf);
-                    info.push((i, Vec3::ZERO, 0.0, yaw_to(dir_p)));
-                    continue;
+                    mind.go(AiState::Alert, dist);
+                    want_yaw = yaw_to(dir_p);
+                } else {
+                    // wander around home, gently pulled back if it drifts
+                    if mind.wander_left <= 0.0 {
+                        mind.wander_yaw = rng.0.f32() * std::f32::consts::TAU;
+                        mind.wander_left = 1.5 + rng.0.f32() * 2.5;
+                    }
+                    let dir = Vec3::new(-mind.wander_yaw.sin(), 0.0, -mind.wander_yaw.cos());
+                    let home_pull = (mind.home - pos) * 0.08;
+                    let v = dir * t.patrol_speed + home_pull.with_y(0.0);
+                    speed = v.length().min(t.patrol_speed);
+                    desired = v;
+                    want_yaw = yaw_to(dir);
                 }
-                // wander around home
-                if m.wander_left <= 0.0 {
-                    m.wander_yaw = rng.0.f32() * std::f32::consts::TAU;
-                    m.wander_left = 1.5 + rng.0.f32() * 2.5;
-                }
-                let dir = Vec3::new(-m.wander_yaw.sin(), 0.0, -m.wander_yaw.cos());
-                let home_pull = (m.home - pos) * 0.08;
-                desired = (dir * t.patrol_speed + home_pull).with_y(0.0);
-                speed = desired.length().min(t.patrol_speed);
-                want_yaw = yaw_to(dir);
             }
             AiState::Alert => {
                 // the detect beat: freeze and FACE the player — motionless on
                 // purpose, the stillness is the tell
                 want_yaw = yaw_to(dir_p);
-                let beat = t.alert_beat;
-                if mind.t >= beat {
+                if mind.t >= t.alert_beat {
                     let next = match mind.archetype {
                         Archetype::Swarm => AiState::Chase,
                         Archetype::Bruiser => AiState::Advance,
                         Archetype::Pouncer => {
-                            m.stalk_left = 4.0 + rng.0.f32() * 3.0;
+                            mind.stalk_left = 4.0 + rng.0.f32() * 3.0;
                             AiState::Stalk
                         }
                     };
-                    m.go(next, ptf, tf);
+                    mind.go(next, dist);
                 }
             }
             AiState::Chase => {
                 if dist > t.deaggro {
-                    m.go(AiState::Patrol, ptf, tf);
+                    mind.go(AiState::Patrol, dist);
                 } else if dist < t.strike_range {
-                    m.go(AiState::Windup, ptf, tf);
+                    mind.go(AiState::Windup, dist);
                 } else {
                     // zigzag: lateral weave so a swarm never reads as one rail
                     let lat = Vec3::new(-dir_p.z, 0.0, dir_p.x);
@@ -373,53 +376,56 @@ pub fn enemy_ai(
             AiState::Advance => {
                 // Bruiser: deaggro is INFINITY — no give-up branch exists
                 if dist > t.strike_range {
-                    let speed_now = if dist < t.keep_dist { 0.0 } else { t.chase_speed };
                     desired = dir_p;
-                    speed = speed_now;
+                    speed = if dist < t.keep_dist { 0.0 } else { t.chase_speed };
                     want_yaw = yaw_to(dir_p);
                 } else {
-                    m.go(AiState::Windup, ptf, tf);
+                    mind.go(AiState::Windup, dist);
                 }
             }
             AiState::Stalk => {
                 // orbit at orbit_radius; radial correction keeps the ring,
                 // tangential motion keeps the circle
                 let radial = if dist > 1e-4 { (dist - t.orbit_radius) / t.orbit_radius } else { 0.0 };
-                let tang = Vec3::new(-dir_p.z, 0.0, dir_p.x) * m.orbit_dir;
+                let tang = Vec3::new(-dir_p.z, 0.0, dir_p.x) * mind.orbit_dir;
                 desired = (dir_p * radial.clamp(-1.0, 1.0) + tang).normalize();
                 speed = t.orbit_speed;
                 want_yaw = yaw_to(dir_p);
-                if m.orbit_left <= 0.0 {
-                    m.orbit_dir *= -1.0;
-                    m.orbit_left = 2.0 + rng.0.f32() * 2.0;
+                if mind.orbit_left <= 0.0 {
+                    mind.orbit_dir *= -1.0;
+                    mind.orbit_left = 2.0 + rng.0.f32() * 2.0;
                 }
-                let commit = dist < t.pounce_from || m.stalk_left <= 0.0;
-                if commit {
-                    m.go(AiState::Crouch, ptf, tf);
+                if dist < t.pounce_from || mind.stalk_left <= 0.0 {
+                    mind.go(AiState::Crouch, dist);
                 }
             }
             AiState::Windup | AiState::Crouch => {
-                // telegraph: stand still, track the player… until the last
-                // instant. Lock fires in pass 2's transition handling below.
+                // telegraph: stand still, track the player… until the windup
+                // ends, then LOCK the strike direction — after the lock the
+                // lunge cannot turn, so a dodge is real
                 want_yaw = yaw_to(dir_p);
                 let wind = if mind.state == AiState::Windup { t.windup } else { t.crouch };
                 if mind.t >= wind {
-                    m.locked_dir = dir_p; // locked at windup END (Pouncer aims late = smarter)
+                    mind.locked_dir = dir_p; // aims LATE — dodging early is safe
                     let next = if mind.state == AiState::Windup { AiState::Strike } else { AiState::Pounce };
                     println!(
-                        "AI id={} {} TELEGRAPH→COMMIT locked=({:.2},{:.2}) dist={:.2}",
-                        mind.id, mind.archetype.id(), m.locked_dir.x, m.locked_dir.z, dist
+                        "AI id={} {} TELEGRAPH->COMMIT locked=({:.2},{:.2}) dist={:.2}",
+                        mind.id,
+                        mind.archetype.id(),
+                        mind.locked_dir.x,
+                        mind.locked_dir.z,
+                        dist
                     );
-                    m.go(next, ptf, tf);
+                    mind.go(next, dist);
                 }
             }
             AiState::Strike | AiState::Pounce => {
                 // committed: locked direction, no re-aim, overshoots on purpose
-                desired = m.locked_dir;
+                desired = mind.locked_dir;
                 speed = t.strike_speed;
-                want_yaw = yaw_to(m.locked_dir);
+                want_yaw = yaw_to(mind.locked_dir);
                 if mind.t >= t.strike_time {
-                    m.go(AiState::Recover, ptf, tf);
+                    mind.go(AiState::Recover, dist);
                 }
             }
             AiState::Recover => {
@@ -430,33 +436,21 @@ pub fn enemy_ai(
                         Archetype::Swarm => AiState::Chase,
                         Archetype::Bruiser => AiState::Advance,
                         Archetype::Pouncer => {
-                            m.stalk_left = 4.0 + rng.0.f32() * 3.0;
+                            mind.stalk_left = 4.0 + rng.0.f32() * 3.0;
                             AiState::Stalk
                         }
                     };
-                    m.go(next, ptf, tf);
+                    mind.go(next, dist);
                 }
             }
         }
-        info.push((i, desired, speed, want_yaw));
-        let _ = &mut m;
-    }
 
-    // pass 2 — integrate: separation between minds, arena clamp, facing, timers
-    for (idx, (entity, mut tf, mut mind)) in minds.iter_mut().enumerate() {
-        let t = tuning(mind.archetype);
-        let (_, mut desired, mut speed, want_yaw) = info
-            .iter()
-            .find(|(i, _, _, _)| *i == idx)
-            .copied()
-            .unwrap_or((idx, Vec3::ZERO, 0.0, mind.facing));
-
-        // separation — never occupy the same pixel as a sibling
+        // ---- integrate: separation, clamp, facing, timers ----
         for (j, other) in positions.iter().enumerate() {
             if j == idx {
                 continue;
             }
-            let mut away = tf.translation - *other;
+            let mut away = pos - *other;
             away.y = 0.0;
             let d = away.length();
             if d < 1.3 && d > 1e-4 {
@@ -464,13 +458,10 @@ pub fn enemy_ai(
             }
         }
 
-        let step = if speed > 0.0 && desired.length_squared() > 1e-6 {
-            desired = desired.normalize();
-            desired * speed * dt
-        } else {
-            Vec3::ZERO
-        };
-        tf.translation += step;
+        if speed > 0.0 && desired.length_squared() > 1e-6 {
+            let step = desired.normalize() * speed * dt;
+            tf.translation += step;
+        }
         tf.translation.x = tf.translation.x.clamp(-half, half);
         tf.translation.z = tf.translation.z.clamp(-half, half);
         tf.translation.y = 0.0; // flat-arena contract; combat wiring owns real ground
@@ -488,28 +479,28 @@ pub fn enemy_ai(
         if mind.stalk_left > 0.0 {
             mind.stalk_left -= dt;
         }
-        let _ = entity;
-        let _ = t;
     }
 }
 
+/// Ordering label for the AI pass. Callers that need to run before/after the
+/// minds move order against THIS set, never against `enemy_ai` the fn: a
+/// `SystemTypeSet` goes ambiguous the moment a schedule holds more than one
+/// instance of the system (the proof bin panicked on exactly that,
+/// bevy_ecs schedule.rs:566), while a named set never does.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EnemyAiSet;
+
 /// Wiring-ready plugin. The combat lane's eventual integration is:
 /// `app.add_plugins(EnemyAiPlugin)`, insert `AiPlayer` on the player entity,
-/// and `attach_mind` on each spawn it wants driven. No edits to this file.
+/// and `attach_mind` on each spawn it wants driven; neighbours order against
+/// `EnemyAiSet`. No edits to this file.
 pub struct EnemyAiPlugin;
 
 impl Plugin for EnemyAiPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Arena::default())
             .init_resource::<AiRng>()
-            .add_systems(Update, enemy_ai);
-    }
-}
-
-impl Default for AiRng {
-    fn default() -> Self {
-        // fixed seed = reproducible proof clips
-        AiRng(Rng::with_seed(0x52505345)) // "RPSE" — Rose's proof seed
+            .add_systems(Update, enemy_ai.in_set(EnemyAiSet));
     }
 }
 

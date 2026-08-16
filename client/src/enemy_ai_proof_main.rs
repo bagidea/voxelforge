@@ -17,6 +17,12 @@
 //!                                (default `_enemyai_frames`)
 //!   VOXELFORGE_AILOG=<path>     per-frame CSV trace: frame,enemy,state,x,z,dist
 //!                                (default `<dir>/trace.csv`)
+//!   VOXELFORGE_AIEND=<frames>   sim length in app frames (default 1320; the
+//!                                Bruiser needs ~2400 before it gets strike
+//!                                cycles — see the Capture note in main)
+//!   VOXELFORGE_AICAM=actor      frame whichever mind is performing a telegraph
+//!                                beat instead of the wide player chase cam, so
+//!                                pose proofs can READ the body (default: player)
 //! ```
 //!
 //! Assemble the clip afterwards with:
@@ -235,20 +241,90 @@ fn drive_player(mut player: Query<&mut Transform, (With<enemy_ai::AiPlayer>, Wit
 /// importing the component path twice.
 type EnemyMind4Proof = enemy_ai::EnemyMind;
 
-/// Smooth follow camera: behind + above the player, looking where the player
-/// is headed, so the pursuit stays readable through direction changes.
+/// Camera framing mode. `false` (default) = the wide chase read the clip
+/// exists for; `true` (VOXELFORGE_AICAM=actor) = frame whichever mind is
+/// currently performing a telegraph beat so pose proofs can READ the body.
+/// Symmetric across before/after runs, and the minds never see the camera,
+/// so the trace is identical either way.
+#[derive(Resource)]
+struct ActorCam(bool);
+
+/// The states that count as "performing" for the actor camera.
+fn acting(s: enemy_ai::AiState) -> bool {
+    matches!(
+        s,
+        enemy_ai::AiState::Windup
+            | enemy_ai::AiState::Crouch
+            | enemy_ai::AiState::Strike
+            | enemy_ai::AiState::Pounce
+            | enemy_ai::AiState::Recover
+    )
+}
+
+/// Smooth follow camera. Default: behind + above the player, looking where
+/// the player is headed, so the pursuit stays readable through direction
+/// changes. Actor mode: hold on the performing mind (sticky — keeps framing
+/// the same enemy through its whole beat), eye on the PLAYER's side of it so
+/// the telegraph poses read front-on; falls back to the wide player framing
+/// whenever nobody is performing.
 fn follow_cam(
     player: Query<&Transform, With<enemy_ai::AiPlayer>>,
+    // Without<Camera> proves disjointness from the `cam` query below — the
+    // minds' Transform read vs the camera's Transform write would otherwise
+    // be a same-system access conflict
+    minds: Query<(Entity, &Transform, &enemy_ai::EnemyMind), Without<Camera>>,
     mut cam: Query<&mut Transform, (With<Camera>, Without<enemy_ai::AiPlayer>)>,
     time: Res<Time>,
+    actor: Res<ActorCam>,
+    mut sticky: Local<Option<Entity>>,
 ) {
     let Ok(ptf) = player.single() else { return };
     let Ok(mut ctf) = cam.single_mut() else { return };
-    let fwd = ptf.forward();
-    let want = ptf.translation - fwd * 7.5 + Vec3::Y * 4.2;
     let k = 1.0 - (-4.5 * time.delta_secs()).exp();
+
+    let mut perf: Option<Vec3> = None;
+    if actor.0 {
+        let mut nearest: Option<(Entity, Vec3, f32)> = None;
+        let mut held: Option<Vec3> = None;
+        for (e, tf, m) in &minds {
+            if !acting(m.state) {
+                continue;
+            }
+            if Some(e) == *sticky {
+                held = Some(tf.translation);
+            }
+            let d = tf.translation.distance(ptf.translation);
+            if nearest.map_or(true, |(_, _, bd)| d < bd) {
+                nearest = Some((e, tf.translation, d));
+            }
+        }
+        if let Some(p) = held {
+            perf = Some(p);
+        } else if let Some((e, p, _)) = nearest {
+            *sticky = Some(e);
+            perf = Some(p);
+        } else {
+            *sticky = None;
+        }
+    }
+
+    let (want, look) = match perf {
+        Some(p) => {
+            let mut from_player = ptf.translation - p;
+            from_player.y = 0.0;
+            let dir = from_player.try_normalize().unwrap_or(Vec3::Z);
+            (p + dir * 5.0 + Vec3::Y * 2.3, p + Vec3::Y * 1.0)
+        }
+        None => {
+            let fwd = ptf.forward();
+            (
+                ptf.translation - fwd * 7.5 + Vec3::Y * 4.2,
+                ptf.translation + fwd * 2.0 + Vec3::Y * 0.8,
+            )
+        }
+    };
     ctf.translation = ctf.translation.lerp(want, k);
-    ctf.look_at(ptf.translation + fwd * 2.0 + Vec3::Y * 0.8, Vec3::Y);
+    ctf.look_at(look, Vec3::Y);
 }
 
 /// Capture every other frame from `start` to `end`, write the CSV trace, exit.
@@ -312,20 +388,36 @@ fn main() -> AppExit {
         .expect("exe has no parent dir")
         .to_path_buf();
 
-    // 22s of sim; capture (start..end] every 2nd frame → ~20s of 30fps clip
+    // 22s of sim by default; capture (start..end] every 2nd frame → ~20s of
+    // 30fps clip. VOXELFORGE_AIEND overrides the sim length: the Bruiser needs
+    // ~26s of sim before its first strike cycle lands (it advances at 1.7 u/s
+    // and cannot catch the fleeing player — only the cornered phase gives it
+    // strikes), so telegraph proofs run with VOXELFORGE_AIEND=2400.
     // Named `capture_res`, NOT `capture`: the fn item `capture` must stay
     // reachable by name for `capture.after(follow_cam)` below — a local named
     // `capture` shadows it and rustc reads `.after` off the struct instead.
+    let end: u32 = std::env::var("VOXELFORGE_AIEND")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1320);
     let capture_res = Capture {
         dir,
         frame: 0,
         start: 60,
-        end: 1320,
+        end,
         took: 0,
         trace: trace.into_inner().expect("flush trace header"),
     };
 
     let mut app = App::new();
+    let actor_cam = std::env::var("VOXELFORGE_AICAM")
+        .map(|v| v.eq_ignore_ascii_case("actor"))
+        .unwrap_or(false);
+    println!(
+        "AIPROOF cam={} end={}",
+        if actor_cam { "actor" } else { "player" },
+        end
+    );
     app.add_plugins(
         DefaultPlugins
             .set(AssetPlugin {
@@ -343,6 +435,7 @@ fn main() -> AppExit {
             }),
     )
     .insert_resource(capture_res)
+    .insert_resource(ActorCam(actor_cam))
     .insert_resource(Route { phase: 0 })
     .add_plugins(enemy_ai::EnemyAiPlugin) // Arena + seeded AiRng + the AI system (in EnemyAiSet)
     .add_systems(Startup, setup)
