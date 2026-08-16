@@ -243,6 +243,107 @@ impl EnemyKind {
     pub fn height(self) -> f32 {
         self.boxes().iter().fold(0.0f32, |m, bx| m.max(bx.hi[1])) * VX
     }
+
+    /// Local-space (unrotated, feet-at-origin) bounding box in world units —
+    /// the real geometric extent, not the eyeballed "roughly this tall"
+    /// numbers the shot camera used to hardcode. Feeds `placed_bounds` /
+    /// `fit_camera` so every solo portrait and the lineup auto-fit to
+    /// whatever the model actually measures, arms/glaive/tail included,
+    /// instead of a magic constant that goes stale the moment the sculpt
+    /// changes by half a block.
+    fn bounds(self) -> (Vec3, Vec3) {
+        let mut lo = Vec3::splat(f32::INFINITY);
+        let mut hi = Vec3::splat(f32::NEG_INFINITY);
+        for bx in self.boxes() {
+            let c = bx.centre();
+            let s = bx.size() * 0.5;
+            lo = lo.min(c - s);
+            hi = hi.max(c + s);
+        }
+        (lo, hi)
+    }
+}
+
+/// World-space AABB of one placed (translated + Y-yawed) enemy — rotates all
+/// 8 corners of its local bounds rather than the box itself, so a yawed model
+/// still reports its true swept extent instead of the unrotated footprint.
+fn placed_bounds(kind: EnemyKind, feet: Vec3, yaw: f32) -> (Vec3, Vec3) {
+    let (lo, hi) = kind.bounds();
+    let corners = [
+        Vec3::new(lo.x, lo.y, lo.z),
+        Vec3::new(hi.x, lo.y, lo.z),
+        Vec3::new(lo.x, hi.y, lo.z),
+        Vec3::new(hi.x, hi.y, lo.z),
+        Vec3::new(lo.x, lo.y, hi.z),
+        Vec3::new(hi.x, lo.y, hi.z),
+        Vec3::new(lo.x, hi.y, hi.z),
+        Vec3::new(hi.x, hi.y, hi.z),
+    ];
+    let rot = Quat::from_axis_angle(Vec3::Y, yaw);
+    let mut wlo = Vec3::splat(f32::INFINITY);
+    let mut whi = Vec3::splat(f32::NEG_INFINITY);
+    for c in corners {
+        let w = rot * c + feet;
+        wlo = wlo.min(w);
+        whi = whi.max(w);
+    }
+    (wlo, whi)
+}
+
+/// Merge two AABBs (component-wise min/max) — used to grow a single-enemy
+/// box into the lineup's combined box across all three placements.
+fn merge_bounds(a: (Vec3, Vec3), b: (Vec3, Vec3)) -> (Vec3, Vec3) {
+    (a.0.min(b.0), a.1.max(b.1))
+}
+
+/// Auto-fit camera: back the eye off along `angle_deg` (measured from the
+/// world −Z axis, same convention the old hardcoded `eye.z < 0` used) until
+/// the AABB's real half-height AND real half-width both clear the frame with
+/// `headroom` to spare on every side, then aim it at the box's true centre —
+/// not `height * 0.5`, which silently assumes the model is vertically
+/// symmetric around its own midpoint the way none of these three are (the
+/// Sentinel's glaive and the Reaver's dragging arm both throw that off).
+/// Whichever axis needs more distance wins, so the other axis ends up with
+/// even MORE headroom than requested rather than clipping.
+fn fit_camera(lo: Vec3, hi: Vec3, aspect: f32, fov_deg: f32, angle_deg: f32, headroom: f32) -> (Vec3, Vec3) {
+    let center = (lo + hi) * 0.5;
+    let half_h = ((hi.y - lo.y) * 0.5).max(0.05);
+    let half_x = (hi.x - lo.x) * 0.5;
+    let half_z = (hi.z - lo.z) * 0.5;
+    // Diagonal radius, not just the wider of the two: a yawed box can present
+    // any horizontal cross-section between half_x and half_z depending on
+    // camera angle, so sizing off the smaller one risks a side clip.
+    let half_horiz = (half_x * half_x + half_z * half_z).sqrt().max(0.05);
+
+    let vfov = fov_deg.to_radians();
+    let hfov = 2.0 * ((vfov * 0.5).tan() * aspect).atan();
+    let margin = 1.0 + headroom;
+    let dist_v = (half_h * margin) / (vfov * 0.5).tan();
+    let dist_h = (half_horiz * margin) / (hfov * 0.5).tan();
+    let dist = dist_v.max(dist_h).max(0.5);
+
+    let angle = angle_deg.to_radians();
+    // Eye sits a touch above centre for a slight downward look — the same
+    // "camera looks a bit down at its subject" read the old hardcoded
+    // eye/target split had, just derived from the box instead of guessed.
+    let eye = center + Vec3::new(dist * angle.sin(), half_h * 0.18, -dist * angle.cos());
+    (eye, center)
+}
+
+/// `VOXELFORGE_RES=1440,1080` → aspect `1440.0/1080.0`. Mirrors
+/// `char_shot_main.rs`'s `env_res`, but this module stays crate-free (see the
+/// file header), so it re-reads the env var rather than importing that
+/// binary's parser. Defaults to the 16:9 both shot bins render at.
+fn env_aspect() -> f32 {
+    std::env::var("VOXELFORGE_RES")
+        .ok()
+        .and_then(|raw| {
+            let (w, h) = raw.split_once(&[',', 'x'][..])?;
+            let w: f32 = w.trim().parse().ok()?;
+            let h: f32 = h.trim().parse().ok()?;
+            (w > 0.0 && h > 0.0).then_some(w / h)
+        })
+        .unwrap_or(16.0 / 9.0)
 }
 
 // --- Ghoul Reaver ------------------------------------------------------------
@@ -631,30 +732,45 @@ pub fn setup_enemyshot(
     let sil = shot.silhouette;
 
     // ---- the enemy/enemies -------------------------------------------------
-    let placed_names: Vec<&'static str> = match shot.mode {
+    // Alongside the names, collect the world-space AABB of whatever actually
+    // got spawned (`None` for `Before`, which keeps its old hardcoded cam —
+    // it's the legacy mesh husk, not an `EnemyKind`, so it has no `.boxes()`
+    // to measure). Computing this HERE, from the same `x`/`yaw` values the
+    // spawn loop uses, is what keeps the camera below honest: it fits the
+    // real placement instead of a second hand-copied formula that could
+    // silently drift from this one.
+    let (placed_names, placed_bounds_all): (Vec<&'static str>, Option<(Vec3, Vec3)>) = match shot.mode {
         EnemyShotMode::Before => {
             spawn_legacy_guard_husk(&mut commands, &mut meshes, &mut materials, Vec3::ZERO);
-            vec!["legacy_husk"]
+            (vec!["legacy_husk"], None)
         }
         EnemyShotMode::Solo(k) => {
+            let yaw = 0.22;
             if shot.silhouette {
-                spawn_enemy_silhouette(&mut commands, &mut meshes, &mut materials, k, Vec3::ZERO, 0.22);
+                spawn_enemy_silhouette(&mut commands, &mut meshes, &mut materials, k, Vec3::ZERO, yaw);
             } else {
-                spawn_enemy(&mut commands, &mut meshes, &mut materials, k, Vec3::ZERO, 0.22);
+                spawn_enemy(&mut commands, &mut meshes, &mut materials, k, Vec3::ZERO, yaw);
             }
-            vec![k.id()]
+            (vec![k.id()], Some(placed_bounds(k, Vec3::ZERO, yaw)))
         }
         EnemyShotMode::Line => {
             let gap = 2.6;
             let order = EnemyKind::ALL;
             let mut names = Vec::new();
+            let mut bounds = None;
             for (i, k) in order.iter().enumerate() {
                 let x = (i as f32 - (order.len() as f32 - 1.0) * 0.5) * gap;
                 let yaw = 0.18 * if x < 0.0 { 1.0 } else { -1.0 };
-                spawn_enemy(&mut commands, &mut meshes, &mut materials, *k, Vec3::new(x, 0.0, 0.0), yaw);
+                let feet = Vec3::new(x, 0.0, 0.0);
+                spawn_enemy(&mut commands, &mut meshes, &mut materials, *k, feet, yaw);
                 names.push(k.id());
+                let b = placed_bounds(*k, feet, yaw);
+                bounds = Some(match bounds {
+                    Some(acc) => merge_bounds(acc, b),
+                    None => b,
+                });
             }
-            names
+            (names, bounds)
         }
     };
 
@@ -724,13 +840,26 @@ pub fn setup_enemyshot(
     }
 
     // ---- camera ------------------------------------------------------------
-    let default_cam: [f32; 7] = match shot.mode {
-        EnemyShotMode::Before => [1.15, 1.60, -3.60, 0.0, 1.30, 0.0, 30.0],
-        EnemyShotMode::Solo(k) => {
-            let h = k.height();
-            [1.15, h * 0.58, -3.30, 0.0, h * 0.50, 0.0, 30.0]
+    // Auto-fit from the real bounding box (see `fit_camera`) instead of a
+    // hardcoded eye/target guess — that guess is exactly what let
+    // `sentinel_after.png` / `reaver_silhouette.png` ship head-cropped: a
+    // constant tuned for one body doesn't notice when another body's glaive
+    // or dragging arm is taller/wider than the number assumed. 20% headroom
+    // on every side, front-on for the lineup (`angle=0`) and a 20° 3/4 turn
+    // for the solo portraits (matches the old hardcoded eye.x/eye.z ratio).
+    let aspect = env_aspect();
+    let default_cam: [f32; 7] = match (shot.mode, placed_bounds_all) {
+        (EnemyShotMode::Solo(_), Some((lo, hi))) => {
+            let (eye, target) = fit_camera(lo, hi, aspect, 30.0, 20.0, 0.20);
+            [eye.x, eye.y, eye.z, target.x, target.y, target.z, 30.0]
         }
-        EnemyShotMode::Line => [0.0, 1.65, -11.5, 0.0, 1.35, 0.0, 36.0],
+        (EnemyShotMode::Line, Some((lo, hi))) => {
+            let (eye, target) = fit_camera(lo, hi, aspect, 36.0, 0.0, 0.20);
+            [eye.x, eye.y, eye.z, target.x, target.y, target.z, 36.0]
+        }
+        // `Before` (no `EnemyKind`, nothing to measure) and any mode whose
+        // bounds we didn't compute fall back to the original hand-tuned cam.
+        _ => [1.15, 1.60, -3.60, 0.0, 1.30, 0.0, 30.0],
     };
     let cam = env_floats::<7>("VOXELFORGE_CAM").unwrap_or(default_cam);
     let eye = Vec3::new(cam[0], cam[1], cam[2]);
