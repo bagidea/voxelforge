@@ -1,0 +1,6 @@
+enemy 1: common prefix 98 transitions IDENTICAL (tape lengths 98/98), max phase-aligned |ddist|=1.610
+enemy 2: common prefix 106 transitions IDENTICAL (tape lengths 106/114), max phase-aligned |ddist|=0.690
+enemy 3: common prefix 44 transitions IDENTICAL (tape lengths 44/48), max phase-aligned |ddist|=1.250
+enemy 4: common prefix 56 transitions IDENTICAL (tape lengths 62/56), max phase-aligned |ddist|=14.260
+PURITY PASS: all common-prefix sequences identical, worst |ddist|=14.260
+exit=0

@@ -132,6 +132,29 @@ ffmpeg -framerate 30 -i _enemyai_frames/f%04d.png -c:v libx264 -pix_fmt yuv420p 
 
 **เกณฑ์ผ่าน:** `trace.csv` ต้องมีทั้ง 4 สถานะหลักปรากฏ (grep จาก CSV ที่ sim เขียนเอง ไม่ใช่ที่ script เขียน) และบรรทัด `AI id=… TELEGRAPH->COMMIT` ต้องมีอย่างน้อยหนึ่งต่อ archetype ที่โจมตี — นั่นคือหลักฐานว่าทิศทางฟันถูกล็อคตอนท้าย windup จริง
 
+## 7.5 Pose channel — ท่าขู่-ท่าเข้าตี (2026-08-16)
+
+ปัญหา: telegraph เดิมอ่านไม่ออก — windup ดูเหมือน "ศัตรูหยุด" เฉยๆ (มีแค่ position+yaw)
+
+กลไก (`enemy_ai.rs`, pure fn `pose_for(state, t, tuning)` — ไม่แตะ translation, ไม่มี RNG):
+
+| state | ท่า | curve |
+|---|---|---|
+| Alert | สะดุ้ (หุบ 5% หนึ่งเฟรม แล้วคลายออก) | ease-out |
+| Windup | ขมิบ: เอียงหลัง + หุบลึก-กว้าง | p² ease-in — กระชับถึงจุด commit |
+| Crouch | หุบแรงและค้าง (freeze คือ tell) | ease-out แล้ว hold |
+| Strike/Pounce | whip: จากท่าขมิบ → เอียงหน้าเต็ม + ยืดตัว | ease-out หนักหน้า (75% ในครึ่งแรก), ต่อเนื่องจาก coil ที่จุดต่อ |
+| Recover | สปริงดับ สั่นผ่านตำแหน่งกลาง | e^(−4.5k)·cos(9k) เริ่มจากท่า strike พอดี |
+
+Amplitude ต่อ archetype (`POSE` table ขนาน `TUNING`): Swarm เบา (lean_back 0.10 rad), Bruiser หนักสุด (0.22, coil sy 0.86), Pouncer เป็นลูกศร (lean_in 0.34, dash sy 1.16)
+
+### การพิสูจน์ (2026-08-16, หลักฐานใน `docs/assets/ai/pose/`)
+
+- **build:** `scripts/lane-build.ps1 -Lane rose -Bin voxelforge_enemyai_proof` → `VERDICT PASS` (gate ใหม่ post-93b9876): `BUILD_DONE exit=0 errors=0`, `GATE errors=0:True exit=0:True mtime_fresh:True`; `grep -c '^error' _rose_build.log` = 0
+- **captures:** `VOXELFORGE_AIEND=2400 VOXELFORGE_AICAM=actor` ทั้งสองฝั่ง (before = pre-pose binary 117941c, after = 9809338) — รันละ 2401 เฟรม / 9604 แถว trace
+- **contact sheets (ภาพคู่ก่อน/หลัง ต่อ archetype):** `pose-sheet_bruiser.png` / `pose-sheet_pouncer.png` / `pose-sheet_swarm.png` — หน้าต่างเฟรมถูกเลือกจาก trace ของแต่ละรันเอง (`sheet_pick.txt`) กรอบส้ม = commit (whip) Bruiser: coil เอียงหลัง-หุบ → whip เอียงหน้า → คลาย; Pouncer: crouch แบนลงชัด → ยืดพุ่ง; Swarm อ่านบางตามดีไซน์ท่าเบา (หลักฐานหลักอยู่สองตัวใหญ่)
+- **purity (pose ไม่แตะพฤติกรรม):** ตัวตัดสิน = transition sequence ต้องตรงกันทุก index ใน common prefix — **ผ่านทั้ง A/B และ control** (ศัตรู 1-4: 98/106/44/58 transitions identical, ไม่มี divergence กลางเทป; `purity_gate.txt`, `purity_control.txt`) raw row-diff: A/B 9579/9604 **ต่ำกว่า** control (binary เดียวกันรันสองรอบ) 9597/9604 — wall-clock dt (vsync) ทำให้ทุกคู่รันต่างกันระดับนี้อยู่แล้ว (`rowdiff_numbers.txt`)
+
 ## 8. Open / next (combat lane's call)
 
 - Damage windows: what a Strike/Pounce connect does (damage, poise, knockback) — `combat.rs`.

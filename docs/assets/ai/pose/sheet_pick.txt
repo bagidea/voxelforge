@@ -1,0 +1,3 @@
+bruiser: before f2118..2220 after f2108..2210 -> docs/assets/ai/pose/pose-sheet_bruiser.png
+pouncer: before f2216..2316 after f2212..2312 -> docs/assets/ai/pose/pose-sheet_pouncer.png
+swarm: before f2278..2338 after f2280..2344 -> docs/assets/ai/pose/pose-sheet_swarm.png
