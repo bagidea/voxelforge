@@ -8,8 +8,13 @@
 //! engine can/can't hit before generalising.
 //!
 //! Everything the shot needs to be re-framed (camera / sun / DOF / fog / exposure)
-//! is driven by env vars parsed in `main::read_cfg`, so the scene can be tuned and
-//! re-screenshotted WITHOUT another (slow) Bevy recompile.
+//! can be overridden by env vars parsed in `main::read_cfg`, so the scene can be
+//! tuned and re-screenshotted WITHOUT another (slow) Bevy recompile.
+//!
+//! Those overrides are a TUNING path, not the source of truth. The CEO-approved
+//! recipe is baked in `mod recipe` below, so running the shot binary with NO env at
+//! all reproduces `docs/assets/wide-hero-final.png`. See `mod recipe` for why (it
+//! did not, and the frame you got instead was red-clipped).
 
 /// Set to `true` when the overlap gate fails. A static atomic so Bevy's window
 /// close handler (which resets `AppExit` to `Success` during shutdown) cannot
@@ -66,6 +71,68 @@ mod pal {
     pub const STEEL: Color = Color::srgb(0.72, 0.74, 0.78); // fridge
     pub const ACCENT: Color = Color::srgb(0.30, 0.52, 0.24); // muted moss-green accent (ref ≈88,87,27)
     pub const BOOK: Color = Color::srgb(0.88, 0.85, 0.78);
+}
+
+/// The CEO-approved beauty-shot recipe, BAKED (Flamingo / pixel lane, 2026-08-16).
+///
+/// SHIP-BLOCKER #3 (`docs/VERDICT-flamingo-beauty-2026-08-16.md` §4③): until this
+/// block existed, the approved look lived ONLY in the 13 env vars that
+/// `scripts/render_wide_hero.sh` exported. Anyone who built the tree and ran
+/// `voxelforge_shot` with no env got a different frame — measured 2026-08-16 at
+/// **mid-clip 44.36 %** (ceiling 35), mean RGB 147.9/39.6/9.4, and **0 px** of cool
+/// accent: a red-clipped plate where the moss/teal accent had been crushed out of
+/// gamut entirely. Worse, that clip made G3/G5/G6 read GREEN — "is it warm / is
+/// R>G>B" is trivially true for a frame clipped to red — so the machine gates
+/// could not see the failure. Two sources of truth, and the wrong one was the
+/// default.
+///
+/// Every value below is copied verbatim from `scripts/render_wide_hero.sh` (the
+/// recipe that produced the locked `docs/assets/wide-hero-final.png`). The env
+/// vars still override for no-recompile sweeps — they are now a TUNING path, not
+/// the only path to the shipped look.
+mod recipe {
+    /// `VOXELFORGE_CAM` — TILT-DOWN wide-B establishing cam: eye → target, fov.
+    pub const CAM: [f32; 7] = [7.6, 6.4, -6.0, 7.6, 2.7, 8.0, 60.0];
+    /// `VOXELFORGE_DOF` — focus 8 m, f/10: deep focus, so the establishing floor
+    /// stays crisp voxel geometry (G1). The old f/1.4 default melted it.
+    pub const DOF: [f32; 2] = [8.0, 10.0];
+    /// `VOXELFORGE_SUN` — elevation°, azimuth°, illuminance. Key-light-dominant.
+    pub const SUN: [f32; 3] = [19.0, 196.0, 26000.0];
+    /// `VOXELFORGE_AMBIENT` — the old 4200 default was the ambient-DOMINATED
+    /// balance that rendered flat fire-orange; 2800 hands the frame to the sun.
+    pub const AMBIENT: f32 = 2800.0;
+    /// `VOXELFORGE_BLUESCALE` — 0.85. The old 0.50 default halved the blue leg of
+    /// sun + fog on top of an already-red grade; that is most of the 44 % clip.
+    pub const BLUESCALE: f32 = 0.85;
+    /// `VOXELFORGE_EXPOSURE` — ev100 9.0.
+    pub const EXPOSURE: f32 = 9.0;
+    /// `VOXELFORGE_GRADE` — temperature, post_saturation, contrast. Temperature
+    /// drops 0.10 → 0.02: the old default pushed an already-warm frame redder.
+    pub const GRADE: [f32; 3] = [0.02, 1.00, 1.30];
+    /// `VOXELFORGE_SHOULDER` — filmic highlight roll-off. 0.64 seats window p95
+    /// back inside the 150..185 band (measured 177.36; without it, 230).
+    pub const SHOULDER: f32 = 0.64;
+    /// `VOXELFORGE_DUST` — mote density in the god-ray corridor.
+    pub const DUST: f32 = 3.0;
+    /// `VOXELFORGE_BOUNCE` / `_BOUNCE2` — floor-bounce and dark-lifter cards.
+    pub const BOUNCE: f32 = 1.0;
+    pub const BOUNCE2: f32 = 1.7;
+    /// `VOXELFORGE_AMBCOLOR` — AMBER fill. The old default derived B from
+    /// `0.180 * bluescale`, i.e. a fill so red the wide frame collapsed to
+    /// fire-red; the recipe passes all three legs explicitly, so this does too.
+    pub const AMBCOLOR: [f32; 3] = [0.70, 0.60, 0.44];
+    /// The approved shot is the WIDE establishing scene, so the wide room
+    /// dressing (parquet planks, honey plaster, teal-glass tumbler) is the
+    /// default rather than an opt-in. `VOXELFORGE_WIDE=1` is kept working — it is
+    /// now a no-op, so every lane script that already sets it renders unchanged.
+    ///
+    /// The `if !wide` branches below are the narrow calibration scene. They are
+    /// deliberately left in place and NOT deleted: flipping this one const back
+    /// to `false` restores them, which is the cheapest possible revert. They are
+    /// unreachable at the moment because `Cfg.wide` is a presence-only bool
+    /// (`env::var(..).is_ok()`), so it cannot express "explicitly off", and the
+    /// struct is mirrored in `main.rs` — another lane's file.
+    pub const WIDE: bool = true;
 }
 
 /// Build the whole hero scene: geometry + materials + sun + fog + camera stack.
@@ -206,7 +273,9 @@ pub fn setup_hero(
     // env::var returns Err on wasm32, so a direct read silently rendered the web
     // build with all-defaults while native honoured the recipe. Cfg is filled
     // from env on native and from the query string on web (see main.rs).
-    let wide = cfg.wide;
+    // `recipe::WIDE` is the bake; `cfg.wide` (VOXELFORGE_WIDE) stays honoured so
+    // callers that already export it are unaffected. See `mod recipe`.
+    let wide = cfg.wide || recipe::WIDE;
     // Wall pair selector: the WIDE establishing frame gets the de-checkered honey
     // plaster (smooth at distance); the locked narrow hero keeps the shipped pair
     // exactly, so its signed frame stays byte-identical.
@@ -507,7 +576,7 @@ pub fn setup_hero(
         //    frame, so TAA doesn't smear them). env VOXELFORGE_DUST scales density
         //    (0 = off). Specks are sub-pixel-small so they can't move p95, but the
         //    hi-pass grain they add nudges micro-contrast up.
-        let dust: f32 = cfg.dust.unwrap_or(1.0);
+        let dust: f32 = cfg.dust.unwrap_or(recipe::DUST);
         if dust > 0.0 {
             // hash(i, salt) -> [0,1): a cheap integer mix so motes scatter in 3D
             // instead of falling on a lattice (three different salts per mote).
@@ -557,11 +626,13 @@ pub fn setup_hero(
     // P0-BLUE (grade-vs-golden): midtone B was ~34 (target <=10). The dominant
     // source is the KEY light's own blue leg multiplying every lit surface. A
     // single scalar pulls the B leg of sun + ambient fill + fog DOWN together
-    // (env `VOXELFORGE_BLUESCALE`, default 1.0 = prior look). Lowering blue (not
-    // adding red) raises R-B and saturation at the same time — the brief's
-    // "ลดฟ้า ไม่ใช่ดันแดงกลบ". Baked to 0.55 once the sweep landed.
-    let bscale: f32 = cfg.bluescale.unwrap_or(0.50);
-    let (elev, azim, illum) = cfg.sun.unwrap_or([20.0, 195.0, 12000.0]).into_tuple3();
+    // (env `VOXELFORGE_BLUESCALE`; 1.0 = prior look). Lowering blue (not adding
+    // red) raises R-B and saturation at the same time — the brief's
+    // "ลดฟ้า ไม่ใช่ดันแดงกลบ". Now `recipe::BLUESCALE` = 0.85: the old 0.50 default
+    // was tuned for the narrow hero, and on the wide frame it cut so much blue on
+    // top of the red grade that the midtones clipped (44 % — ship-blocker #3).
+    let bscale: f32 = cfg.bluescale.unwrap_or(recipe::BLUESCALE);
+    let (elev, azim, illum) = cfg.sun.unwrap_or(recipe::SUN).into_tuple3();
     let dir = sun_dir(elev, azim);
     // Position the light off the room and aim it in; direction is what matters.
     let sun_pos = Vec3::new(8.0, 6.0, 6.0) - dir * 40.0;
@@ -612,8 +683,8 @@ pub fn setup_hero(
         // Two bounce cards, independently scaled so the tuning can push the
         // dark-lifter (card 2) hard for G3's p05 WITHOUT the broad floor bounce
         // (card 1) inflating the p95 highlight band — they pull opposite axes.
-        let b1: f32 = cfg.bounce.unwrap_or(1.0);
-        let b2: f32 = cfg.bounce2.unwrap_or(1.0);
+        let b1: f32 = cfg.bounce.unwrap_or(recipe::BOUNCE);
+        let b2: f32 = cfg.bounce2.unwrap_or(recipe::BOUNCE2);
         // 1) FLOOR BOUNCE — the sunlit honey parquet throws warm light UP and
         //    across toward the shaded -X wall. Lights undersides (counter lip,
         //    bowl foot, table edge) + the far shade wall with indirect amber that
@@ -671,35 +742,35 @@ pub fn setup_hero(
     ));
 
     // ---- camera + full post stack --------------------------------------
-    // Baked to the APPROVED converged framing (cv-amb2900 == hero-converged-final.png,
-    // the fp1 probe framing): eye 7.6,5.9,-5.2 → target 7.6,3.2,6.0, FOV 52°. This is
-    // the frame the reviewer signed off on; the old [8.0,4.5,-3.5→8.0,2.8,8.0,50] was a
-    // cramped, closer variant that only ever rendered WITH env crutches. Env still
-    // overrides for re-framing, but VOXELFORGE_HERO=1 alone now reproduces the shot.
+    // Baked to `recipe::CAM` — the CEO-approved TILT-DOWN wide-B establishing cam:
+    // eye 7.6,6.4,-6.0 → target 7.6,2.7,8.0, FOV 60°, the framing behind the locked
+    // docs/assets/wide-hero-final.png. It replaces the earlier converged NARROW
+    // framing (7.6,5.9,-5.2 → 7.6,3.2,6.0, FOV 52°), which was itself signed off but
+    // is no longer what ships — and which, left as the default, only ever rendered
+    // correctly WITH env crutches. Env still overrides for re-framing sweeps.
     let cam = cfg
         .cam
-        .unwrap_or([7.6, 5.9, -5.2, 7.6, 3.2, 6.0, 52.0]);
+        .unwrap_or(recipe::CAM);
     let eye = Vec3::new(cam[0], cam[1], cam[2]);
     let target = Vec3::new(cam[3], cam[4], cam[5]);
     let fov = cam[6].to_radians();
-    // Baked DOF = focus 10.0 (locked ON the hero bowl, ≈ its eye→bowl depth ~10m) at
-    // aperture f/2.8. P0-DOF (grade-vs-golden): the old focus 11.0 sat BEHIND the bowl
-    // so the near foreground read soft while the far-wall checker stayed crisp — the
-    // grader's fg/bg sharpness ratio was inverted (0.15; golden ≈3.5). Pulling focus
-    // onto the bowl plane keeps the hero razor-sharp while f/2.8 melts the background
-    // (fridge / far-wall checker / window cross) into real bokeh — spec §5 "ชาม hero คม
-    // / หลังละลาย". NOTE: the grader's fg zone samples the FLAT untextured island front
-    // below the bowl, so its measured fg-hf is content-capped (~0.5) and the fg/bg ratio
-    // cannot reach the golden's 3.5 until the P1 framing lands a textured tabletop in
-    // the foreground (as the golden ref has). Env still overrides for re-framing.
-    let (focus, aperture) = cfg.dof.unwrap_or([10.0, 1.4]).into_tuple2();
-    // P0-exposure: ev100 9.7 → 9.8. Reins in the blown right-side wall / window
-    // highlights: net p95 197 → ~168 (into the grader's 150..185 band, golden ~166),
-    // keeping filmic roll-off instead of clipping to paper-white. NOTE: a full −0.3
-    // stop (ev 10.0) combined with the honey re-tint over-darkened the midtones and
-    // collapsed warmth, so exposure is trimmed only slightly and the honey tint +
-    // ambient power carry the highlight/warmth balance. Env `VOXELFORGE_EXPOSURE` overrides.
-    let exposure_ev = cfg.exposure.unwrap_or(9.5);
+    // Baked DOF = `recipe::DOF`: focus 8 m at aperture f/10. A wide ESTABLISHING
+    // frame wants deep focus — the whole point of the pulled-back shot is that the
+    // floor stays crisp voxel geometry (G1), so the shallow f/1.4 the narrow hero
+    // used would melt the subject. Consequence, documented not hidden: the grader's
+    // DOF fg:bg axis wants shallow-DOF-with-textured-foreground and so reads 0.17
+    // against a target of 3 — an INTRINSIC miss for this shot class, unchanged by
+    // this bake (the approved wide-hero-final.png measures the same 0.17/0.18).
+    // Env still overrides for re-framing.
+    let (focus, aperture) = cfg.dof.unwrap_or(recipe::DOF).into_tuple2();
+    // Exposure = `recipe::EXPOSURE` (ev100 9.0). Reins in the blown right-side wall /
+    // window highlights, keeping filmic roll-off instead of clipping to paper-white.
+    // It runs a half-stop HOTTER than the old 9.5 narrow-hero default because the
+    // wide recipe pairs it with a real highlight shoulder (0.64) that the narrow path
+    // never applied; measured together they land p95 177.36 inside the 150..185 band.
+    // Exposure alone is not the highlight tool here — see the shoulder note below.
+    // Env `VOXELFORGE_EXPOSURE` overrides.
+    let exposure_ev = cfg.exposure.unwrap_or(recipe::EXPOSURE);
     // P0 post color-grade (grade-vs-golden, applied AFTER AcesFitted tonemap):
     //   temperature +  -> shifts chromaticity redder == pulls the residual midtone
     //     BLUE down (the honey ambient re-tint alone left mid-B ~24 vs golden 4; the
@@ -709,7 +780,7 @@ pub fn setup_hero(
     //   contrast > 1 -> spreads values off mid-grey == raises local high-pass energy
     //     (micro-contrast / voxel grain) back toward the golden's crisp read.
     // Env `VOXELFORGE_GRADE=temp,sat,contrast` overrides for no-recompile sweeps.
-    let (g_temp, g_sat, g_contrast) = cfg.grade.unwrap_or([0.10, 1.02, 1.30]).into_tuple3();
+    let (g_temp, g_sat, g_contrast) = cfg.grade.unwrap_or(recipe::GRADE).into_tuple3();
 
     // Pin 3 (LOOK): filmic highlight SHOULDER for the WIDE frame — the "LUT" half
     // of the grade. Pin 1's bounce fill lifts the shade (G3 p05) but, because the
@@ -719,20 +790,22 @@ pub fn setup_hero(
     // highlight roll-off (gain < 1) is the right tool: it compresses ONLY the
     // brightest surfaces (sunlit wedge + window) back into band while leaving the
     // bounce-lit shade + midtones untouched — the range compression a flat AcesFitted
-    // curve can't do. WIDE-only so the narrow hero's grade is byte-identical.
-    // env VOXELFORGE_SHOULDER (1.0 = no shoulder).
-    let shoulder: f32 = cfg.shoulder.unwrap_or(0.86);
+    // curve can't do. Still branch-gated on `wide` (the narrow calibration grade is
+    // preserved verbatim for the revert), but since `recipe::WIDE` is the default the
+    // shoulder is now ALWAYS applied out of the box. That gate is exactly what made
+    // the old bare run blow out: with the shoulder skipped, p95 measured 230 against
+    // a 150..185 band. env VOXELFORGE_SHOULDER (1.0 = no shoulder).
+    let shoulder: f32 = cfg.shoulder.unwrap_or(recipe::SHOULDER);
     let (hi_contrast, hi_gain) = if wide { (1.0, shoulder) } else { (g_contrast, 1.0) };
 
-    // Warm-bounce fill COLOUR. Default is the shipped honey tint (byte-identical
-    // when the env is unset), but the WIDE establishing shot fills huge floor/wall
-    // areas that are ambient-DOMINATED — under this honey the frame collapses to
-    // FIRE-RED (the ref is AMBER: its G leg is higher). `VOXELFORGE_AMBCOLOR=r,g,b`
-    // lets the wide render lift the G leg toward amber without touching the locked
-    // shipped default. B is bscale-scaled only in the default path.
-    let amb_col = cfg
-        .ambcolor
-        .unwrap_or([0.784, 0.541, 0.180 * bscale]);
+    // Warm-bounce fill COLOUR = `recipe::AMBCOLOR` (0.70,0.60,0.44) — AMBER, matching
+    // the ref's higher G leg. The old default was the narrow hero's honey tint with a
+    // bscale-derived blue leg (0.784, 0.541, 0.180 × bscale ≈ 0.09): under it the WIDE
+    // frame — which is ambient-DOMINATED over huge floor/wall areas — collapsed to
+    // FIRE-RED and clipped. All three legs are now explicit, so the fill colour no
+    // longer moves when someone sweeps VOXELFORGE_BLUESCALE. `VOXELFORGE_AMBCOLOR`
+    // still overrides.
+    let amb_col = cfg.ambcolor.unwrap_or(recipe::AMBCOLOR);
 
     commands.spawn((
         Camera3d::default(),
@@ -765,14 +838,15 @@ pub fn setup_hero(
             // stops shade pixels being dyed cool before the grade even runs (mid-B
             // was still ~24 vs golden 4 on tint alone). Still R>G>B so G3 stays warm.
             color: Color::srgb(amb_col[0], amb_col[1], amb_col[2]),
-            // Ambient POWER 2900 → 3400. The brief called for a power CUT to kill the
-            // blue-wash, but the empirical grade said otherwise: the honey re-tint alone
-            // pulls midtone blue below baseline (grade_axes mid-B ~17 vs ~20 before), and
-            // ambient power is what drives warmth (R-B). Cutting power collapsed warmth
-            // (mid R-B fell), so power is instead nudged UP to hold R high while the tint
-            // keeps blue down — net warmer AND less blue. p05 shadow floor stays above the
-            // G3 >=8% gate (measured 10.6%). Env `VOXELFORGE_AMBIENT` overrides.
-            brightness: cfg.ambient.unwrap_or(4200.0),
+            // Ambient POWER = `recipe::AMBIENT` (2800). The narrow hero climbed this to
+            // 4200 because there, ambient power was what drove warmth (R-B) and cutting
+            // it collapsed the axis. The WIDE recipe reaches warmth a different way —
+            // KEY-LIGHT-DOMINANT: sun illuminance more than doubles (12000 → 26000) and
+            // ambient drops to 2800, plus two directional bounce cards below carry the
+            // fill. An ambient-DOMINATED wide frame is precisely what rendered flat
+            // fire-orange. Measured on the baked default: warmth 125.90, G3 interior
+            // p05-L 14.3 % (gate >=8). Env `VOXELFORGE_AMBIENT` overrides.
+            brightness: cfg.ambient.unwrap_or(recipe::AMBIENT),
             affects_lightmapped_meshes: false,
         },
         Exposure { ev100: exposure_ev },
