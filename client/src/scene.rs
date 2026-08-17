@@ -27,6 +27,7 @@ use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::CHUNK_SIZE as CHUNK;
 
 use crate::audio::SfxEvent;
+use crate::characters::{self, Who};
 use crate::combat;
 use crate::editor::AppState;
 use crate::hud;
@@ -201,6 +202,13 @@ impl Plugin for ScenePlugin {
                     // PlayerDied; the whole respawn loop hangs off that one message.
                     on_player_death.run_if(in_state(AppState::Play)),
                     respawn_at_campfire.after(on_player_death),
+                    // The Act I cast gets its designed body. Update, not
+                    // PostStartup: quest.rs spawns Maren's placeholder in its own
+                    // PostStartup pass, so a same-schedule system would be racing
+                    // a spawn that has not been flushed. This one is edge-driven
+                    // (`Without<Dressed>`) and idles at one empty query per frame
+                    // once the village is dressed.
+                    dress_act1_cast,
                 )
                     .run_if(playing),
             );
@@ -467,6 +475,13 @@ fn boot_scene(
     spawn_campfire(&mut commands, &mut meshes, &mut materials, camp.fire);
     spawn_death_plate(&mut commands);
     place_player(&mut player_q, &mut cam_q, &camp);
+    spawn_cast_lineup(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &world,
+        &camp,
+    );
     commands.insert_resource(camp);
 
     // ---- Edhari encounter: one Guard Husk 7 blocks from spawn on real terrain ----
@@ -736,6 +751,169 @@ fn flicker_flame(
             None => tf.scale = Vec3::splat(0.88 + 0.16 * w),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The Act I cast — giving the village people who look like the design docs
+// ---------------------------------------------------------------------------
+
+/// Set on an NPC once its designed body is standing, so the dressing pass is
+/// edge-triggered instead of re-spawning a Maren every frame.
+#[derive(Component)]
+struct Dressed;
+
+/// Where Toma hides: the `west_house` region of `assets/story/act1.json`
+/// (`x 14..19, z 22..27`), which is what q1's optional `o2_find_survivor`
+/// objective sends the player to. Centre of the room, so the body is not inside
+/// a wall on either axis.
+const TOMA_XZ: (f32, f32) = (16.5, 24.5);
+
+/// Stand the cast up with the bodies `docs/character-bible.md` specifies.
+///
+/// Two jobs, both edge-triggered:
+///
+/// 1. **Dress what the story engine already spawned.** `quest.rs` puts Elder
+///    Maren in the world as a 0.5×1.4×0.3 slate-blue box — a marker, never a
+///    character, and (a palette detail worth naming) the only *cool blue* surface
+///    on a village-native body in the whole game, which is exactly what the
+///    look-bible's warm rule forbids. The placeholder's `Mesh3d` is removed
+///    rather than the entity despawned: the `Npc` component, its transform and
+///    everything quest.rs hangs off it stay live, so dialogue and the `[E]`
+///    prompt keep working against the same entity — this pass changes what she
+///    looks like and nothing else.
+/// 2. **Spawn the one who never had a body.** Toma is real playable content in
+///    `act1.json` (dialogue, an optional objective, a lore pickup) with nothing
+///    to walk up to. He gets an `Npc` component too, so quest.rs's own
+///    interaction pass finds him without a line of code in that lane.
+fn dress_act1_cast(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    cfg: Res<Cfg>,
+    world: Res<World>,
+    npcs: Query<(Entity, &Transform, &crate::quest::Npc), Without<Dressed>>,
+    mut toma_done: Local<bool>,
+) {
+    for (e, tf, npc) in &npcs {
+        let Some(who) = cast_for(&npc.npc_id) else {
+            continue;
+        };
+        let feet = ground_feet(&world, tf.translation);
+        // Facing: Maren stands behind the sealed gate at the north end of the
+        // road, so she looks south, back down it at the player walking up.
+        let yaw = std::f32::consts::PI;
+        commands
+            .entity(e)
+            .remove::<Mesh3d>()
+            .remove::<MeshMaterial3d<StandardMaterial>>()
+            .insert(Dressed);
+        characters::spawn_character(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            who,
+            feet,
+            yaw,
+            false,
+        );
+        println!(
+            "CAST_DRESSED id={} placeholder_mesh=removed body={} feet=({:.1},{:.1},{:.1})",
+            npc.npc_id,
+            who.id(),
+            feet.x,
+            feet.y,
+            feet.z
+        );
+    }
+
+    // Toma only belongs on the authored village — the procedural fallback has no
+    // west house to hide him in, and a child standing in open terrain reads as a
+    // bug, not a discovery.
+    if !*toma_done && cfg.map_load.is_some() {
+        *toma_done = true;
+        let feet = ground_feet(&world, Vec3::new(TOMA_XZ.0, 0.0, TOMA_XZ.1));
+        characters::spawn_character(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            Who::Toma,
+            feet,
+            -std::f32::consts::FRAC_PI_2, // faces +X, toward the door and the road
+            false,
+        );
+        commands.spawn((
+            Transform::from_translation(feet + Vec3::Y * 0.7),
+            Visibility::default(),
+            crate::quest::Npc {
+                npc_id: "toma".into(),
+                display_name: "Toma".into(),
+            },
+            Dressed,
+        ));
+        println!(
+            "CAST_SPAWN_NPC id=toma feet=({:.1},{:.1},{:.1}) region=west_house",
+            feet.x, feet.y, feet.z
+        );
+    }
+}
+
+/// Which designed body belongs to a story NPC id. Unknown ids are left alone —
+/// a new speaker in `act1.json` must get a design before it gets a model.
+fn cast_for(npc_id: &str) -> Option<Who> {
+    match npc_id {
+        "maren" => Some(Who::Maren),
+        "toma" => Some(Who::Toma),
+        "garren" => Some(Who::Garren),
+        _ => None,
+    }
+}
+
+/// Drop a body onto the real surface of its own column.
+///
+/// The placeholder transforms in the story lane are authored as *centres* at a
+/// guessed height; a character built from feet-up needs the ground, not that
+/// guess. Falls back to the given Y only when the column is empty (no map).
+fn ground_feet(world: &World, at: Vec3) -> Vec3 {
+    let (x, z) = (at.x.floor() as i32, at.z.floor() as i32);
+    let y = highest_solid(world, x, z)
+        .map(|h| (h + 1) as f32)
+        .unwrap_or(at.y);
+    Vec3::new(at.x, y, at.z)
+}
+
+/// `VOXELFORGE_CAST_LINEUP=1` — stand the whole cast in a row just north of the
+/// campsite, inside the real map, under the real look stack.
+///
+/// This is a *capture* switch, not content: it exists so the four designs can be
+/// photographed together in the shipping world (same materials, same sun, same
+/// post stack) without a screenshot having to walk from the campfire to the gate
+/// to the west house. Unset ⇒ not registered, and `--play` is byte-for-byte the
+/// session it was.
+fn spawn_cast_lineup(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    world: &World,
+    camp: &Campsite,
+) {
+    if !std::env::var("VOXELFORGE_CAST_LINEUP").is_ok_and(|v| v != "0") {
+        return;
+    }
+    // Shortest → tallest, left to right, 1.9 m apart: the height ladder is the
+    // first read of the line-up, so it should not be scrambled.
+    let order = [Who::Toma, Who::Auren, Who::Maren, Who::Garren];
+    let gap = 1.9;
+    for (i, who) in order.iter().enumerate() {
+        let dx = (i as f32 - (order.len() as f32 - 1.0) * 0.5) * gap;
+        // North of the fire (−Z), so the player wakes up looking straight at them.
+        let at = Vec3::new(camp.fire.x + dx, 0.0, camp.fire.z - 4.0);
+        let feet = ground_feet(world, at);
+        // Face south, back at the camp — and a few degrees off dead-on so the
+        // cloak / lantern / spear are not edge-on to the lens.
+        let yaw = std::f32::consts::PI + 0.16 * if dx < 0.0 { -1.0 } else { 1.0 };
+        characters::spawn_character(commands, meshes, materials, *who, feet, yaw, false);
+    }
+    println!("CAST_LINEUP 4 bodies at z={:.1} (VOXELFORGE_CAST_LINEUP)", camp.fire.z - 4.0);
 }
 
 // ---------------------------------------------------------------------------

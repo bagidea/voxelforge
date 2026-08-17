@@ -11,6 +11,7 @@
 
 mod anim;
 mod audio;
+mod beach_shot;
 mod block_atlas;
 mod characters;
 mod combat;
@@ -124,6 +125,11 @@ pub(crate) struct Cfg {
     pub(crate) map_load: Option<String>,
     /// Author-a-tiny-map demo: start blank, build a scene, save it here, then shoot.
     map_save: Option<String>,
+    /// `VOXELFORGE_BEACHSHOT=1` — the beach-dusk hero shot rig (`beach_shot.rs`):
+    /// hides the avatar, poses the real gameplay camera at a fixed hero-shot
+    /// transform, and spawns water/campfire/boat/flower-pot props over a loaded
+    /// `maps/beach_dusk.json`. See `docs/hero-scene-beach-dusk.md` §5.1.
+    pub(crate) beachshot: bool,
     // Hero-shot tunables (env-driven so the shot re-frames without a recompile).
     cam: Option<[f32; 7]>, // ex,ey,ez, tx,ty,tz, fov_deg
     sun: Option<[f32; 3]>, // elevation_deg, azimuth_deg, illuminance
@@ -212,6 +218,7 @@ fn read_cfg() -> Cfg {
     let shot = std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty());
     let map_load = std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty());
     let map_save = std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty());
+    let beachshot = std::env::var("VOXELFORGE_BEACHSHOT").is_ok();
     let play = play_demo
         || combat_demo
         || quest_demo
@@ -231,7 +238,8 @@ fn read_cfg() -> Cfg {
             || editor_demo
             || shot.is_some()
             || map_load.is_some()
-            || map_save.is_some());
+            || map_save.is_some()
+            || beachshot);
 
     Cfg {
         bench,
@@ -257,6 +265,7 @@ fn read_cfg() -> Cfg {
         editor_demo,
         map_load,
         map_save,
+        beachshot,
         cam: env_floats("VOXELFORGE_CAM"),
         sun: env_floats("VOXELFORGE_SUN"),
         dof: env_floats("VOXELFORGE_DOF"),
@@ -305,9 +314,10 @@ pub(crate) struct World {
     /// The one shared atlas material. Only the far LOD still wears it — see
     /// `streaming::build_lod_children`.
     pub(crate) material: Handle<StandardMaterial>,
-    /// One material per block type, indexed by `BlockId.0`. This is what the
-    /// split mesher's children wear, and it is why a merged quad now repeats its
-    /// tile per block instead of stretching one atlas cell across it.
+    /// One material per (block type, face), indexed by `voxel::material_index`.
+    /// This is what the split mesher's children wear, and it is why a merged
+    /// quad now repeats its tile per block instead of stretching one atlas cell
+    /// across it — and why a grass block has a top that is not its side.
     pub(crate) block_materials: Vec<Handle<StandardMaterial>>,
     /// Keyed by (chunk_x, chunk_z) — only the y=0 layer is spawned in Phase 0.
     pub(crate) chunks: HashMap<(i32, i32), ChunkSlot>,
@@ -635,6 +645,13 @@ fn main() -> AppExit {
             // the reader — the death→campfire seam Kevin left for this side.
             .add_message::<combat::PlayerDied>()
             .add_systems(Startup, (setup, boot_state))
+            // Beach-dusk hero shot rig (Yamamoto, `VOXELFORGE_BEACHSHOT=1`, see
+            // beach_shot.rs). Runs after `setup` so the FlyCam/OrbitCam it dresses
+            // already exist; no-ops when the env flag is unset. `pose_beach_camera`
+            // runs after `fly_camera` for the same reason `combat::lock_on_camera`
+            // does — it has to win the final word over the per-frame orbit recompute.
+            .add_systems(Startup, beach_shot::setup_beach_shot.after(setup))
+            .add_systems(Update, beach_shot::pose_beach_camera.after(fly_camera))
             // Sandbox↔Play encounter lifecycle: the default Editor state spawns no
             // husk; the Guard Husk + HUD come in on entering Play (once) and are
             // torn down on returning to the editor.
@@ -1150,20 +1167,29 @@ pub(crate) fn remesh_chunk_entity(
     }
 
     let mut quads = 0usize;
-    for (id, mesh, n) in greedy_mesh_chunk_split(chunk) {
+    for (key, mesh, n) in greedy_mesh_chunk_split(chunk) {
         // A block id past the table can only come from a corrupt map file. The
         // atlas path renders it as the clamped edge tile rather than a hole, so
-        // do the same here — a wrong texture beats missing geometry.
+        // do the same here — a wrong texture beats missing geometry. The
+        // fallback keeps the FACE, so a bad top still gets a top material.
         let material = world
             .block_materials
-            .get(id.0 as usize)
-            .unwrap_or(&world.block_materials[BlockId::STONE.0 as usize]);
+            .get(key.material_index())
+            .unwrap_or(&world.block_materials[voxel::material_index(BlockId::STONE, key.face)]);
         quads += n;
-        commands.spawn((
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(material.clone()),
-            ChildOf(entity),
-        ));
+        let child = commands
+            .spawn((
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(material.clone()),
+                ChildOf(entity),
+            ))
+            .id();
+        // A shadow map is binary, so a mostly-clear pane would cast a solid
+        // black shadow. See `voxel::casts_shadow`. `bevy::light`, not
+        // `bevy::pbr` — the lighting components moved out of the PBR crate.
+        if !voxel::casts_shadow(key.block) {
+            commands.entity(child).insert(bevy::light::NotShadowCaster);
+        }
     }
     quads
 }
@@ -1319,7 +1345,8 @@ fn world_to_map(world: &World, name: &str) -> mapfile::MapFile {
             for z in 0..CHUNK {
                 for x in 0..CHUNK {
                     let b = slot.data.get(x, y, z);
-                    if b.is_opaque() {
+                    // is_solid, not is_opaque: a saved map has to keep the glass.
+                    if b.is_solid() {
                         blocks.push(mapfile::MapBlock {
                             x: cx * CHUNK + x,
                             y,
@@ -1455,7 +1482,7 @@ pub(crate) fn find_spawn(cx: i32, cz: i32) -> (i32, i32, i32) {
                 }
                 // The two voxels above the surface (feet + head) must both be empty air.
                 let clear = (1..=2)
-                    .all(|dy| !terrain_block(wx as f32, wz as f32, h + dy, h).is_opaque());
+                    .all(|dy| !terrain_block(wx as f32, wz as f32, h + dy, h).is_solid());
                 if clear {
                     return (wx, wz, h);
                 }
@@ -1672,7 +1699,8 @@ fn solid_at_chunks(chunks: &HashMap<(i32, i32), ChunkSlot>, wx: i32, wy: i32, wz
     };
     slot.data
         .get(wx.rem_euclid(CHUNK), wy, wz.rem_euclid(CHUNK))
-        .is_opaque()
+        // is_solid, not is_opaque: you can see through a pane, not walk through it.
+        .is_solid()
 }
 
 // ---------------------------------------------------------------------------

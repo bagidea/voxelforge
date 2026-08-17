@@ -157,7 +157,13 @@ fn lod1_mesh(chunk: &ChunkData) -> (Mesh, usize) {
     for y in 0..fs {
         for z in 0..fs {
             for x in 0..fs {
-                let mut counts = [0u8; 16];
+                // One slot per block id, not per "the sixteen ids that existed
+                // when this was written". The old `[0u8; 16]` + `idx < 16` gate
+                // silently deleted every block from id 16 up out of the far
+                // ring: the lantern first, and glass the moment it arrived. A
+                // block that vanishes at the LOD line is a hole in the world
+                // that only appears when you walk away from it.
+                let mut counts = [0u8; 256];
                 for dy in 0..factor {
                     for dz in 0..factor {
                         for dx in 0..factor {
@@ -166,16 +172,16 @@ fn lod1_mesh(chunk: &ChunkData) -> (Mesh, usize) {
                                 y * factor + dy,
                                 z * factor + dz,
                             );
-                            if b.is_opaque() {
-                                let idx = b.0 as usize;
-                                if idx < 16 {
-                                    counts[idx] += 1;
-                                }
+                            // is_solid: the LOD cares which block fills the
+                            // cell, not whether you can see through it.
+                            if b.is_solid() {
+                                counts[b.0 as usize] += 1;
                             }
                         }
                     }
                 }
-                // Pick the most common opaque block; leave air if all empty.
+                // Pick the most common solid block; leave air if all empty.
+                // Slot 0 is air and is never counted, so it can never win.
                 if let Some((idx, _)) = counts
                     .iter()
                     .enumerate()

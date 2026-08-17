@@ -178,6 +178,93 @@ impl AtlasMode {
 /// centre so the caller never has to know about the gutter.
 pub type UvRect = [f32; 4];
 
+/// Which tile index each face of a kind wears, into [`TileSet::tiles`].
+#[derive(Clone, Copy, Debug)]
+pub struct FaceTiles {
+    pub top: usize,
+    pub side: usize,
+    pub bottom: usize,
+}
+
+/// The manifest decoded but **not yet packed**: raw tiles plus the kind→face
+/// mapping.
+///
+/// [`load`] packs these into one atlas image, which is what the hero/beauty
+/// scene wants (one material, one draw call, cube meshes addressing windows).
+/// The gameplay chunk mesher wants the opposite — one *standalone repeating*
+/// texture per (block, face), because its UVs are measured in blocks so a merged
+/// 12×3 quad tiles the texture 12×3 times. A window inside a shared atlas cannot
+/// do that at any address mode.
+///
+/// So the two consumers share the **art** (this struct: the same manifest, the
+/// same PNGs, the same face mapping) and part ways only at packing. That is the
+/// line the split is drawn on: one source of tiles, two ways to address them.
+pub struct TileSet {
+    pub tile_px: u32,
+    /// Raw decoded RGBA, `tile_px²` each, in manifest order. Not normalised —
+    /// [`load`] applies [`AtlasMode::Detail`] on its own copy, so a caller that
+    /// wants the artist's albedo verbatim gets it.
+    pub tiles: Vec<Vec<u8>>,
+    pub kinds: BTreeMap<String, FaceTiles>,
+    pub mode: AtlasMode,
+    pub dir: PathBuf,
+}
+
+impl TileSet {
+    /// The raw tile one face of `kind` wears, or `None` if the manifest has no
+    /// such kind.
+    pub fn face_tile(&self, kind: &str, face: Face) -> Option<&[u8]> {
+        let f = self.kinds.get(kind)?;
+        let i = match face {
+            Face::Top => f.top,
+            Face::Side => f.side,
+            Face::Bottom => f.bottom,
+        };
+        Some(&self.tiles[i])
+    }
+}
+
+/// The three faces a block kind distinguishes.
+///
+/// Not six: a voxel block's four sides are the same tile in every art set worth
+/// shipping, and a per-side split would triple the material count to express a
+/// difference no one has asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Face {
+    Top,
+    Side,
+    Bottom,
+}
+
+impl Face {
+    /// All three, in the order their material-table slots run.
+    pub const ALL: [Face; 3] = [Face::Top, Face::Side, Face::Bottom];
+
+    /// Dense 0..3 index — the offset inside a per-block material/mesh group.
+    #[inline]
+    pub fn index(self) -> usize {
+        match self {
+            Face::Top => 0,
+            Face::Side => 1,
+            Face::Bottom => 2,
+        }
+    }
+
+    /// The face a quad shows, from its sweep axis and winding.
+    ///
+    /// `axis` is the sweep's `d` (0=x, 1=y, 2=z) and `front` is the +axis
+    /// winding. Only the y axis distinguishes top from bottom; every other
+    /// normal is a side.
+    #[inline]
+    pub fn from_quad(axis: usize, front: bool) -> Face {
+        match (axis, front) {
+            (1, true) => Face::Top,
+            (1, false) => Face::Bottom,
+            _ => Face::Side,
+        }
+    }
+}
+
 /// The three windows one block kind needs.
 #[derive(Clone, Copy, Debug)]
 pub struct FaceUv {
@@ -201,11 +288,11 @@ impl BlockAtlas {
     }
 }
 
-/// Load + pack the atlas, or explain why not.
+/// Read the manifest and decode its tiles — everything [`load`] does except the
+/// packing, and the entry point for a caller that packs differently.
 ///
-/// Returns `Ok(None)` when the mode is `off`, so a caller can treat "no atlas"
-/// and "atlas disabled" the same way without matching on the mode itself.
-pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
+/// Returns `Ok(None)` when the mode is `off`.
+pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
     let mode = AtlasMode::from_env();
     if mode == AtlasMode::Off {
         println!("ATLAS mode=off — flat materials kept");
@@ -246,19 +333,12 @@ pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
                 rgba.height()
             ));
         }
-        let mut px = rgba.into_raw();
-        if mode == AtlasMode::Detail {
-            normalise_to_unit_luma(&mut px);
-        }
-        tiles.push(px);
+        tiles.push(rgba.into_raw());
         index_of.insert(entry.name.as_str(), i);
     }
 
     // ---- resolve kind → face tile indices ---------------------------------
     let mut kinds = BTreeMap::new();
-    let cell_px = tile_px * 2;
-    let atlas_w = cell_px * tiles.len() as u32;
-    let atlas_h = cell_px;
     for (kind, spec) in &manifest.kinds {
         let pick = |slot: &Option<String>, what: &str| -> Result<usize, String> {
             let name = slot
@@ -272,10 +352,59 @@ pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
         };
         kinds.insert(
             kind.clone(),
+            FaceTiles {
+                top: pick(&spec.top, "top")?,
+                side: pick(&spec.side, "side")?,
+                bottom: pick(&spec.bottom, "bottom")?,
+            },
+        );
+    }
+
+    Ok(Some(TileSet {
+        tile_px,
+        tiles,
+        kinds,
+        mode,
+        dir,
+    }))
+}
+
+/// Load + pack the atlas, or explain why not.
+///
+/// Returns `Ok(None)` when the mode is `off`, so a caller can treat "no atlas"
+/// and "atlas disabled" the same way without matching on the mode itself.
+pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
+    let Some(set) = load_tiles(dir)? else {
+        return Ok(None);
+    };
+    let TileSet {
+        tile_px,
+        mut tiles,
+        kinds: face_tiles,
+        mode,
+        dir,
+    } = set;
+
+    // `Detail` normalises a *copy*: `load_tiles` hands back the artist's albedo
+    // verbatim, and only the packed-atlas consumer wants it rescaled.
+    if mode == AtlasMode::Detail {
+        for t in &mut tiles {
+            normalise_to_unit_luma(t);
+        }
+    }
+
+    // ---- kind → face UV windows -------------------------------------------
+    let cell_px = tile_px * 2;
+    let atlas_w = cell_px * tiles.len() as u32;
+    let atlas_h = cell_px;
+    let mut kinds = BTreeMap::new();
+    for (kind, f) in &face_tiles {
+        kinds.insert(
+            kind.clone(),
             FaceUv {
-                top: window_uv(pick(&spec.top, "top")?, tile_px, atlas_w, atlas_h),
-                side: window_uv(pick(&spec.side, "side")?, tile_px, atlas_w, atlas_h),
-                bottom: window_uv(pick(&spec.bottom, "bottom")?, tile_px, atlas_w, atlas_h),
+                top: window_uv(f.top, tile_px, atlas_w, atlas_h),
+                side: window_uv(f.side, tile_px, atlas_w, atlas_h),
+                bottom: window_uv(f.bottom, tile_px, atlas_w, atlas_h),
             },
         );
     }

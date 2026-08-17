@@ -26,8 +26,8 @@
 //! ## Material response
 //!
 //! The split path additionally wears a per-type **normal map** and
-//! **metallic-roughness map** ([`build_block_normal_map`],
-//! [`build_block_metallic_roughness`]), both derived from the same
+//! **metallic-roughness map** ([`build_face_normal_map`],
+//! [`build_face_metallic_roughness`]), both derived from the same
 //! [`tile_shade`] pattern that paints the albedo, so colour, relief and finish
 //! cannot drift out of register. The atlas/LOD path deliberately gets neither:
 //! it stretches one tile across a whole merged quad, so per-texel relief there
@@ -63,6 +63,8 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use voxelforge_sim::block::BlockId;
 use voxelforge_sim::chunk::{ChunkData, CHUNK_SIZE};
 
+use crate::block_atlas::{self, Face, TileSet};
+
 /// A client-side decorative block: the wall lantern.
 ///
 /// Defined here first (before `sim/src/block.rs` had id 16); now promoted to a
@@ -74,9 +76,123 @@ use voxelforge_sim::chunk::{ChunkData, CHUNK_SIZE};
 /// so the lamp CAN round-trip through a JSON map file.
 pub const LAMP: BlockId = BlockId::LAMP;
 
-/// Number of tiles in the (horizontal) atlas — the 16 sim blocks plus [`LAMP`].
-const N_TILES: usize = 17;
+/// Number of block types the texture tables cover — the 16 sim blocks, [`LAMP`],
+/// and [`BlockId::GLASS`].
+const N_TILES: usize = 18;
 const TILE_PX: usize = 16;
+
+/// Faces a block distinguishes: top, side, bottom (see [`Face`]).
+const N_FACES: usize = 3;
+
+/// Columns in the far-LOD atlas — one per (block, face) pair.
+const N_COLS: usize = N_TILES * N_FACES;
+
+// ---------------------------------------------------------------------------
+// the file-backed art set
+// ---------------------------------------------------------------------------
+
+/// The manifest tile set, decoded once, or `None` when there is no usable one.
+///
+/// `OnceLock` for the same reason `main::atlas_mesh_forced` uses one: this is
+/// read from the material builder *and* from the far-LOD atlas builder, the
+/// answer cannot change mid-run, and re-decoding a folder of PNGs per caller is
+/// a silly way to spend a startup.
+///
+/// Every failure path is loud and lands on the procedural tiles rather than on a
+/// magenta world: a missing folder is a normal state for a source checkout that
+/// has not pulled the art yet.
+fn tile_set() -> Option<&'static TileSet> {
+    static SET: std::sync::OnceLock<Option<TileSet>> = std::sync::OnceLock::new();
+    SET.get_or_init(|| match block_atlas::load_tiles(None) {
+        Ok(Some(set)) if set.tile_px as usize == TILE_PX => {
+            println!(
+                "BLOCK_ART file-backed dir={} tiles={} kinds={}",
+                set.dir.display(),
+                set.tiles.len(),
+                set.kinds.len()
+            );
+            Some(set)
+        }
+        Ok(Some(set)) => {
+            // The split path bakes one standalone TILE_PX texture per face and
+            // the LOD atlas packs TILE_PX columns; a manifest at another size
+            // would need both rebuilt around it. Refuse loudly instead of
+            // silently rescaling somebody's pixel art.
+            println!(
+                "BLOCK_ART tile_px={} != {TILE_PX} — file set ignored, procedural tiles kept",
+                set.tile_px
+            );
+            None
+        }
+        Ok(None) => None, // mode=off; block_atlas already said so
+        Err(e) => {
+            println!("BLOCK_ART unavailable ({e}) — procedural tiles kept");
+            None
+        }
+    })
+    .as_ref()
+}
+
+/// The manifest `kinds` entry a block type wears — its own sim name.
+///
+/// Deliberately not a translation table. `atlas.json` maps kind → tiles, so a
+/// block that wants file art gets a kind named after it *in the manifest*, and
+/// the mapping stays where an artist can edit it. A Rust-side alias list would
+/// be a second contract that has to agree with the first one.
+#[inline]
+fn atlas_kind(id: BlockId) -> &'static str {
+    id.name()
+}
+
+/// The raw manifest tile for one face of one block, if the art set has it.
+///
+/// Raw, not luminance-normalised: [`block_material`] hands `base_color` white to
+/// a textured block, so the tile *is* the albedo here. (The packed-atlas path in
+/// `block_atlas::load` normalises instead, because there the tile multiplies a
+/// hero material's existing graded colour — same tiles, two jobs.)
+fn face_tile(id: BlockId, face: Face) -> Option<&'static [u8]> {
+    tile_set()?.face_tile(atlas_kind(id), face)
+}
+
+/// The face slot a block ACTUALLY needs a separate mesh and material for.
+///
+/// Splitting the split path per face costs draw calls: a chunk of six block
+/// types went from six children to as many as eighteen. Almost none of that is
+/// earned — a stone block's top is its side, and so is every procedural block's,
+/// so those three buckets would hold three copies of one material.
+///
+/// So a block only splits when its art says it should. [`has_per_face_art`] asks
+/// the manifest whether the three faces resolve to different *tiles*; if they do
+/// not, every face folds onto `Side` and the chunk emits exactly the children it
+/// emitted before this pass. Grass and logs pay for their tops. Nothing else
+/// pays anything.
+#[inline]
+fn face_slot(id: BlockId, face: Face) -> Face {
+    if has_per_face_art(id) {
+        face
+    } else {
+        Face::Side
+    }
+}
+
+/// Does this block's art actually differ between faces?
+///
+/// Cached per block id: `sweep` asks this once per emitted quad, and the answer
+/// is a property of a manifest that is read once at startup.
+fn has_per_face_art(id: BlockId) -> bool {
+    static PER_FACE: std::sync::OnceLock<[bool; 256]> = std::sync::OnceLock::new();
+    PER_FACE.get_or_init(|| {
+        let mut out = [false; 256];
+        if let Some(set) = tile_set() {
+            for (i, slot) in out.iter_mut().enumerate() {
+                if let Some(f) = set.kinds.get(atlas_kind(BlockId(i as u8))) {
+                    *slot = f.top != f.side || f.bottom != f.side;
+                }
+            }
+        }
+        out
+    })[id.0 as usize]
+}
 
 /// Vertex-AO shade per occlusion level (3 = fully open, 0 = fully boxed in).
 ///
@@ -172,6 +288,21 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
             reflectance: 0.16,
             ..default()
         },
+        // A real pane. `alpha` stays 1.0 and `alpha_blend` is on: the see-through
+        // is the TEXTURE's alpha channel, not a material-wide fade. That
+        // distinction is the whole feature — a uniform 0.4 material dims the
+        // leading, the mullions and the highlight along with the pane, and the
+        // result reads as a ghost block rather than as glass in a frame.
+        //
+        // `glass_opaque()` is the A/B lever that puts it back the way it was.
+        BlockId::GLASS => BlockSurface {
+            perceptual_roughness: 0.08,
+            metallic: 0.0,
+            reflectance: 0.50,
+            alpha: 1.0,
+            alpha_blend: !glass_opaque(),
+            ..default()
+        },
         LAMP => BlockSurface {
             perceptual_roughness: 0.45,
             reflectance: 0.30,
@@ -186,8 +317,8 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
 }
 
 /// How much per-texel *shape* one block type has, and how far its finish varies
-/// across a face. Consumed by [`build_block_normal_map`] and
-/// [`build_block_metallic_roughness`].
+/// across a face. Consumed by [`build_face_normal_map`] and
+/// [`build_face_metallic_roughness`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockRelief {
     /// Normal-map amplitude, `0.0` = deliberately flat (no map is built at all).
@@ -229,6 +360,10 @@ pub fn block_relief(id: BlockId) -> BlockRelief {
         // bumping a pane only frosts it and kills the mirror, so it gets no
         // normal map at all.
         BlockId::OBSIDIAN => g(0.00, 0.03),
+        // Same reasoning as obsidian, and one more: a normal map derived from a
+        // tile whose interest is in the ALPHA channel would read the transparent
+        // pane as a hole and emboss its own frame. Flat, no map.
+        BlockId::GLASS => g(0.00, 0.00),
         // STONE, CLAY — matte mineral.
         _ => g(0.55, 0.10),
     }
@@ -253,6 +388,36 @@ fn flat_material() -> bool {
 /// noise.
 fn flat_instance() -> bool {
     matches!(std::env::var("VOXELFORGE_FLAT_INSTANCE"), Ok(v) if !v.is_empty() && v != "0")
+}
+
+/// `VOXELFORGE_GLASS_OPAQUE=1` — render [`BlockId::GLASS`] the way it rendered
+/// before it had an alpha channel: solid, sight-blocking, no transparent pass.
+///
+/// The A/B lever for the pane, and it has to reach further than the other two:
+/// transparency is not only a material setting, it changes which faces the
+/// MESHER emits (an opaque neighbour culls the face behind it, a pane does not).
+/// So this is read here *and* in [`sweep`], and both read the same `OnceLock` —
+/// a mesher and a material that disagree about whether glass is opaque produce
+/// a chunk with holes in it, which is a much worse bug than either setting.
+fn glass_opaque() -> bool {
+    static OPAQUE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OPAQUE.get_or_init(|| {
+        let on = matches!(std::env::var("VOXELFORGE_GLASS_OPAQUE"), Ok(v) if !v.is_empty() && v != "0");
+        if on {
+            println!("GLASS opaque (VOXELFORGE_GLASS_OPAQUE) — pre-fix reference render");
+        }
+        on
+    })
+}
+
+/// Does this block hide the face behind it, as the *renderer* sees it?
+///
+/// [`BlockId::is_opaque`] with [`glass_opaque`] folded in, so the A/B lever
+/// reaches the mesher. Every visibility and AO test in [`sweep`] goes through
+/// here; nothing else should.
+#[inline]
+fn hides(b: BlockId) -> bool {
+    b.is_opaque() || (glass_opaque() && b.is_solid())
 }
 
 /// A non-negative amplitude scale read from the environment, `1.0` by default.
@@ -321,6 +486,23 @@ pub fn block_material(
     }
 }
 
+/// Does this block belong in the shadow map?
+///
+/// A shadow map is binary: a mesh either occludes the sun completely or not at
+/// all. A pane whose texture is 46/255 opaque across most of its area occludes
+/// almost nothing, so leaving it in gives a clear window a solid black shadow —
+/// the single most obvious way to render glass wrong, and Bevy does keep blended
+/// meshes in the shadow pass (`bevy_pbr::render::light`, `MAY_DISCARD`).
+///
+/// Narrow on purpose: it names glass rather than testing `alpha_blend`, because
+/// obsidian is also blended and at 0.66 alpha it *does* occlude most of the
+/// light — its shadow is part of a signed-off frame and is not this pass's to
+/// remove. Under [`glass_opaque`] the pane is opaque again and casts again, so
+/// the A/B lever stays honest here too.
+pub fn casts_shadow(id: BlockId) -> bool {
+    id != BlockId::GLASS || glass_opaque()
+}
+
 /// The single shared material for the atlas path ([`greedy_mesh_chunk`]).
 ///
 /// One material can only carry ONE surface response, so this is the average of
@@ -338,29 +520,64 @@ pub fn atlas_material(atlas: Handle<Image>) -> StandardMaterial {
     }
 }
 
-/// Every block type's material, indexed by `BlockId.0` — the split path's table.
+/// Which (block, face) a split-path mesh draws — the split path's bucket key.
+///
+/// The split used to be per block alone, because a block wore one tile on all
+/// six sides. Per-face art (grass with a top, a side and a bottom) makes that
+/// impossible: one mesh carries one material carries one texture, so a block
+/// with three faces is three meshes. The greedy mesher was already emitting a
+/// quad per (block, face) — a mask cell holds a signed block id and the sweep
+/// axis is fixed per pass, so a merged quad can NEVER straddle two faces or two
+/// block types. Splitting the bucket that way costs no merge quality at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FaceKey {
+    pub block: BlockId,
+    pub face: Face,
+}
+
+impl FaceKey {
+    /// Its slot in the [`build_block_materials`] table.
+    #[inline]
+    pub fn material_index(self) -> usize {
+        material_index(self.block, self.face)
+    }
+}
+
+/// Slot of one (block, face) in the material table. Dense, so the table is a
+/// `Vec` indexed directly rather than a hash lookup inside a re-mesh.
+#[inline]
+pub fn material_index(block: BlockId, face: Face) -> usize {
+    block.0 as usize * N_FACES + face.index()
+}
+
+/// Every (block, face)'s material, indexed by [`material_index`] — the split
+/// path's table.
 ///
 /// Built once at startup rather than on demand, because the sites that re-mesh a
 /// chunk (an editor click, a map load, the streaming tick) hold `&mut World` and
 /// `Assets<Mesh>` but have no business also borrowing `Assets<Image>` and
-/// `Assets<StandardMaterial>`. Seventeen 16×16 tiles is a few KB of texture; the
-/// alternative is threading two more asset borrows through every edit path.
+/// `Assets<StandardMaterial>`. Fifty-four 16×16 tiles is a few tens of KB of
+/// texture; the alternative is threading two more asset borrows through every
+/// edit path.
 ///
-/// Index 0 is AIR — never meshed, so its entry is only there to keep the table
-/// indexable by raw block id.
+/// Block 0 is AIR — never meshed, so its three entries are only there to keep the
+/// table indexable by raw block id.
 pub fn build_block_materials(
     images: &mut Assets<Image>,
     materials: &mut Assets<StandardMaterial>,
 ) -> Vec<Handle<StandardMaterial>> {
-    (0..N_TILES as u8)
-        .map(|id| {
-            let id = BlockId(id);
-            let tile = images.add(build_block_texture(id));
-            let normal = build_block_normal_map(id).map(|i| images.add(i));
-            let rough = build_block_metallic_roughness(id).map(|i| images.add(i));
-            materials.add(block_material(id, tile, normal, rough))
-        })
-        .collect()
+    let mut out = Vec::with_capacity(N_COLS);
+    for id in 0..N_TILES as u8 {
+        let id = BlockId(id);
+        for face in Face::ALL {
+            let tile = images.add(build_face_texture(id, face));
+            let normal = build_face_normal_map(id, face).map(|i| images.add(i));
+            let rough = build_face_metallic_roughness(id, face).map(|i| images.add(i));
+            out.push(materials.add(block_material(id, tile, normal, rough)));
+        }
+    }
+    debug_assert_eq!(out.len(), N_COLS);
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +595,7 @@ pub fn build_block_materials(
 /// across the whole wall, and the AO silently disappears exactly where it was
 /// supposed to appear.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-struct Face {
+struct MaskFace {
     id: i32,
     ao: [u8; 4],
 }
@@ -453,13 +670,15 @@ pub fn greedy_mesh_chunk(chunk: &ChunkData) -> (Mesh, usize) {
 /// blocks so each type's tile texture repeats once per block.
 ///
 /// Returns `(block, mesh, quads)` per type present, ordered by block id. Pair
-/// each mesh with [`block_material`] over [`build_block_texture`].
-pub fn greedy_mesh_chunk_split(chunk: &ChunkData) -> Vec<(BlockId, Mesh, usize)> {
+/// each mesh with [`block_material`] over [`build_face_texture`].
+pub fn greedy_mesh_chunk_split(chunk: &ChunkData) -> Vec<(FaceKey, Mesh, usize)> {
     sweep(chunk, true)
         .into_iter()
-        .map(|(id, buf)| {
+        .map(|(key, buf)| {
             let quads = buf.quads;
-            (BlockId(id), buf.into_mesh(), quads)
+            let block = BlockId((key / N_FACES) as u8);
+            let face = Face::ALL[key % N_FACES];
+            (FaceKey { block, face }, buf.into_mesh(), quads)
         })
         .collect()
 }
@@ -467,13 +686,17 @@ pub fn greedy_mesh_chunk_split(chunk: &ChunkData) -> Vec<(BlockId, Mesh, usize)>
 /// The shared sweep behind both public meshers.
 ///
 /// `split == false` funnels every face into one bucket with atlas UVs;
-/// `split == true` gives each block type its own bucket with per-block repeating
-/// UVs. One implementation on purpose — two copies of a greedy mesher drift, and
-/// the AO bookkeeping is the part you cannot afford to have two versions of.
-fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
+/// `split == true` gives each (block, face) its own bucket with per-block
+/// repeating UVs. One implementation on purpose — two copies of a greedy mesher
+/// drift, and the AO bookkeeping is the part you cannot afford to have two
+/// versions of.
+///
+/// The returned key is a [`material_index`] on the split path and always `0` on
+/// the atlas path.
+fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
     let dims = [CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE];
-    // Indexed by block id so the bucket lookup is O(1) inside the hot loop.
-    let mut buckets: Vec<Option<Buffers>> = (0..256).map(|_| None).collect();
+    // Indexed by material slot so the bucket lookup is O(1) inside the hot loop.
+    let mut buckets: Vec<Option<Buffers>> = (0..256 * N_FACES).map(|_| None).collect();
     if !split {
         buckets[0] = Some(Buffers::default());
     }
@@ -493,7 +716,7 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
         let mut q = [0i32; 3];
         q[d] = 1;
 
-        let mut mask = vec![Face::default(); (dims[u] * dims[v]) as usize];
+        let mut mask = vec![MaskFace::default(); (dims[u] * dims[v]) as usize];
 
         x[d] = -1;
         while x[d] < dims[d] {
@@ -505,16 +728,30 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                     x[v] = j;
                     let a = chunk.get(x[0], x[1], x[2]);
                     let b = chunk.get(x[0] + q[0], x[1] + q[1], x[2] + q[2]);
-                    let sa = a.is_opaque();
-                    let sb = b.is_opaque();
+                    // A face exists where a block meets something that does not
+                    // hide it. `a != b` is what stops a pane-to-pane join from
+                    // drawing two internal surfaces inside a run of glass.
+                    //
+                    // At most one side can win: if both are solid, the loser is
+                    // always the one facing an opaque neighbour, and two solid
+                    // non-hiding blocks of DIFFERENT types would be the only way
+                    // to tie — which needs a second transparent block type to
+                    // exist. When one arrives, this is the line that has to grow
+                    // a second mask layer; until then the assert below holds it.
+                    let show_a = a.is_solid() && !hides(b) && a != b;
+                    let show_b = b.is_solid() && !hides(a) && a != b;
+                    debug_assert!(
+                        !(show_a && show_b),
+                        "two transparent block types meet at {x:?} — the mask only holds one face"
+                    );
 
-                    mask[n] = if sa == sb {
-                        Face::default()
+                    mask[n] = if !show_a && !show_b {
+                        MaskFace::default()
                     } else {
-                        // Which side is air decides both the winding and which
+                        // Which side draws decides both the winding and which
                         // layer the occluders are sampled from: AO is cast by
                         // the blocks sitting in front of the face, never behind.
-                        let (id, air_d) = if sa {
+                        let (id, air_d) = if show_a {
                             (a.0 as i32, x[d] + 1)
                         } else {
                             (-(b.0 as i32), x[d])
@@ -524,7 +761,7 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                             p[d] = air_d;
                             p[u] = i + du;
                             p[v] = j + dv;
-                            chunk.get(p[0], p[1], p[2]).is_opaque()
+                            hides(chunk.get(p[0], p[1], p[2]))
                         };
                         // Corner order matches the emitted vertex order below:
                         // (0,0) (1,0) (1,1) (0,1) in (u,v).
@@ -534,7 +771,7 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                             ao_corner(solid(1, 0), solid(0, 1), solid(1, 1)),
                             ao_corner(solid(-1, 0), solid(0, 1), solid(-1, 1)),
                         ];
-                        Face { id, ao }
+                        MaskFace { id, ao }
                     };
                     n += 1;
                 }
@@ -579,8 +816,21 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                         let mut nrm = [0f32; 3];
                         nrm[d] = if front { 1.0 } else { -1.0 };
 
-                        let key = if split { block } else { 0 };
-                        let buf = buckets[key as usize].get_or_insert_with(Buffers::default);
+                        // Which of the three faces this quad shows. Constant
+                        // across the merge: `d` is fixed for the whole sweep
+                        // pass and `front` is baked into the mask cell's sign,
+                        // which the merge compares for equality. `face_slot`
+                        // folds it back onto `Side` for a block whose faces are
+                        // all the same tile, so those chunks keep their old
+                        // draw-call count.
+                        let face = face_slot(BlockId(block), Face::from_quad(d, front));
+
+                        let key = if split {
+                            material_index(BlockId(block), face)
+                        } else {
+                            0
+                        };
+                        let buf = buckets[key].get_or_insert_with(Buffers::default);
 
                         let base = buf.positions.len() as u32;
                         let v0 = p;
@@ -615,7 +865,7 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                                 .extend_from_slice(&[[t[0], t[1], t[2], sign]; 4]);
 
                             // UVs in BLOCKS. With the tile texture sampled in
-                            // `Repeat` (see `build_block_texture`) a 12×3 merged
+                            // `Repeat` (see `build_face_texture`) a 12×3 merged
                             // quad samples the tile 12×3 times — per-block texel
                             // density, and no atlas neighbour to bleed in.
                             let (fw, fh) = (w as f32, h as f32);
@@ -626,15 +876,21 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                             // quad — the structural limitation of a shared-atlas
                             // greedy mesh, and the reason the split path exists.
                             //
+                            // The column is per (block, face), matching
+                            // `build_atlas`: the far LOD wears the same per-face
+                            // art the near chunks do, so a grass block does not
+                            // grow a dirt top at the LOD line.
+                            //
                             // The half-texel inset is what keeps a merged quad
                             // from ever sampling the NEIGHBOURING tile at its
                             // edge; it is now applied on BOTH axes (v used to run
                             // a raw 0.0..1.0 and could pick up the wrap row).
-                            let t = (block as usize).min(N_TILES - 1) as f32;
-                            let inset_u = 0.5 / (N_TILES * TILE_PX) as f32;
+                            let col = material_index(BlockId(block), face).min(N_COLS - 1);
+                            let t = col as f32;
+                            let inset_u = 0.5 / (N_COLS * TILE_PX) as f32;
                             let inset_v = 0.5 / TILE_PX as f32;
-                            let u0 = t / N_TILES as f32 + inset_u;
-                            let u1 = (t + 1.0) / N_TILES as f32 - inset_u;
+                            let u0 = t / N_COLS as f32 + inset_u;
+                            let u1 = (t + 1.0) / N_COLS as f32 - inset_u;
                             let (v0t, v1t) = (inset_v, 1.0 - inset_v);
                             buf.uvs.extend_from_slice(&[
                                 [u0, v0t],
@@ -691,7 +947,7 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
                         // zero the consumed mask cells
                         for l in 0..h {
                             for k in 0..w {
-                                mask[n + k as usize + (l * dims[u]) as usize] = Face::default();
+                                mask[n + k as usize + (l * dims[u]) as usize] = MaskFace::default();
                             }
                         }
                         i += w;
@@ -708,7 +964,7 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(u8, Buffers)> {
     buckets
         .into_iter()
         .enumerate()
-        .filter_map(|(id, b)| b.map(|b| (id as u8, b)))
+        .filter_map(|(key, b)| b.map(|b| (key, b)))
         .collect()
 }
 
@@ -843,6 +1099,48 @@ fn tile_height(id: BlockId, lx: i32, ly: i32) -> f32 {
     (0.5 + tile_shade(id, x, y) as f32 / (2.0 * SHADE_SPAN)).clamp(0.0, 1.0)
 }
 
+/// The height field for one FACE, in `0.0..=1.0`, sampled wrapped.
+///
+/// The same "one pattern, three maps" rule as [`tile_height`], extended to the
+/// file-backed set: when a face wears an artist's tile, its relief is read off
+/// **that tile's own luminance**, not off the procedural pattern the block used
+/// to wear. Deriving the normal map from a pattern the eye can no longer see is
+/// how a textured wall ends up lit like a different wall — grooves catching the
+/// sun where the art has none.
+///
+/// Luminance in linear light for the same reason `block_atlas` averages there:
+/// sRGB bytes are not proportional to light, and a height field built from them
+/// crushes its own midtones.
+fn face_height(id: BlockId, face: Face, lx: i32, ly: i32) -> f32 {
+    let px = TILE_PX as i32;
+    let x = lx.rem_euclid(px) as usize;
+    let y = ly.rem_euclid(px) as usize;
+    match face_tile(id, face) {
+        Some(t) => {
+            let i = (y * TILE_PX + x) * 4;
+            (0.2126 * srgb_to_linear(t[i])
+                + 0.7152 * srgb_to_linear(t[i + 1])
+                + 0.0722 * srgb_to_linear(t[i + 2]))
+            .clamp(0.0, 1.0)
+        }
+        None => tile_height(id, lx, ly),
+    }
+}
+
+/// sRGB byte → linear float. A local copy of `block_atlas`'s, because that one
+/// is a private detail of its packing and this one is a private detail of the
+/// height field; making either public would tie two unrelated modules together
+/// over four lines of arithmetic.
+#[inline]
+fn srgb_to_linear(b: u8) -> f32 {
+    let s = b as f32 / 255.0;
+    if s <= 0.04045 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 /// `-1.0..=1.0` → `0..=255`: the tangent-space normal encoding.
 #[inline]
 fn encode_unorm(v: f32) -> u8 {
@@ -860,7 +1158,7 @@ fn encode_unorm(v: f32) -> u8 {
 ///
 /// `Rgba8Unorm` — a normal map is data, not colour, and an sRGB view of it would
 /// bend every normal toward the viewer.
-pub fn build_block_normal_map(id: BlockId) -> Option<Image> {
+pub fn build_face_normal_map(id: BlockId, face: Face) -> Option<Image> {
     if flat_material() {
         return None;
     }
@@ -872,7 +1170,7 @@ pub fn build_block_normal_map(id: BlockId) -> Option<Image> {
     let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
     for ly in 0..TILE_PX as i32 {
         for lx in 0..TILE_PX as i32 {
-            let h = |dx: i32, dy: i32| tile_height(id, lx + dx, ly + dy);
+            let h = |dx: i32, dy: i32| face_height(id, face, lx + dx, ly + dy);
             // Central differences: symmetric, so a groove tilts both of its
             // walls by the same amount instead of leaning the whole tile one way.
             let dhdu = (h(1, 0) - h(-1, 0)) * 0.5;
@@ -906,7 +1204,7 @@ pub fn build_block_normal_map(id: BlockId) -> Option<Image> {
 /// multiplies both by their factors, so the green channel here is the ratio
 /// against [`roughness_ceiling`], never an absolute. Blue stays 0: nothing in
 /// this palette is a metal.
-pub fn build_block_metallic_roughness(id: BlockId) -> Option<Image> {
+pub fn build_face_metallic_roughness(id: BlockId, face: Face) -> Option<Image> {
     if flat_material() {
         return None;
     }
@@ -920,7 +1218,7 @@ pub fn build_block_metallic_roughness(id: BlockId) -> Option<Image> {
     let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
     for ly in 0..TILE_PX {
         for lx in 0..TILE_PX {
-            let h = tile_height(id, lx as i32, ly as i32);
+            let h = face_height(id, face, lx as i32, ly as i32);
             // Hollows dusty, high points polished — dust settles where the
             // surface is worn away, and what stands proud is what gets rubbed.
             let worn = spread * (1.0 - 2.0 * h);
@@ -1007,45 +1305,17 @@ fn image_from_rgba(
     image
 }
 
-/// Build the tile atlas procedurally (no shipped PNG => identical on every
-/// machine, no asset-path headaches). Tile index == block ID.
+/// One block face's 16×16 RGBA texels: the artist's tile when the manifest has
+/// one, otherwise the procedural pattern.
 ///
-/// Used by the single-material path ([`greedy_mesh_chunk`]). Clamped to the
-/// edge, because that path's UVs address one tile inside a shared image and a
-/// `Repeat` mode there would wrap into the neighbouring block's tile.
-pub fn build_atlas() -> Image {
-    let w = N_TILES * TILE_PX;
-    let h = TILE_PX;
-    let mut data = vec![0u8; w * h * 4];
-
-    for ty in 0..h {
-        for tx in 0..w {
-            let id = BlockId((tx / TILE_PX) as u8);
-            let lx = tx % TILE_PX;
-            let base = tile_base(id);
-            let shade = tile_shade(id, lx, ty);
-            let px = (ty * w + tx) * 4;
-            for c in 0..3 {
-                data[px + c] = (base[c] as i32 + shade).clamp(0, 255) as u8;
-            }
-            data[px + 3] = 255;
-        }
+/// The single place the two art sources meet. Every consumer — the near split
+/// path's per-face texture, the far LOD atlas, the height field behind the
+/// normal and roughness maps — reads through here, so a block cannot be painted
+/// from the file set and lit from the procedural one.
+fn face_texels(id: BlockId, face: Face) -> Vec<u8> {
+    if let Some(t) = face_tile(id, face) {
+        return t.to_vec();
     }
-
-    image_from_rgba(
-        w,
-        h,
-        data,
-        TextureFormat::Rgba8UnormSrgb,
-        voxel_sampler(false),
-    )
-}
-
-/// Build the standalone 16×16 tile for one block type, sampled with `Repeat`.
-///
-/// Used by the split path, where UVs are measured in blocks — so this texture
-/// tiles once per block no matter how many blocks a merged quad covers.
-pub fn build_block_texture(id: BlockId) -> Image {
     let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
     let base = tile_base(id);
     for ly in 0..TILE_PX {
@@ -1058,10 +1328,58 @@ pub fn build_block_texture(id: BlockId) -> Image {
             data[px + 3] = 255;
         }
     }
+    data
+}
+
+/// Build the far-LOD tile atlas: one column per (block, face), laid out by
+/// [`material_index`].
+///
+/// Used by the single-material path ([`greedy_mesh_chunk`]), which is the far
+/// LOD ring. Clamped to the edge, because that path's UVs address one tile
+/// inside a shared image and a `Repeat` mode there would wrap into the
+/// neighbouring column's tile.
+///
+/// It reads the same [`face_texels`] the near chunks do. That is not tidiness:
+/// the LOD ring sits directly behind the near ring in every frame, and two art
+/// sets meeting at that boundary is a visible line across the world.
+pub fn build_atlas() -> Image {
+    let w = N_COLS * TILE_PX;
+    let h = TILE_PX;
+    let mut data = vec![0u8; w * h * 4];
+
+    for col in 0..N_COLS {
+        let id = BlockId((col / N_FACES) as u8);
+        let face = Face::ALL[col % N_FACES];
+        let tile = face_texels(id, face);
+        for ty in 0..h {
+            for lx in 0..TILE_PX {
+                let src = (ty * TILE_PX + lx) * 4;
+                let dst = (ty * w + col * TILE_PX + lx) * 4;
+                data[dst..dst + 4].copy_from_slice(&tile[src..src + 4]);
+            }
+        }
+    }
+
+    image_from_rgba(
+        w,
+        h,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        voxel_sampler(false),
+    )
+}
+
+/// Build the standalone 16×16 tile for one block face, sampled with `Repeat`.
+///
+/// Used by the split path, where UVs are measured in blocks — so this texture
+/// tiles once per block no matter how many blocks a merged quad covers. That is
+/// the reason the near path cannot simply address a window inside the packed
+/// `block_atlas` image: no address mode repeats a *sub-rectangle*.
+pub fn build_face_texture(id: BlockId, face: Face) -> Image {
     image_from_rgba(
         TILE_PX,
         TILE_PX,
-        data,
+        face_texels(id, face),
         TextureFormat::Rgba8UnormSrgb,
         voxel_sampler(true),
     )
@@ -1081,6 +1399,13 @@ mod tests {
         match mesh.attribute(Mesh::ATTRIBUTE_COLOR) {
             Some(VertexAttributeValues::Float32x4(v)) => v.clone(),
             _ => panic!("mesh carries no Float32x4 COLOR attribute"),
+        }
+    }
+
+    fn normals(mesh: &Mesh) -> Vec<[f32; 3]> {
+        match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            Some(VertexAttributeValues::Float32x3(v)) => v.clone(),
+            _ => panic!("mesh has no normals"),
         }
     }
 
@@ -1118,15 +1443,18 @@ mod tests {
     #[test]
     fn atlas_tiles_have_no_painted_border() {
         let img = build_atlas();
-        let w = N_TILES * TILE_PX;
+        let w = N_COLS * TILE_PX;
         let data = img.data.as_ref().expect("atlas has pixel data");
         let lum = |tx: usize, ty: usize| -> i32 {
             let p = (ty * w + tx) * 4;
             data[p] as i32 + data[p + 1] as i32 + data[p + 2] as i32
         };
-        // Stone: a flat mineral whose pattern is pure low-amplitude dither, so
-        // any edge-vs-centre gap would have to be a painted frame.
-        let t = BlockId::STONE.0 as usize * TILE_PX;
+        // Dirt: a flat mineral whose pattern is pure low-amplitude dither, so
+        // any edge-vs-centre gap would have to be a painted frame. Deliberately
+        // a block the shipped `atlas.json` names NO kind for — this test is about
+        // the procedural generator, and an artist's tile is allowed a dark edge
+        // (mortar, leading, a plank groove) without that being the old bug.
+        let t = material_index(BlockId::DIRT, Face::Side) * TILE_PX;
         let centre = lum(t + 8, 8);
         for k in 0..TILE_PX {
             for (tx, ty) in [
@@ -1149,9 +1477,9 @@ mod tests {
     #[test]
     fn atlas_tile_corners_are_not_the_darkest_texels() {
         let img = build_atlas();
-        let w = N_TILES * TILE_PX;
+        let w = N_COLS * TILE_PX;
         let data = img.data.as_ref().unwrap();
-        let t = BlockId::LIMESTONE.0 as usize * TILE_PX;
+        let t = material_index(BlockId::DIRT, Face::Side) * TILE_PX;
         let lum = |tx: usize, ty: usize| -> i32 {
             let p = (ty * w + tx) * 4;
             data[p] as i32 + data[p + 1] as i32 + data[p + 2] as i32
@@ -1172,7 +1500,7 @@ mod tests {
 
     #[test]
     fn atlas_and_tile_samplers_are_point_filtered() {
-        for img in [build_atlas(), build_block_texture(BlockId::WOOD)] {
+        for img in [build_atlas(), build_face_texture(BlockId::WOOD, Face::Side)] {
             let ImageSampler::Descriptor(d) = &img.sampler else {
                 panic!("voxel textures must pin an explicit sampler descriptor");
             };
@@ -1186,7 +1514,8 @@ mod tests {
     /// the atlas must NOT (its UVs address one tile inside a shared image).
     #[test]
     fn tile_repeats_and_atlas_clamps() {
-        let ImageSampler::Descriptor(tile) = &build_block_texture(BlockId::STONE).sampler else {
+        let ImageSampler::Descriptor(tile) = &build_face_texture(BlockId::STONE, Face::Side).sampler
+        else {
             panic!()
         };
         assert_eq!(tile.address_mode_u, ImageAddressMode::Repeat);
@@ -1204,11 +1533,18 @@ mod tests {
     #[test]
     fn atlas_uvs_stay_inside_their_tile() {
         let (mesh, _) = greedy_mesh_chunk(&pad(false));
-        let tile_w = 1.0 / N_TILES as f32;
-        let lo = BlockId::STONE.0 as f32 * tile_w;
-        let hi = lo + tile_w;
+        let tile_w = 1.0 / N_COLS as f32;
         for [u, v] in uvs(&mesh) {
-            assert!(u > lo && u < hi, "u {u} outside tile ({lo}..{hi})");
+            // The column a UV lands in must be one of stone's three, and the UV
+            // must sit strictly inside it — a half-texel short of both borders.
+            let col = (u / tile_w).floor() as usize;
+            assert_eq!(
+                col / N_FACES,
+                BlockId::STONE.0 as usize,
+                "u {u} landed in column {col}, which is not stone's"
+            );
+            let (lo, hi) = (col as f32 * tile_w, (col + 1) as f32 * tile_w);
+            assert!(u > lo && u < hi, "u {u} touches the edge of column {col}");
             assert!(v > 0.0 && v < 1.0, "v {v} touches the tile edge");
         }
     }
@@ -1285,8 +1621,38 @@ mod tests {
         }
         let (_, total) = greedy_mesh_chunk(&c);
         let parts = greedy_mesh_chunk_split(&c);
-        let ids: Vec<u8> = parts.iter().map(|(b, _, _)| b.0).collect();
-        assert_eq!(ids, vec![BlockId::STONE.0, BlockId::WOOD.0]);
+
+        // Which blocks got buckets, and in material-table order. Deliberately
+        // NOT an assertion on the exact face list: whether a block splits into
+        // one bucket or three is a property of the ART SET on disk (see
+        // `face_slot`), and a test that pinned it would pass or fail depending
+        // on whether the checkout has pulled `assets/`.
+        let blocks: Vec<u8> = {
+            let mut v: Vec<u8> = parts.iter().map(|(k, _, _)| k.block.0).collect();
+            v.dedup();
+            v
+        };
+        assert_eq!(blocks, vec![BlockId::STONE.0, BlockId::WOOD.0]);
+        assert!(
+            parts.windows(2).all(|w| w[0].0.material_index() < w[1].0.material_index()),
+            "buckets must come back in material-table order"
+        );
+
+        // What IS invariant: every quad in a bucket really shows that bucket's
+        // face. This is the assertion the per-face UVs actually depend on — a
+        // quad in the `Top` bucket wearing a side normal would wear the wrong
+        // tile, and no amount of manifest data can excuse it.
+        for (key, mesh, _) in &parts {
+            for n in normals(mesh) {
+                let shown = Face::from_quad(if n[1].abs() > 0.5 { 1 } else { 0 }, n[1] > 0.5);
+                assert_eq!(
+                    face_slot(key.block, shown),
+                    key.face,
+                    "a quad with normal {n:?} landed in the {:?} bucket",
+                    key.face
+                );
+            }
+        }
         assert_eq!(
             parts.iter().map(|(_, _, q)| q).sum::<usize>(),
             total,
@@ -1402,7 +1768,8 @@ mod tests {
         let id = BlockId::WOOD;
         let base = block_surface(id).perceptual_roughness;
         let ceiling = roughness_ceiling(id);
-        let img = build_block_metallic_roughness(id).expect("wood has a finish spread");
+        let img =
+            build_face_metallic_roughness(id, Face::Side).expect("wood has a finish spread");
         let data = img.data.as_ref().unwrap();
 
         let eff: Vec<f32> = (0..TILE_PX * TILE_PX)
@@ -1448,7 +1815,7 @@ mod tests {
     /// reached the map at all.
     #[test]
     fn the_normal_map_encodes_outward_normals_and_is_not_flat() {
-        let img = build_block_normal_map(BlockId::BRICK).expect("brick has relief");
+        let img = build_face_normal_map(BlockId::BRICK, Face::Side).expect("brick has relief");
         assert_eq!(img.texture_descriptor.format, TextureFormat::Rgba8Unorm);
         let data = img.data.as_ref().unwrap();
         let mut tilted = 0;
@@ -1474,15 +1841,15 @@ mod tests {
     #[test]
     fn deliberately_flat_materials_get_no_map() {
         assert!(
-            build_block_normal_map(BlockId::OBSIDIAN).is_none(),
+            build_face_normal_map(BlockId::OBSIDIAN, Face::Side).is_none(),
             "bumping the pane only frosts it and kills the reflection"
         );
         assert!(
-            build_block_metallic_roughness(BlockId::OBSIDIAN).is_some(),
+            build_face_metallic_roughness(BlockId::OBSIDIAN, Face::Side).is_some(),
             "the pane still varies its finish, just not its shape"
         );
         assert!(
-            build_block_metallic_roughness(LAMP).is_none(),
+            build_face_metallic_roughness(LAMP, Face::Side).is_none(),
             "a glowing surface has no shading to modulate"
         );
         // Everything else in the palette has both.
@@ -1492,7 +1859,8 @@ mod tests {
             .filter(|id| *id != BlockId::OBSIDIAN)
         {
             assert!(
-                build_block_normal_map(id).is_some() && build_block_metallic_roughness(id).is_some(),
+                build_face_normal_map(id, Face::Side).is_some()
+                    && build_face_metallic_roughness(id, Face::Side).is_some(),
                 "{} lost its material response",
                 id.name()
             );
@@ -1564,13 +1932,145 @@ mod tests {
         }
     }
 
+    // ---- glass: solid to a player, invisible to the mesher ----
+
+    /// The load-bearing claim. A pane must NOT cull the face behind it, or the
+    /// see-through is a see-through onto a hole in the world.
+    #[test]
+    fn a_pane_does_not_cull_the_block_behind_it() {
+        let mut c = ChunkData::empty(ChunkPos::new(0, 0, 0));
+        c.set(8, 8, 8, BlockId::STONE);
+        c.set(8, 8, 9, BlockId::GLASS);
+        let parts = greedy_mesh_chunk_split(&c);
+
+        // Summed over faces, because how many buckets a block splits into
+        // depends on the art set (`face_slot`) and this claim does not.
+        let quads = |b: BlockId| -> usize {
+            parts
+                .iter()
+                .filter(|(k, _, _)| k.block == b)
+                .map(|(_, _, q)| q)
+                .sum()
+        };
+        // Both blocks keep all six of their faces: the stone's +z face is behind
+        // glass and still drawn, and the glass draws its own -z face over it.
+        // Culling either one is what a naive `is_opaque` neighbour test does.
+        assert_eq!(quads(BlockId::STONE), 6, "the pane culled the stone behind it");
+        assert_eq!(quads(BlockId::GLASS), 6, "the stone culled the pane in front of it");
+    }
+
+    /// …and the other half: a RUN of glass must not draw the surfaces inside
+    /// itself, or a thick window is a stack of half-lit panes.
+    #[test]
+    fn a_run_of_glass_draws_no_internal_faces() {
+        let mut c = ChunkData::empty(ChunkPos::new(0, 0, 0));
+        for z in 8..12 {
+            c.set(8, 8, z, BlockId::GLASS);
+        }
+        let total: usize = greedy_mesh_chunk_split(&c)
+            .iter()
+            .map(|(_, _, q)| q)
+            .sum();
+        // A 1×1×4 bar: 2 end caps + 4 long sides = 6 quads, exactly as for stone.
+        assert_eq!(total, 6, "internal pane-to-pane faces were emitted");
+    }
+
+    /// Glass occupies its cell. The mesher's opinion must not leak into
+    /// collision, map saving or spawn clearance — all of which ask `is_solid`.
+    #[test]
+    fn glass_is_solid_even_though_it_is_not_opaque() {
+        assert!(BlockId::GLASS.is_solid(), "you must not walk through a pane");
+        assert!(!BlockId::GLASS.is_opaque(), "a pane must not hide what is behind it");
+        // And nothing else in the palette changed meaning.
+        for &id in BlockId::ALL_PLACEABLE {
+            if id != BlockId::GLASS {
+                assert_eq!(id.is_solid(), id.is_opaque(), "{} changed meaning", id.name());
+            }
+        }
+    }
+
+    /// The pane draws in the transparent pass with `base_color` alpha left at
+    /// 1.0 — the see-through has to come from the TEXTURE, so the leading and
+    /// the glint stay solid while the pane between them does not.
+    #[test]
+    fn the_pane_blends_from_its_texture_not_from_a_material_fade() {
+        let s = block_surface(BlockId::GLASS);
+        assert!(s.alpha_blend, "glass must draw in the transparent pass");
+        assert_eq!(s.alpha, 1.0, "a material-wide fade would dim the leading too");
+        let m = block_material(BlockId::GLASS, Handle::default(), None, None);
+        assert!(matches!(m.alpha_mode, AlphaMode::Blend));
+        assert!(!m.double_sided, "a two-sided pane double-blends with itself");
+        // No normal map: a map derived from a tile whose interest is in the
+        // alpha channel would emboss the frame it is supposed to see past.
+        assert!(build_face_normal_map(BlockId::GLASS, Face::Side).is_none());
+    }
+
+    /// The shipped `glass.png` must actually carry an alpha channel. Without it
+    /// `AlphaMode::Blend` is an opaque block that pays for sorting — which is
+    /// exactly the state this pass started from.
+    #[test]
+    fn the_shipped_glass_tile_has_real_alpha() {
+        let path = std::path::Path::new("../assets/textures/blocks/glass.png");
+        if !path.exists() {
+            eprintln!("skip: {} not present in this checkout", path.display());
+            return;
+        }
+        let img = image::open(path).expect("glass.png decodes").to_rgba8();
+        let alphas: Vec<u8> = img.pixels().map(|p| p.0[3]).collect();
+        let clear = alphas.iter().filter(|&&a| a < 128).count();
+        assert!(
+            alphas.iter().any(|&a| a > 200),
+            "nothing in the tile is opaque — the leading and the glint are gone"
+        );
+        assert!(
+            clear * 2 > alphas.len(),
+            "only {clear}/{} texels are see-through; this is still a solid tile",
+            alphas.len()
+        );
+    }
+
+    // ---- the file-backed art set ----
+
+    /// The wiring the whole feature hangs off: `voxel.rs` looks a block up in
+    /// the manifest **by its own sim name** ([`atlas_kind`]). Rename a kind in
+    /// `atlas.json` and that block drops silently back to its procedural tile —
+    /// no error, no missing texture, just the art quietly not landing. So the
+    /// names that are supposed to be wired are pinned here.
+    #[test]
+    fn the_shipped_manifest_names_kinds_after_sim_blocks() {
+        let path = std::path::Path::new("../assets/textures/blocks/atlas.json");
+        if !path.exists() {
+            eprintln!("skip: {} not present in this checkout", path.display());
+            return;
+        }
+        let raw = std::fs::read_to_string(path).expect("manifest reads");
+        let doc: serde_json::Value = serde_json::from_str(&raw).expect("manifest parses");
+        let kinds = doc["kinds"].as_object().expect("manifest has kinds");
+        for id in [
+            BlockId::GRASS,
+            BlockId::SAND,
+            BlockId::STONE,
+            BlockId::WOOD,
+            BlockId::LEAVES,
+            BlockId::LIMESTONE,
+            BlockId::GLASS,
+        ] {
+            assert!(
+                kinds.contains_key(atlas_kind(id)),
+                "atlas.json has no kind {:?} — {} silently falls back to its procedural tile",
+                atlas_kind(id),
+                id.name()
+            );
+        }
+    }
+
     /// Every palette entry — including the client-side lamp — must have a tile
     /// in the atlas, or the shared-material path indexes past its own image.
     #[test]
     fn every_palette_block_has_an_atlas_tile() {
         assert!((LAMP.0 as usize) < N_TILES);
         let img = build_atlas();
-        assert_eq!(img.width() as usize, N_TILES * TILE_PX);
+        assert_eq!(img.width() as usize, N_COLS * TILE_PX);
         for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
             assert_ne!(
                 tile_base(id),

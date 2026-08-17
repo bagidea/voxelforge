@@ -66,6 +66,7 @@ pub fn block_id_from_name(name: &str) -> Option<BlockId> {
         "moss" => BlockId::MOSS,
         "limestone" => BlockId::LIMESTONE,
         "lamp" => BlockId::LAMP,
+        "glass" => BlockId::GLASS,
         _ => return None,
     })
 }
