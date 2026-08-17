@@ -27,6 +27,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 
 use crate::combat::{Health, Stamina};
 use crate::editor::AppState;
+use crate::inventory::Inventory;
 use crate::quest::QuestJournal;
 use crate::save_game;
 use crate::scene::Campsite;
@@ -326,16 +327,17 @@ fn handle_menu_action(
         (&mut Transform, &mut FlyCam, &mut Health, &mut Stamina),
         Without<OrbitCam>,
     >,
+    mut inv: ResMut<Inventory>,
     camp: Option<Res<Campsite>>,
 ) {
     for action in reader.read() {
         match action {
             MenuAction::NewGame => {
-                save_game::start_new_game(&mut player, camp.as_deref(), &mut journal);
+                save_game::start_new_game(&mut player, camp.as_deref(), &mut journal, &mut inv);
                 next.set(AppState::Play);
             }
             MenuAction::Continue => {
-                if save_game::continue_game(&mut player, &mut journal) {
+                if save_game::continue_game(&mut player, &mut journal, &mut inv) {
                     next.set(AppState::Play);
                 }
             }
@@ -387,6 +389,7 @@ fn save_demo(
     player: Query<(&Transform, &FlyCam, &Health, &Stamina), Without<OrbitCam>>,
     mut journal: ResMut<QuestJournal>,
     mut last: ResMut<save_game::LastSaveSnapshot>,
+    inventory: Res<Inventory>,
     mut exit: MessageWriter<AppExit>,
     mut phase: Local<u8>,
 ) {
@@ -418,11 +421,12 @@ fn save_demo(
                 *phase = 4;
             }
             4 if t > 4.0 => {
-                // The "picked something up" beat: quest rewards land as journal
-                // flags (there is no inventory yet — save_game.rs scopes it there),
-                // so planting one proves the save round-trips quest state too.
+                // The "picked something up" beat: plant a quest flag so the save
+                // round-trips quest state too. The inventory rides the same
+                // `write_save` (empty here — the scripted proof doesn't dig); its
+                // own round-trip is covered by the inventory.rs test suite.
                 journal.flags.insert("demo_kevin_item".to_string());
-                match save_game::write_save(&player, &journal, &mut last) {
+                match save_game::write_save(&player, &journal, &mut last, &inventory) {
                     Ok(s) => println!(
                         "DEMO_SAVE pos=({:.2},{:.2},{:.2}) yaw={:.2} hp={:.0} stamina={:.0}",
                         s.position[0], s.position[1], s.position[2], s.yaw, s.hp, s.stamina

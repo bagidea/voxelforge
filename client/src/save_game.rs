@@ -1,13 +1,14 @@
 //! Save / Load — the entrance's real "pick up where you left off" seam.
 //!
-//! One file, `savegame.json`, holds the player's position, heading, HP and stamina.
-//! Quest progress travels through Sun's existing [`quest::save_quest_journal`] /
+//! One file, `savegame.json`, holds the player's position, heading, HP, stamina and
+//! inventory (the item bag from `inventory.rs`). Quest progress travels through
+//! Sun's existing [`quest::save_quest_journal`] /
 //! [`quest::load_quest_journal`] API (writes `quest_save.json`) — this module never
 //! touches `quest.rs`'s internals, it only calls its public save/load hooks and its
 //! public story loader to re-seed a fresh journal for **New Game**.
 //!
-//! There is no inventory in the codebase yet (combat exposes `Health`/`Stamina`, not
-//! items), so "HP/ของ" is honestly scoped to HP + stamina until an inventory lands.
+//! The inventory is saved as a whole [`Inventory`] (slots + hotbar selection), so a
+//! Continue restores the exact bag the player saved. New Game starts empty.
 //!
 //! ## Keybind
 //! **F6** quick-saves in Play (`quick_save`). F5/F9 are already taken by the editor's
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::combat::{self, Health, Stamina};
 use crate::editor::AppState;
+use crate::inventory::Inventory;
 use crate::quest::{self, QuestJournal, QuestProgress, QuestStatus};
 use crate::scene::Campsite;
 use crate::{FlyCam, OrbitCam};
@@ -45,6 +47,10 @@ pub struct SaveGame {
     pub yaw: f32,
     pub hp: f32,
     pub stamina: f32,
+    /// The player's bag (slots + hotbar selection). `#[serde(default)]` so a
+    /// savegame from before inventory existed still loads (empty bag).
+    #[serde(default)]
+    pub inventory: Inventory,
 }
 
 impl Default for SaveGame {
@@ -55,6 +61,7 @@ impl Default for SaveGame {
             yaw: 0.0,
             hp: 100.0,
             stamina: 100.0,
+            inventory: Inventory::default(),
         }
     }
 }
@@ -80,6 +87,7 @@ pub fn write_save(
     player: &Query<(&Transform, &FlyCam, &Health, &Stamina), Without<OrbitCam>>,
     journal: &QuestJournal,
     last: &mut LastSaveSnapshot,
+    inv: &Inventory,
 ) -> Result<SaveGame, String> {
     let (tf, fly, hp, stam) = player.single().map_err(|e| e.to_string())?;
     let save = SaveGame {
@@ -88,6 +96,7 @@ pub fn write_save(
         yaw: fly.face_yaw,
         hp: hp.cur,
         stamina: stam.cur,
+        inventory: inv.clone(),
     };
     let json = serde_json::to_string_pretty(&save).map_err(|e| e.to_string())?;
     std::fs::write(SAVEGAME_PATH, json).map_err(|e| e.to_string())?;
@@ -173,9 +182,12 @@ pub fn start_new_game(
     >,
     camp: Option<&Campsite>,
     journal: &mut QuestJournal,
+    inv: &mut Inventory,
 ) {
     delete_saves();
     *journal = seed_fresh_journal();
+    // New Game starts with an empty bag.
+    *inv = Inventory::default();
 
     if let Ok((mut tf, mut fly, mut hp, mut stam)) = player.single_mut() {
         if let Some(camp) = camp {
@@ -204,6 +216,7 @@ pub fn continue_game(
         Without<OrbitCam>,
     >,
     journal: &mut QuestJournal,
+    inv: &mut Inventory,
 ) -> bool {
     let Some(save) = read_save() else {
         println!("GAME_LOAD none — no {SAVEGAME_PATH}");
@@ -223,6 +236,11 @@ pub fn continue_game(
     stam.delay = 0.0;
     stam.exhausted = 0.0;
     stam.penalty = false;
+    // Restore the bag from the same moment — `write_save` flushed it into the
+    // same file, so Continue must read it back. `normalize` re-pads the slot vec
+    // if an older save had fewer slots.
+    *inv = save.inventory.clone();
+    inv.normalize();
     // Restore the quest journal from the same moment — `write_save` flushed both
     // files together, so Continue must read both (savegame.json + quest_save.json).
     if let Some(saved) = quest::load_quest_journal() {
@@ -242,10 +260,11 @@ fn quick_save(
     keys: Res<ButtonInput<KeyCode>>,
     player: Query<(&Transform, &FlyCam, &Health, &Stamina), Without<OrbitCam>>,
     journal: Res<QuestJournal>,
+    inventory: Res<Inventory>,
     mut last: ResMut<LastSaveSnapshot>,
 ) {
     if keys.just_pressed(KeyCode::F6) {
-        if let Err(e) = write_save(&player, &journal, &mut last) {
+        if let Err(e) = write_save(&player, &journal, &mut last, &inventory) {
             eprintln!("GAME_SAVE FAIL {e}");
         }
     }

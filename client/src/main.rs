@@ -28,6 +28,7 @@ mod gizmo;
 mod hero;
 mod hud;
 mod import;
+mod inventory;
 mod look;
 mod main_menu;
 mod mapfile;
@@ -618,6 +619,10 @@ fn main() -> AppExit {
             // combat::{Health,Stamina,LockOn} and quest::ObjectiveText only —
             // self-wiring, doesn't touch either file.
             .add_plugins(hud::HudPlugin)
+            // Item bag + hotbar (inventory.rs): B dig / N place / H use / I bag /
+            // 1-9 hotbar. Play-gated, and it frees the cursor while the bag is open
+            // (fly_camera is gated off below so the two don't fight).
+            .add_plugins(inventory::InventoryPlugin)
             .insert_resource(editor::Scripted(scripted))
             .insert_resource(cfg)
             .insert_resource(Editor {
@@ -678,7 +683,10 @@ fn main() -> AppExit {
                     fly_camera
                         .run_if(editor::not_interactive_editor)
                         .run_if(settings_menu::settings_closed)
-                        .run_if(main_menu::main_menu_closed),
+                        .run_if(main_menu::main_menu_closed)
+                        // Bag open ⇒ cursor freed ⇒ stop walking/looking so the
+                        // mouse drives the panel, not the camera.
+                        .run_if(inventory::inventory_closed),
                     editor_controls.run_if(main_menu::main_menu_closed),
                     highlight_target.run_if(main_menu::main_menu_closed),
                     edit_demo,
@@ -1701,6 +1709,24 @@ fn solid_at_chunks(chunks: &HashMap<(i32, i32), ChunkSlot>, wx: i32, wy: i32, wz
         .get(wx.rem_euclid(CHUNK), wy, wz.rem_euclid(CHUNK))
         // is_solid, not is_opaque: you can see through a pane, not walk through it.
         .is_solid()
+}
+
+/// Read the block at a world voxel (AIR outside the y=0 chunk layer or in an
+/// unloaded chunk). The read counterpart to [`set_world_voxel`], used by the
+/// inventory dig loop to know *which* block it just picked up.
+pub(crate) fn get_world_voxel(world: &World, voxel: IVec3) -> BlockId {
+    if voxel.y < 0 || voxel.y >= CHUNK {
+        return BlockId::AIR;
+    }
+    let key = (voxel.x.div_euclid(CHUNK), voxel.z.div_euclid(CHUNK));
+    let Some(slot) = world.chunks.get(&key) else {
+        return BlockId::AIR;
+    };
+    slot.data.get(
+        voxel.x.rem_euclid(CHUNK),
+        voxel.y,
+        voxel.z.rem_euclid(CHUNK),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -2759,7 +2785,9 @@ fn hud(
             EditorMode::Edit => format!(
                 "L=place[{held}] R=break | MMB=orbit Shift+MMB=pan Wheel=zoom F=fly"
             ),
-            EditorMode::Play => format!("L=break R=place[{held}] (cursor: click to lock)"),
+            EditorMode::Play => format!(
+                "B=dig N=place[{held}] H=use I=bag 1-9=slot (L/R=attack/block) (cursor: click to lock)"
+            ),
         };
         let status = if editor.status.is_empty() {
             String::new()
