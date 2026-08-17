@@ -12,10 +12,11 @@
 #   ONE BINARY.  Both plates come from the same staged exe, md5 in the log, so
 #                nothing but the lever can differ.
 #   LEVER SET EXPLICITLY.  v3 vs v4 as WORDS. Never unset, never 0/1 --
-#                `look_gen()` maps unknown values to the NEWEST generation, so
-#                an unset or typo'd lever silently selects v4 for BOTH plates
-#                and prints two identical frames. That is the trap that voided
-#                the last pair.
+#                `look_gen()` maps anything it does not recognise to the DEFAULT
+#                generation (v3), so an unset or typo'd lever silently prints
+#                two identical v3 plates. Both arms name their generation and
+#                the engine's own `gen=` line is echoed back into this log, so a
+#                lever that did not take shows up as v3/v3 instead of passing.
 #   STRADDLE PROVEN IN THE BINARY.  The exe is scanned for the v4 marker
 #                strings before a single frame is shot. No marker => hard stop,
 #                because an exe without v4 cannot shoot a v4 plate no matter
@@ -38,7 +39,11 @@ $Out   = Join-Path $Root "docs\look-v4-ab-2026-08-18"
 $Stage = Join-Path $Root "_poppy_v4_stage"
 $TimeoutSec = 240
 
-if (-not $Exe) { $Exe = Join-Path $Root "target-poppy\release\voxelforge_shot.exe" }
+# The world-renderer bin, NOT voxelforge_shot: shot_main.rs is the isolated
+# hero-shot bin and never declares `mod look` / `mod voxel`, so no build of it
+# can ever carry a look generation. This default was wrong in the first cut and
+# the gate below is what caught it.
+if (-not $Exe) { $Exe = Join-Path $Root "target\release\voxelforge.exe" }
 
 foreach ($d in @($Out, $Stage)) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
@@ -60,14 +65,17 @@ $h = (Get-FileHash $staged -Algorithm MD5).Hash
 Say "STAGED  $($i.Length) bytes  srcmtime $((Get-Item $Exe).LastWriteTime.ToString('s'))  md5 $h"
 
 # ---- GATE: the v4 path must be IN this binary -------------------------------
-# Scanning for the marker strings the v4 work introduced. If these are absent
-# the exe predates v4 and the run is void before it starts -- which is exactly
-# what nobody checked last time.
+# Scanning for marker strings that ONLY the v4 commit introduced. The first cut
+# of this gate scanned VOXELFORGE_LOOK_GEN / LOOK_IBL / LOOK_FILL and was
+# useless: target\release\voxelforge.exe (Aug 18 00:18, two hours BEFORE a07348e
+# landed v4) carries all three -- 1/2/2 hits -- so the gate would have waved a
+# zero-v4 binary straight through. These three env names are read only inside
+# the v4 grade block, so an exe that predates a07348e cannot contain them.
 Say ""
 Say "--- v4 straddle gate (scanned in the staged exe, not inferred from mtime) ---"
 $bytes = [System.IO.File]::ReadAllBytes($staged)
 $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
-$markers = @("VOXELFORGE_LOOK_GEN", "LOOK_IBL", "LOOK_FILL")
+$markers = @("VOXELFORGE_LOOK_EVTRIM", "VOXELFORGE_LOOK_GAIN", "VOXELFORGE_LOOK_BLOOM")
 $missing = @()
 foreach ($m in $markers) {
     $n = ([regex]::Matches($text, [regex]::Escape($m))).Count
@@ -79,7 +87,7 @@ if ($missing.Count -gt 0) {
     Say "GATE FAILED -- missing from the exe: $($missing -join ', ')"
     throw "this exe cannot shoot a v4 plate (missing: $($missing -join ', ')). Build, then re-run."
 }
-Say "  gate PASS -- the lever and the look logging are compiled in"
+Say "  gate PASS -- the v4 grade block is compiled into this exe"
 
 # ---- shared render settings (identical for both arms) -----------------------
 $env:VOXELFORGE_PLAY          = "1"
@@ -120,7 +128,7 @@ function Invoke-Shot {
     if ($DryRun) { Say "         (dry run -- not launching)"; return }
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $p = Start-Process -FilePath $staged -PassThru -NoNewWindow `
+    $p = Start-Process -FilePath $staged -ArgumentList "--play" -PassThru -NoNewWindow `
                        -RedirectStandardOutput $o -RedirectStandardError $e
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         try { $p.Kill() } catch {}

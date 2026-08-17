@@ -898,7 +898,15 @@ pub enum LookGen {
     V4,
 }
 
-/// Read [`LookGen`] from the environment. Unset ⇒ [`LookGen::V4`].
+/// Read [`LookGen`] from the environment. Unset ⇒ [`LookGen::V3`].
+///
+/// WHY THE DEFAULT IS V3 AND NOT THE NEWEST. Every capture script in the repo
+/// that never sets `VOXELFORGE_LOOK_GEN` — the beauty board, the hero shots,
+/// the enemy/character plates — reads this default. Pointing it at the newest
+/// generation silently regrades every one of those lanes the moment a new
+/// binary lands, with a look that has not been A/B'd yet. So the default stays
+/// on the last PROVEN generation and v4 is opt-in by name until it has plates
+/// behind it; flipping this line is the last step of the v4 pass, not the first.
 pub fn look_gen() -> LookGen {
     match std::env::var("VOXELFORGE_LOOK_GEN")
         .unwrap_or_default()
@@ -908,8 +916,8 @@ pub fn look_gen() -> LookGen {
     {
         "v1" | "1" | "legacy" => LookGen::V1,
         "v2" | "2" | "before" => LookGen::V2,
-        "v3" | "3" => LookGen::V3,
-        _ => LookGen::V4,
+        "v4" | "4" => LookGen::V4,
+        _ => LookGen::V3,
     }
 }
 
