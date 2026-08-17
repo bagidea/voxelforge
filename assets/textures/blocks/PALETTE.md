@@ -21,9 +21,10 @@ collapse into one hue no matter how warm the sun gets:
 
 Real assets are `16x16` PNG, hand-authored per-pixel by
 `scripts/_pixel_blocks_gen.py` (deterministic per-material seed — re-running
-the script reproduces byte-identical output). `contact_sheet.png` in this
-folder is a `10x` nearest-neighbour blow-up of all 12 for review; it is
-**not** a game asset.
+the script reproduces byte-identical output, confirmed on the first 12 when
+the second pass below added 7 more). `contact_sheet.png` in this folder is
+a `10x` nearest-neighbour blow-up of all 19 for review; it is **not** a
+game asset.
 
 ## Warm group
 
@@ -46,6 +47,38 @@ folder is a `10x` nearest-neighbour blow-up of all 12 for review; it is
 | Leaves | `leaves.png` | `#2b6a29` | 118° | 0.62 | 0.42 | Darkest, most saturated green — canopy needs to hold shape (depth via dappled dark gaps) instead of flattening into a green silhouette the way the current beauty shot's crate reads as a flat block. |
 | Glass | `glass.png` | `#9fc7d6` | 196° | 0.26 | 0.88 | Coolest, brightest texture in the whole set — glass is meant to be the one material that visually pulls toward "sky colour" regardless of what's lighting the room, per the reference's window panes. |
 | Clay / plaster | `clay_plaster.png` | `#bbc5cc` | 204° | 0.08 | 0.80 | The one wall material given a cool cast instead of warm — an off-white lime-plaster look, so not every wall in a build defaults to the oak_planks hue. Small hue-222° flecks simulate trowel variation. |
+
+## Second pass — map-verified gap fill (2026-08-17)
+
+The first pass covered the beauty-shot hue fix; it left the atlas comment's
+own "still procedural" list unresolved. Cross-checked against every block
+`maps/beach_dusk.json` and `maps/glass_demo.json` actually place: **dirt,
+brick, lamp, red_sand, snow** are all placed in one of those two maps and
+had no file art. Added them, plus **water** and **metal** which the
+Director asked for by name — those two are not in either map and no
+`BlockId` for either exists in `sim/src/block.rs` today (`grep name()`
+confirms it, and `client/src/voxel.rs` never sets `metallic > 0.0`), so
+they ship as ready-to-wire art with no gameplay consumer yet. All seven
+match the sim's own `base_color()` hex where one exists — the pixel art
+is a *textured* version of the flat colour already approved, not a
+new hue.
+
+### Warm additions
+
+| Material | File | Avg | H | S | V | Why |
+|---|---|---|---|---|---|---|
+| Dirt | `dirt.png` | `#594535` | 27° | 0.42 | 0.36 | Matches `BlockId::DIRT` (`#6b5540`) exactly on hue/sat; darkened ~0.06V and given crumb/pebble/root speckle so a dirt block reads as ground texture next to `grass_side`'s flat dirt band, not a duplicate of it. |
+| Brick | `brick.png` | `#936b54` | 20° | 0.60 | 0.55 | Matches `BlockId::BRICK` (`#965a3c`). Courses use the same offset-row construction as `stone_bricks.png` but with **light** mortar (H38 V0.62) between **dark** brick — the inverse of stone's dark-mortar/light-stone relationship, which is what makes fired clay brick read as brick instead of masonry. |
+| Lamp | `lamp.png` | `#b78d63` | 40°→28° | 0.20→0.55 | 0.97→0.69 | Radial gradient toward the sim's existing `#ffc476` glow hex at centre, cooling/darkening to the rim; four 2×2 corner texels dropped to near-black (H25 S0.35 V0.22) as a lantern-cage frame so the tile silhouettes as a fixture, not a glow decal. |
+| Red sand | `red_sand.png` | `#c57958` | 18° | 0.55 | 0.78 | Matches `BlockId::RED_SAND` (`#c88246`). Same grain construction as `sand.png`, hue pulled ~24° redder and saturation raised so the two are unmistakable side-by-side in a beach/desert transition. |
+
+### Cool additions
+
+| Material | File | Avg | H | S | V | Why |
+|---|---|---|---|---|---|---|
+| Snow | `snow.png` | `#f0ece1` | 45° | 0.07 | 0.94 | Matches `BlockId::SNOW` (`#f0ece0`) almost to the texel. Sits right at the warm/cool boundary by design — S is low enough that a warm key light can't visibly push it warm, with occasional H205 sparkle flecks (~3% of texels) as the one deliberately-cool tell. |
+| Water | `water.png` | `#4d7b9c` | 205° | 0.55 | 0.55 | No `BlockId` yet. Placed deep in the cool range, more saturated than `glass.png` (0.55 vs 0.26) since a body of water needs to read as a colour, not a clear pane. Horizontal wave bands + sparse sun-glint flecks (H+20 V+0.20) instead of flat fill. |
+| Metal | `metal.png` | `#93979d` | 212° | 0.06 | 0.62 | No `BlockId` yet. Same blue-grey hue family as `stone_bricks` (212°) but near-neutral saturation and a diagonal brushed-sheen sine plus a 5px rivet grid, so at a glance it reads as fabricated panel, not natural stone. |
 
 ## How to keep this from drifting back to one-hue
 
