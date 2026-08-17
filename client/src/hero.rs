@@ -161,18 +161,53 @@ mod recipe {
     pub const SUN: [f32; 3] = [19.0, 196.0, 26000.0];
     /// `VOXELFORGE_AMBIENT` — the old 4200 default was the ambient-DOMINATED
     /// balance that rendered flat fire-orange; 2800 hands the frame to the sun.
-    pub const AMBIENT: f32 = 2800.0;
-    /// `VOXELFORGE_BLUESCALE` — 0.85. The old 0.50 default halved the blue leg of
-    /// sun + fog on top of an already-red grade; that is most of the 44 % clip.
-    pub const BLUESCALE: f32 = 0.85;
-    /// `VOXELFORGE_EXPOSURE` — ev100 9.0.
-    pub const EXPOSURE: f32 = 9.0;
-    /// `VOXELFORGE_GRADE` — temperature, post_saturation, contrast. Temperature
-    /// drops 0.10 → 0.02: the old default pushed an already-warm frame redder.
-    pub const GRADE: [f32; 3] = [0.02, 1.00, 1.30];
-    /// `VOXELFORGE_SHOULDER` — filmic highlight roll-off. 0.64 seats window p95
-    /// back inside the 150..185 band (measured 177.36; without it, 230).
-    pub const SHOULDER: f32 = 0.64;
+    ///
+    /// PILE A raises it to **3900**, and the "flat fire-orange" objection does
+    /// not carry over: it was an objection to more power on an AMBER fill. This
+    /// fill is sky-blue now (see `AMBCOLOR`), so the same power buys the two
+    /// things the old balance had no way to buy — shadow % down (60 → ≤ 45) and
+    /// cool % up (0 → ≥ 12) — instead of one more stop of orange.
+    pub const AMBIENT: f32 = 3900.0;
+    /// `VOXELFORGE_BLUESCALE` — the scalar that pulls the blue leg of sun + fog
+    /// down. 0.50 → 0.85 → **1.00**.
+    ///
+    /// PILE A (art-gap 2026-08-17): this const exists only to *remove* blue, and
+    /// removing blue is what pinned the frame at **cool 0 %** / hue-spread 24°.
+    /// It is now a no-op (1.00) rather than deleted, so the two call sites keep
+    /// their shape and `VOXELFORGE_BLUESCALE=0.85` reproduces the old frame's
+    /// sun + fog exactly.
+    pub const BLUESCALE: f32 = 1.00;
+    /// `VOXELFORGE_EXPOSURE` — ev100. 9.0 → **8.15**.
+    ///
+    /// PILE A luminance target: mean luma 79.5 → ≥ 105, shadow 60 % → ≤ 45 %.
+    /// Exposure is the only knob that moves BOTH without touching hue, and the
+    /// highlight half of that target is paid for by `SHOULDER` below rather than
+    /// by holding exposure down — which is what crushed the frame in the first
+    /// place. Lower ev100 = brighter: 9.0 → 8.15 is +0.85 stop.
+    pub const EXPOSURE: f32 = 8.15;
+    /// `VOXELFORGE_GRADE` — temperature, post_saturation, contrast.
+    /// `[0.02, 1.00, 1.30]` → **`[-0.06, 0.80, 1.16]`**.
+    ///
+    /// PILE A, three targets in one triple:
+    /// * temperature 0.02 → −0.06: the old value pushed an already-warm frame
+    ///   redder. Negative is the post-tonemap half of the cool channel — it is
+    ///   NOT the source of it (the lights below are), it just stops the grade
+    ///   undoing them.
+    /// * post_saturation 1.00 → 0.80: sat mean measured **0.863** against a
+    ///   ≤ 0.75 ceiling. A monochrome frame at 0.86 is not "punchy", it is
+    ///   clipped — see the `#48230c / #5d2603 / #a53901` k-means centres.
+    /// * contrast 1.30 → 1.16: midtone contrast is what pushed 60 % of the frame
+    ///   under luma 85. The micro-contrast it was bought for is now carried by
+    ///   the warm/cool split instead, which is cheaper in shadow %.
+    pub const GRADE: [f32; 3] = [-0.06, 0.80, 1.16];
+    /// `VOXELFORGE_SHOULDER` — filmic highlight roll-off. 0.64 → **0.92**.
+    ///
+    /// PILE A: highlight % measured **8.7** against a ≥ 20 floor, and 0.64 is
+    /// exactly what put it there — the shoulder was tuned to seat window p95
+    /// inside a 150..185 band, i.e. to *forbid* the top of the range. Opening it
+    /// to 0.92 also buys sat std (≥ 0.22): near-white highlights read sat ≈ 0 and
+    /// widen the spread the old flat-saturated frame had none of (0.173).
+    pub const SHOULDER: f32 = 0.92;
     /// `VOXELFORGE_DUST` — mote density in the god-ray corridor.
     pub const DUST: f32 = 3.0;
     /// GATE G4a — directional shadow-map resolution, and the ONLY lever on this
@@ -198,11 +233,79 @@ mod recipe {
     pub const SHADOW_MAP: u32 = 2048;
     /// `VOXELFORGE_BOUNCE` / `_BOUNCE2` — floor-bounce and dark-lifter cards.
     pub const BOUNCE: f32 = 1.0;
-    pub const BOUNCE2: f32 = 1.7;
-    /// `VOXELFORGE_AMBCOLOR` — AMBER fill. The old default derived B from
-    /// `0.180 * bluescale`, i.e. a fill so red the wide frame collapsed to
-    /// fire-red; the recipe passes all three legs explicitly, so this does too.
-    pub const AMBCOLOR: [f32; 3] = [0.70, 0.60, 0.44];
+    pub const BOUNCE2: f32 = 1.9;
+    /// `VOXELFORGE_AMBCOLOR` — the flat fill's colour. AMBER `[0.70, 0.60, 0.44]`
+    /// → **SKY `[0.30, 0.45, 0.80]`**.
+    ///
+    /// PILE A, and the single biggest lever in it. `AmbientLight` reaches every
+    /// face the key cannot, so whatever colour it is, the frame's whole shadow
+    /// mass is that colour — an amber flat fill is *by construction* a frame with
+    /// no cool pixels, which is exactly what measured (`cool 0.000 %`,
+    /// `warm 97.1 %`, hue spread 24°). Flipping it to sky-blue is the interior's
+    /// answer to "where does the cool come from" that the art-gap report asks
+    /// for: **window sky light, not the sea**. B > G > R, mirroring the daylight
+    /// hemisphere the +X window opening actually looks at.
+    pub const AMBCOLOR: [f32; 3] = [0.30, 0.45, 0.80];
+    /// `VOXELFORGE_SUNCOLOR` — the key's own colour. Unchanged in value
+    /// (`[1.0, 0.80, 0.52]`, warm golden-hour) and hoisted to a const only so the
+    /// warm half of the warm/cool split is swept from the same place as the cool
+    /// half. The B leg is still multiplied by `BLUESCALE` at the call site.
+    pub const SUNCOLOR: [f32; 3] = [1.0, 0.80, 0.52];
+    /// `VOXELFORGE_BOUNCE1COLOR` — card 1, the sunlit-parquet floor bounce.
+    /// Stays WARM: it stands in for light that has bounced off honey wood, so a
+    /// cool value here would be a lie about the surface it comes from.
+    pub const BOUNCE1_COLOR: [f32; 3] = [1.0, 0.63, 0.28];
+    /// `VOXELFORGE_BOUNCE2COLOR` — card 2, the back-wall rake. WARM
+    /// `[1.0, 0.75, 0.42]` → **COOL `[0.42, 0.60, 1.0]`**.
+    ///
+    /// PILE A. Card 2 exists to lift the frame's darkest 5 % (the -Z cabinet
+    /// fronts). Those faces are exactly the ones the +X window's *sky* half
+    /// reaches and the sun's warm half does not, so re-tinting this card is both
+    /// the physically honest read and the one that puts cool pixels where the
+    /// histogram has none. Card 1 stays warm — the two cards now split the shade
+    /// by direction AND by temperature, which is what opens the hue wheel
+    /// (occupied bins 5 → target ≥ 15) instead of merely rotating it.
+    pub const BOUNCE2_COLOR: [f32; 3] = [0.42, 0.60, 1.0];
+    /// `VOXELFORGE_RIM=r,g,b,lux` — NEW: the cool window-sky rake, off by default
+    /// before Pile A because it did not exist.
+    ///
+    /// A third shadowless card, aimed DOWN and inward from above the +X window
+    /// opening. The sun enters that same window nearly horizontally (elevation
+    /// 19°), so it lights vertical faces; the sky visible through the top of the
+    /// opening lights horizontal ones. Separating them by ELEVATION rather than
+    /// by azimuth is what keeps the two from cancelling into neutral: up-facing
+    /// surfaces (counter tops, island top, bowl rim, floor near the window) go
+    /// cool, side faces stay golden. That is the warm-key / cool-sky read the
+    /// reference gets for free from a real sky, and the rim that `sat std` needs.
+    pub const RIM: [f32; 4] = [0.46, 0.62, 1.0, 5200.0];
+    /// `VOXELFORGE_PANELO` / `_PANEHI` — the emissive window pane, in two bands.
+    ///
+    /// PILE A: the pane is the one place in this room where the sky is literally
+    /// on screen, and both bands used to be golden — a window onto a *uniformly
+    /// warm* sky, which is not a sky anyone has seen. The bands now carry the
+    /// real golden-hour gradient: horizon warm, zenith blue. That single material
+    /// pair is worth several occupied hue bins on its own, because the band edge
+    /// sweeps the whole warm→cool arc through bloom.
+    ///
+    /// LO (y 3..5, horizon) keeps the shipped golden values verbatim.
+    pub const PANE_LO: [f32; 3] = [3.1, 2.35, 1.35];
+    /// HI (y 5..8, zenith) — warm `[2.3, 1.85, 1.25]` → **blue `[1.05, 1.95, 3.6]`**.
+    /// Brighter in total than the value it replaces (the B leg carries it), which
+    /// is deliberate: it is the frame's largest single highlight source and the
+    /// highlight-% target needs it.
+    pub const PANE_HI: [f32; 3] = [1.05, 1.95, 3.6];
+    /// Base colours under the two emissive bands, same split as above.
+    pub const PANE_LO_BASE: [f32; 3] = [1.0, 0.86, 0.58];
+    pub const PANE_HI_BASE: [f32; 3] = [0.66, 0.79, 1.0];
+    /// `VOXELFORGE_FOGCOLOR` — the god-ray medium. Stays GOLDEN: it is sunlit air
+    /// in a shaft cast by a golden key, and tinting it cool would be colouring
+    /// the one thing in frame whose warmth is not a grade choice. Hoisted to a
+    /// const so a sweep can prove that, rather than assume it.
+    pub const FOGCOLOR: [f32; 3] = [1.0, 0.88, 0.70];
+    /// `VOXELFORGE_CLEAR` — the out-of-room clear colour. Near-black warm
+    /// `[0.05, 0.03, 0.02]` → near-black COOL `[0.03, 0.05, 0.10]`. Small area,
+    /// but every pixel of it used to count as warm.
+    pub const CLEAR: [f32; 3] = [0.03, 0.05, 0.10];
     /// The approved shot is the WIDE establishing scene, so the wide room
     /// dressing (parquet planks, honey plaster, teal-glass tumbler) is the
     /// default rather than an opt-in. `VOXELFORGE_WIDE=1` is kept working — it is
@@ -440,16 +543,23 @@ pub fn setup_hero(
     // flat 255 plate — that gradient is exactly what G5/G6a grade. Emissive is
     // pulled well down from the old (6,4.2,1.8) blow-out so G,B roll off instead
     // of clipping; `VOXELFORGE_EMISSIVE` scales both bands for env-side tuning.
+    //
+    // PILE A: the two bands are no longer the same hue. LO (horizon) keeps the
+    // shipped golden values; HI (zenith) is BLUE. See `recipe::PANE_HI`.
     let em = cfg.emissive.unwrap_or(1.0);
+    let p_lo = env_rgb("VOXELFORGE_PANELO", recipe::PANE_LO);
+    let p_hi = env_rgb("VOXELFORGE_PANEHI", recipe::PANE_HI);
+    let p_lo_b = env_rgb("VOXELFORGE_PANELOBASE", recipe::PANE_LO_BASE);
+    let p_hi_b = env_rgb("VOXELFORGE_PANEHIBASE", recipe::PANE_HI_BASE);
     let pane_lo = mats.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.86, 0.58),
-        emissive: LinearRgba::rgb(3.1 * em, 2.35 * em, 1.35 * em),
+        base_color: Color::srgb(p_lo_b[0], p_lo_b[1], p_lo_b[2]),
+        emissive: LinearRgba::rgb(p_lo[0] * em, p_lo[1] * em, p_lo[2] * em),
         perceptual_roughness: 1.0,
         ..default()
     });
     let pane_hi = mats.add(StandardMaterial {
-        base_color: Color::srgb(0.98, 0.84, 0.60),
-        emissive: LinearRgba::rgb(2.3 * em, 1.85 * em, 1.25 * em),
+        base_color: Color::srgb(p_hi_b[0], p_hi_b[1], p_hi_b[2]),
+        emissive: LinearRgba::rgb(p_hi[0] * em, p_hi[1] * em, p_hi[2] * em),
         perceptual_roughness: 1.0,
         ..default()
     });
@@ -814,9 +924,10 @@ pub fn setup_hero(
     });
     // Position the light off the room and aim it in; direction is what matters.
     let sun_pos = Vec3::new(8.0, 6.0, 6.0) - dir * 40.0;
+    let sun_col = env_rgb("VOXELFORGE_SUNCOLOR", recipe::SUNCOLOR);
     commands.spawn((
         DirectionalLight {
-            color: Color::srgb(1.0, 0.80, 0.52 * bscale),
+            color: Color::srgb(sun_col[0], sun_col[1], sun_col[2] * bscale),
             illuminance: illum,
             shadow_maps_enabled: true,
             // GATE G4 soft edge. The visible penumbra (~6px measured, up from the
@@ -863,6 +974,8 @@ pub fn setup_hero(
         // (card 1) inflating the p95 highlight band — they pull opposite axes.
         let b1: f32 = cfg.bounce.unwrap_or(recipe::BOUNCE);
         let b2: f32 = cfg.bounce2.unwrap_or(recipe::BOUNCE2);
+        let c1 = env_rgb("VOXELFORGE_BOUNCE1COLOR", recipe::BOUNCE1_COLOR);
+        let c2 = env_rgb("VOXELFORGE_BOUNCE2COLOR", recipe::BOUNCE2_COLOR);
         // 1) FLOOR BOUNCE — the sunlit honey parquet throws warm light UP and
         //    across toward the shaded -X wall. Lights undersides (counter lip,
         //    bowl foot, table edge) + the far shade wall with indirect amber that
@@ -870,7 +983,7 @@ pub fn setup_hero(
         //    coverage → the main p95 contributor of the two, so kept modest.
         commands.spawn((
             DirectionalLight {
-                color: Color::srgb(1.0, 0.63, 0.28),
+                color: Color::srgb(c1[0], c1[1], c1[2]),
                 illuminance: 3040.0 * b1,
                 shadow_maps_enabled: false,
                 ..default()
@@ -884,15 +997,42 @@ pub fn setup_hero(
         //    cabinet faces are the darkest 5% of the frame (they pin G3's p05),
         //    so a warm fill travelling +Z lifts THEM specifically instead of
         //    washing the whole frame flat — p05 up, micro-contrast preserved.
+        //
+        //    PILE A re-tints this card COOL (`recipe::BOUNCE2_COLOR`). The faces
+        //    it targets are the ones the warm key never reaches, so they are
+        //    exactly where a cool sky term belongs — and where the histogram had
+        //    literally zero cool pixels to show for it.
         commands.spawn((
             DirectionalLight {
-                color: Color::srgb(1.0, 0.75, 0.42),
+                color: Color::srgb(c2[0], c2[1], c2[2]),
                 illuminance: 1200.0 * b2,
                 shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(Vec3::new(8.0, 6.5, -9.0))
                 .looking_at(Vec3::new(7.0, 5.0, 15.0), Vec3::Y),
+        ));
+        // 3) WINDOW SKY RAKE (PILE A, new) — the cool half of the +X window.
+        //    The sun enters that opening at elevation 19°, i.e. nearly
+        //    horizontally, so it lights VERTICAL faces. The sky visible through
+        //    the top of the same opening arrives steeply and lights HORIZONTAL
+        //    ones — counter tops, the island top, the bowl rim, the floor by the
+        //    window. Splitting warm and cool by ELEVATION rather than azimuth is
+        //    what stops the two cancelling into neutral grey: no surface gets
+        //    both at full strength, so the frame carries two temperatures at once
+        //    instead of one average. Shadowless like the other two cards — it is
+        //    a stand-in for indirect sky, and a second shadow-caster through the
+        //    same opening would double the window's own shadow pattern.
+        let rim = env_rgb("VOXELFORGE_RIM", recipe::RIM);
+        commands.spawn((
+            DirectionalLight {
+                color: Color::srgb(rim[0], rim[1], rim[2]),
+                illuminance: rim[3],
+                shadow_maps_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(Vec3::new(14.0, 13.0, 7.0))
+                .looking_at(Vec3::new(6.0, 1.0, 8.0), Vec3::Y),
         ));
     }
 
@@ -907,11 +1047,13 @@ pub fn setup_hero(
     // the god-ray beams readable per spec §3 ("ไม่ fog ทึบ"). 0.06 hazed the room
     // and violated the spec, so the env value is now the ONLY default.
     let fog_density = cfg.fog.unwrap_or(0.032);
+    let fog_col = env_rgb("VOXELFORGE_FOGCOLOR", recipe::FOGCOLOR);
     commands.spawn((
         FogVolume {
             // God-ray medium: still golden (it IS sunlit air) but B lifted a touch
-            // so the beams don't paint the whole room pure orange.
-            fog_color: Color::srgb(1.0, 0.88, 0.70 * bscale),
+            // so the beams don't paint the whole room pure orange. Left WARM by
+            // Pile A on purpose — see `recipe::FOGCOLOR`.
+            fog_color: Color::srgb(fog_col[0], fog_col[1], fog_col[2] * bscale),
             density_factor: fog_density,
             scattering: 0.55,
             ..default()
@@ -984,11 +1126,24 @@ pub fn setup_hero(
     // longer moves when someone sweeps VOXELFORGE_BLUESCALE. `VOXELFORGE_AMBCOLOR`
     // still overrides.
     let amb_col = cfg.ambcolor.unwrap_or(recipe::AMBCOLOR);
+    let clear = env_rgb("VOXELFORGE_CLEAR", recipe::CLEAR);
+    // One line in the runlog carrying every value the Pile A plate is graded on, so
+    // a frame can be tied back to the numbers that made it without trusting the
+    // shell that launched it (memory: a commit clock never dates a binary).
+    println!(
+        "PILEA ev100={exposure_ev} grade={g_temp},{g_sat},{g_contrast} shoulder={shoulder} \
+         bscale={bscale} amb={amb_col:?}@{} bounce2={:?}x{} rim={:?} panehi={:?} clear={clear:?}",
+        cfg.ambient.unwrap_or(recipe::AMBIENT),
+        env_rgb("VOXELFORGE_BOUNCE2COLOR", recipe::BOUNCE2_COLOR),
+        cfg.bounce2.unwrap_or(recipe::BOUNCE2),
+        env_rgb("VOXELFORGE_RIM", recipe::RIM),
+        env_rgb("VOXELFORGE_PANEHI", recipe::PANE_HI),
+    );
 
     let mut cam = commands.spawn((
         Camera3d::default(),
         Camera {
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.05, 0.03, 0.02)),
+            clear_color: ClearColorConfig::Custom(Color::srgb(clear[0], clear[1], clear[2])),
             ..default()
         },
         Projection::Perspective(PerspectiveProjection {
@@ -1015,6 +1170,17 @@ pub fn setup_hero(
             // of the midtone blue, but pulling the fill's own blue leg down at source
             // stops shade pixels being dyed cool before the grade even runs (mid-B
             // was still ~24 vs golden 4 on tint alone). Still R>G>B so G3 stays warm.
+            //
+            // PILE A REVERSES THAT, deliberately and with its cost stated. The two
+            // P0-BLUEWASH rounds above were a campaign to make shade pixels NOT cool,
+            // and they won: the shipped frame measures cool 0.000 %, warm 97.1 %, hue
+            // spread 24° against a reference at 17 % / 65 % / 202°. `AMBCOLOR` is now
+            // B > G > R (`recipe::AMBCOLOR`), so this fill is the frame's cool source
+            // rather than its warmest light. The gate those rounds were chasing
+            // ("is the frame warm / is R>G>B") is no longer satisfied by the flat
+            // term — it is satisfied by the KEY, which is where warmth in a
+            // golden-hour room actually comes from, and it is checked on the plate
+            // rather than asserted here.
             color: Color::srgb(amb_col[0], amb_col[1], amb_col[2]),
             // Ambient POWER = `recipe::AMBIENT` (2800). The narrow hero climbed this to
             // 4200 because there, ambient power was what drove warmth (R-B) and cutting
@@ -1416,6 +1582,32 @@ fn bowl(
             }
         }
     }
+}
+
+/// Sweep hook for the Pile A colour constants — `KEY="r,g,b[,lux]"`, all-or-nothing.
+///
+/// Unset, malformed, or the wrong arity ⇒ the `recipe` const byte-for-byte, which
+/// is what the shipped plate and every gate run get. Read straight from env rather
+/// than through `Cfg` for the same reason `VOXELFORGE_SHADOWMAP` is, one screen
+/// down: `Cfg` is declared in `main.rs`, another lane's file, and a look knob must
+/// not need an edit there to be swept.
+///
+/// The wasm caveat on the `Cfg` rule above does NOT apply to these: `env::var` is
+/// always `Err` on wasm32, so web falls through to the const — and the const is the
+/// SHIPPED look, not a different one. That is precisely the bug `mod recipe` fixed
+/// (the approved frame living only in a shell script's env) and this keeps fixed:
+/// no value below is reachable *only* through env.
+fn env_rgb<const N: usize>(key: &str, d: [f32; N]) -> [f32; N] {
+    let Ok(raw) = std::env::var(key) else { return d };
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    if v.len() != N {
+        println!("{}: expected {} floats, got {:?} — keeping the recipe", key, N, raw);
+        return d;
+    }
+    let mut out = d;
+    out.copy_from_slice(&v);
+    println!("{key}={v:?} (overriding the recipe)");
+    out
 }
 
 /// Sun direction (points FROM sky TO scene) from elevation/azimuth degrees.
