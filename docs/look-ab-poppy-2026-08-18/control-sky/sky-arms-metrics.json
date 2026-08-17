@@ -1,0 +1,58 @@
+{
+  "sky-atmos": {
+    "edge_mean": 38.945332023903084,
+    "hue_mean": 31.79145051734366,
+    "hue_r": 0.943899870563365,
+    "cool_pct_sat": 0.0,
+    "cool_pct_all": 0.0,
+    "sat_pct": 100.0,
+    "clip_pct": 13.94064670138889,
+    "strong": 0.35431532118055553,
+    "lum_mean": 94.75679024631083,
+    "w": 1280,
+    "h": 720,
+    "path": "docs/look-ab-poppy-2026-08-18/control-sky/outdoor-noon_sky-atmos.png"
+  },
+  "sky-dome": {
+    "edge_mean": 40.13766501702407,
+    "hue_mean": 31.315971485625596,
+    "hue_r": 0.9362662481802332,
+    "cool_pct_sat": 0.0,
+    "cool_pct_all": 0.0,
+    "sat_pct": 100.0,
+    "clip_pct": 10.11697048611111,
+    "strong": 0.372646484375,
+    "lum_mean": 103.55376233723956,
+    "w": 1280,
+    "h": 720,
+    "path": "docs/look-ab-poppy-2026-08-18/control-sky/outdoor-noon_sky-dome.png"
+  },
+  "sky-flat": {
+    "edge_mean": 41.391604019574224,
+    "hue_mean": 31.265211340918754,
+    "hue_r": 0.8960944717024433,
+    "cool_pct_sat": 2.291457111948064,
+    "cool_pct_all": 2.2914496527777777,
+    "sat_pct": 99.99967447916667,
+    "clip_pct": 10.4052734375,
+    "strong": 0.3842578125,
+    "lum_mean": 102.66633462348088,
+    "w": 1280,
+    "h": 720,
+    "path": "docs/look-ab-poppy-2026-08-18/control-sky/outdoor-noon_sky-flat.png"
+  },
+  "REF": {
+    "edge_mean": 60.53676619380694,
+    "hue_mean": 53.472408463583015,
+    "hue_r": 0.5600863476806617,
+    "cool_pct_sat": 16.946109034723236,
+    "cool_pct_all": 16.25801282051282,
+    "sat_pct": 95.9395032051282,
+    "clip_pct": 24.85004578754579,
+    "strong": 0.4475618131868132,
+    "lum_mean": 148.55502749828293,
+    "w": 768,
+    "h": 455,
+    "path": "_kevin_ref_panel_mid.png"
+  }
+}

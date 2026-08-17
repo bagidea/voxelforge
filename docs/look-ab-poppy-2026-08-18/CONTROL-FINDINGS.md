@@ -63,9 +63,17 @@ Three independent confirmations that no v4 was involved:
 
 So the two plates straddle **ten days of unrelated work across every lane**
 (authored PBR maps, atlas re-authoring, map regeneration, hero/enemy work), not
-a look generation. The black sky and the orange-sepia cast in
+a look generation. The dark sky and the orange-sepia cast in
 `after_outdoor-noon.png` are real and visible, but nothing here attributes them
-to v4 — or to the look lane at all.
+to v4.
+
+> **Follow-up, and a correction:** the sky *was* attributable, by a lever that
+> was already in the same binary. `SKY-FINDINGS.md` has the three-arm
+> `LOOK_ATMOS`/`LOOK_SKYGRAD` control. It lands the opposite of the guess the
+> README first published: the dome is suppressed **by design**, it renders fine
+> when re-enabled, and the darkness is this lane's grade. Note also that the
+> atlas re-authoring listed above never reached a pixel — `BLOCK_ART tile_px=64
+> != 16` in every run log in this folder.
 
 `target-poppy/release/voxelforge_shot.exe` (71.6 MB, 01:53) did **not** shoot
 these plates either: it contains 0 occurrences of `LOOK_IBL`/`LOOK_FILL`, while
