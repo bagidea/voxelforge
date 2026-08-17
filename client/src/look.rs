@@ -830,6 +830,37 @@ pub const BLOOM_INTENSITY_V3: f32 = 0.20;
 /// wider band of pixels buys a sharper halo instead of a bigger one.
 pub const BLOOM_LF_BOOST_V3: f32 = 0.35;
 
+/// Bloom prefilter threshold, v4 (v3: [`BLOOM_THRESHOLD_V3`] 0.85).
+///
+/// v3 dropped the threshold from 1.0 to 0.85 so the environment light's specular
+/// could glow. v4 drops it again because [`grade::EV_TRIM_V4`] moved where the
+/// frame's bright end sits: at v3's exposure the outdoor plate's MAXIMUM luma was
+/// 231/255, so a threshold sitting near white had almost nothing to select on and
+/// bloom was a no-op outdoors — measurable as the plate's 1.3% highlight share.
+/// 0.72 is still above the midtone mass (p90 = 138/255 ≈ 0.54 pre-trim), so this
+/// admits the sunlit tops of blocks and the specular, and not the whole frame:
+/// the veil `Bloom::NATURAL`'s 0.0 threshold puts over everything — measured
+/// micro-contrast 3.8 against the golden's 5.2 — is what the threshold exists to
+/// avoid, and 0.72 is nowhere near it.
+pub const BLOOM_THRESHOLD_V4: f32 = 0.72;
+
+/// Bloom intensity, v4 (v3: [`BLOOM_INTENSITY_V3`] 0.20).
+///
+/// Raised with the threshold, not instead of it. Bloom spreads bright energy into
+/// neighbouring pixels, which is a second way — after the grade — that a pixel
+/// gets over the highlight line, and unlike the grade it does it around real
+/// light sources rather than everywhere at once.
+pub const BLOOM_INTENSITY_V4: f32 = 0.26;
+
+/// Near-cascade far bound, v4, blocks ([`FIRST_CASCADE_FAR_BOUND_V3`] 10.0).
+///
+/// The occlusion map lands its detail in the first few blocks in front of the
+/// camera, and so does the contact-shadow march; a tighter near cascade puts more
+/// shadow-map texels on exactly that range. 8.0 still covers `combat::LOCK_RANGE`,
+/// which is what [`FIRST_CASCADE_FAR_BOUND_V3`] sized itself against — cascade two
+/// picks up everything past it, softer, which is where softer belongs.
+pub const FIRST_CASCADE_FAR_BOUND_V4: f32 = 8.0;
+
 // ===========================================================================
 // LOOK GENERATION — the v1/v2/v3 A/B switch
 // ===========================================================================
@@ -859,9 +890,15 @@ pub enum LookGen {
     /// [`PCSS_WIDTH_V3`], a longer contact-shadow march and a tight highlight
     /// bloom. See [`ibl_env`] and [`LookFill::Rim`].
     V3,
+    /// V3 plus the PBR/exposure pass: a per-block **occlusion map** bound
+    /// alongside the normal and roughness maps (`voxel.rs`, gated on this same
+    /// variable), the outdoor exposure trimmed to where noon actually reads as
+    /// noon ([`EV_TRIM_V4`]), a midtone lift ([`MIDTONE_GAIN_V4`]) and a wider,
+    /// lower-threshold bloom. See [`grade::MIDTONE_GAIN_V4`].
+    V4,
 }
 
-/// Read [`LookGen`] from the environment. Unset ⇒ [`LookGen::V3`].
+/// Read [`LookGen`] from the environment. Unset ⇒ [`LookGen::V4`].
 pub fn look_gen() -> LookGen {
     match std::env::var("VOXELFORGE_LOOK_GEN")
         .unwrap_or_default()
@@ -871,15 +908,26 @@ pub fn look_gen() -> LookGen {
     {
         "v1" | "1" | "legacy" => LookGen::V1,
         "v2" | "2" | "before" => LookGen::V2,
-        _ => LookGen::V3,
+        "v3" | "3" => LookGen::V3,
+        _ => LookGen::V4,
     }
 }
 
 /// True when the live generation carries the v3 surface rig. Every v3 fork in
 /// this file goes through here rather than re-matching the enum, so "what is in
 /// v3" is one predicate and adding a v4 does not mean auditing twenty matches.
+///
+/// Note the `|`: v4 is a strict SUPERSET of v3, so it has to answer `true` here
+/// too. A `matches!(…, V3)` that was never widened is how adding a generation
+/// silently switches off the one below it — every IBL, kicker, PCSS and
+/// contact-shadow fork in this file hangs off this one line.
 fn v3() -> bool {
-    matches!(look_gen(), LookGen::V3)
+    matches!(look_gen(), LookGen::V3 | LookGen::V4)
+}
+
+/// True when the live generation carries the v4 PBR/exposure pass.
+fn v4() -> bool {
+    matches!(look_gen(), LookGen::V4)
 }
 
 /// The FLAT fill v1 shipped, day. Kept as a constant rather than deleted so
@@ -1308,6 +1356,60 @@ mod grade {
     /// two rounds running, so the trade is taken deliberately and in that
     /// direction. Past ~1.10 it would be spending margin that is not there.
     pub const HIGHLIGHT_GAIN_V3: f32 = 1.06;
+
+    // -----------------------------------------------------------------------
+    // v4 — the exposure/midtone pass
+    // -----------------------------------------------------------------------
+
+    /// Exposure trim, v4, in stops. SUBTRACTED from the live `ev100`, so a
+    /// positive number is a BRIGHTER frame.
+    ///
+    /// WHY THE OUTDOOR FRAME NEEDED THIS AND WHY IT IS NOT A CHEAT. Measured on
+    /// the shipped v3 outdoor-noon plate (`docs/assets/look/outdoor-noon_after.png`,
+    /// Rec.601 luma, the `_kevin_art_gap_measure` definitions):
+    ///
+    ///   ours (v3)   lum_mean  95.5   shadow 35.3%   highlight  1.3%
+    ///   reference   lum_mean 148.6   shadow 25.6%   highlight 41.8%
+    ///
+    /// A frame lit by a 20 000-lux midday sun that puts 1.3% of its pixels above
+    /// luma 170 is not a stylistic choice, it is an under-exposure: the p99 of
+    /// that plate is 192 and its MAXIMUM is 231, i.e. the frame never reaches
+    /// white anywhere. The reference — a Minecraft+shader render, not a
+    /// photograph, so its numbers are reachable (see
+    /// `docs/art-gap-vs-reference-2026-08-17.md`) — sits 0.64 stops brighter.
+    ///
+    /// SUBTRACTED FROM `ev100` RATHER THAN FOLDED INTO `Hour`, deliberately: the
+    /// capture recipes pin `VOXELFORGE_LOOK_EXPOSURE` (the outdoor pair runs
+    /// 10.6), and an hour-table change would be overridden by that env before it
+    /// reached a single plate — the before/after would show two identical frames
+    /// and the lane would conclude the trim does nothing. Trimming after the env
+    /// read keeps the pair shootable from ONE binary under the EXISTING recipe,
+    /// which is the only kind of A/B this file accepts.
+    pub const EV_TRIM_V4: f32 = 0.55;
+
+    /// Midtone gain, v4 (v3 and earlier: 1.0 — the section was contrast-only).
+    ///
+    /// The exposure trim above buys range; this is what spends it in the band
+    /// that actually holds the frame. 63% of the outdoor plate's pixels sit in
+    /// the midtone zone (luma 85–170) and its p90 is 138 — a mass parked just
+    /// under the highlight line with nothing pushing it across. Gain, not
+    /// contrast: `MIDTONE_CONTRAST_V3` (1.10) already pivots this band about its
+    /// centre, and raising it further steepens the *shadow* side of the pivot by
+    /// exactly as much as the bright side, which is how the v3 note's "open shade
+    /// crushed to black" regression happened. Gain moves the whole band up and
+    /// leaves the toe to [`SHADOW_GAIN_V3`].
+    pub const MIDTONE_GAIN_V4: f32 = 1.12;
+
+    /// Highlight gain, v4 (v3: [`HIGHLIGHT_GAIN_V3`] 1.06).
+    ///
+    /// v3's note explains why it went past 1.00 and warns that "past ~1.10 it
+    /// would be spending margin that is not there" — margin measured on NOON'S
+    /// CHANNEL SEPARATION, at v3's exposure. The trim above changes that
+    /// premise: the pixels this section now acts on are ones the shoulder was
+    /// never reaching, so the separation it was protecting is not the separation
+    /// being spent. It is still the smaller of the two moves — the midtone gain
+    /// is doing the work, and this only keeps the top from flattening under it.
+    pub const HIGHLIGHT_GAIN_V4: f32 = 1.14;
 
     /// White balance, v3 (shared: [`TEMPERATURE`] 0.05).
     ///
@@ -1778,7 +1880,12 @@ fn hour() -> Hour {
         // environment light — same irradiance, now arriving from a direction.
         // The two directional fills are untouched: they are already directional,
         // and the budget table on [`IBL_NITS_DAY`] is written against them.
-        LookGen::V3 => {
+        // v4 changes nothing in the LIGHTING rig — it is a material and grade
+        // pass — so it shares this arm rather than copying it. Sharing is the
+        // point: a v4 that forked here would have to keep two ambient tables in
+        // step, and the first time they drifted the frame would move for a reason
+        // no constant explained.
+        LookGen::V3 | LookGen::V4 => {
             h.ambient_lux = if night {
                 AMBIENT_LUX_V3_NIGHT
             } else {
@@ -2245,8 +2352,87 @@ fn distance_fog() -> DistanceFog {
 /// from frame ZERO rather than from the first `Update`. [`insert_stack`] then
 /// re-inserts it under the plugin, so both paths are the same code and cannot
 /// drift into two different looks.
+/// The three `ColorGrading` section GAINS — shadow, midtone, highlight.
+///
+/// `VOXELFORGE_LOOK_GAIN=<shadow>,<midtone>,<highlight>` sweeps all three without
+/// a rebuild, the same hook (and the same reason) as [`grade_knobs`]: this binary
+/// costs a fat-LTO link, and the numbers in [`grade::MIDTONE_GAIN_V4`] can only be
+/// judged from a rendered frame. The highlight entry deliberately overlaps
+/// `VOXELFORGE_LOOK_GRADE`'s fourth field — this one is read second and wins, so a
+/// sweep of all three does not have to restate the other three grade knobs.
+///
+/// Unset ⇒ the live generation's own values, byte-for-byte.
+fn grade_gains(highlight_default: f32) -> (f32, f32, f32) {
+    let d = if v4() {
+        (grade::SHADOW_GAIN_V3, grade::MIDTONE_GAIN_V4, grade::HIGHLIGHT_GAIN_V4)
+    } else if v3() {
+        (grade::SHADOW_GAIN_V3, 1.0, highlight_default)
+    } else {
+        (1.0, 1.0, highlight_default)
+    };
+    let Ok(raw) = std::env::var("VOXELFORGE_LOOK_GAIN") else {
+        return d;
+    };
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    match v[..] {
+        [s, m, hl] => (s, m, hl),
+        _ => d,
+    }
+}
+
+/// The v4 exposure trim in stops, or 0.0 on an older generation.
+///
+/// `VOXELFORGE_LOOK_EVTRIM=<stops>` sweeps it. See [`grade::EV_TRIM_V4`] for why
+/// this is a trim applied *after* `VOXELFORGE_LOOK_EXPOSURE` rather than a change
+/// to the hour table.
+fn ev_trim() -> f32 {
+    match std::env::var("VOXELFORGE_LOOK_EVTRIM")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+    {
+        Some(v) if v.is_finite() => v,
+        _ if v4() => grade::EV_TRIM_V4,
+        _ => 0.0,
+    }
+}
+
+/// Bloom `(intensity, threshold, softness, low_frequency_boost)` for the live
+/// generation, sweepable with `VOXELFORGE_LOOK_BLOOM=<i>,<t>,<s>,<lf>`.
+fn bloom_knobs() -> (f32, f32, f32, f32) {
+    let d = if v4() {
+        (
+            BLOOM_INTENSITY_V4,
+            BLOOM_THRESHOLD_V4,
+            BLOOM_SOFTNESS_V3,
+            BLOOM_LF_BOOST_V3,
+        )
+    } else if v3() {
+        (
+            BLOOM_INTENSITY_V3,
+            BLOOM_THRESHOLD_V3,
+            BLOOM_SOFTNESS_V3,
+            BLOOM_LF_BOOST_V3,
+        )
+    } else {
+        // The four numbers v2 shipped, byte-for-byte — `Bloom::NATURAL`'s own
+        // low-frequency boost, which is why it is spelled out rather than
+        // inherited from the struct update below.
+        (0.18, 1.0, 0.4, Bloom::NATURAL.low_frequency_boost)
+    };
+    let Ok(raw) = std::env::var("VOXELFORGE_LOOK_BLOOM") else {
+        return d;
+    };
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    match v[..] {
+        [i, t, s, lf] => (i, t, s, lf),
+        _ => d,
+    }
+}
+
 pub fn base_camera_look() -> impl Bundle {
     let (temperature, post_saturation, midtone_contrast, highlight_gain) = grade_knobs();
+    let (shadow_gain, midtone_gain, highlight_gain) = grade_gains(highlight_gain);
+    let (bloom_intensity, bloom_threshold, bloom_softness, bloom_lf) = bloom_knobs();
     let h = hour();
     (
         // MSAA off: voxel edges are 90° and axis-aligned (no jaggies to smooth),
@@ -2283,11 +2469,15 @@ pub fn base_camera_look() -> impl Bundle {
             // so the before plate is untouched.
             shadows: ColorGradingSection {
                 contrast: 1.0,
-                gain: if v3() { grade::SHADOW_GAIN_V3 } else { 1.0 },
+                gain: shadow_gain,
                 ..default()
             },
+            // v4 puts a GAIN on this section for the first time — see
+            // [`grade::MIDTONE_GAIN_V4`] for why the 63% of the frame that lives
+            // in this band needed lifting rather than steepening.
             midtones: ColorGradingSection {
                 contrast: midtone_contrast,
+                gain: midtone_gain,
                 ..default()
             },
             highlights: ColorGradingSection {
@@ -2304,7 +2494,14 @@ pub fn base_camera_look() -> impl Bundle {
         // implicit `Exposure::BLENDER` (ev100 9.7) while the sun's illuminance
         // was set by a different lane, so "how bright is the world" was an
         // accident nobody owned. It is part of the hour now.
-        Exposure { ev100: h.ev100 },
+        // v4 trims this DOWN (brighter) by [`grade::EV_TRIM_V4`]. The trim lands
+        // here, after `hour()` has already applied `VOXELFORGE_LOOK_EXPOSURE`, so
+        // that a capture recipe pinning the exposure still shows the generation
+        // difference instead of flattening it — the constant's doc carries the
+        // measurement that sized it.
+        Exposure {
+            ev100: h.ev100 - ev_trim(),
+        },
         // Bloom that fires on EMISSIVE ONLY. `Bloom::NATURAL`'s prefilter
         // threshold is 0.0, i.e. every pixel in the frame blooms a little, which
         // is what puts a veil over sunlit wood and softens the voxel grain
@@ -2323,25 +2520,20 @@ pub fn base_camera_look() -> impl Bundle {
         // low-frequency boost so admitting that band buys a sharper halo rather
         // than the veil that measurement warns about. `VOXELFORGE_LOOK_GEN=v2`
         // returns the four numbers above, byte-for-byte.
-        if v3() {
-            Bloom {
-                intensity: BLOOM_INTENSITY_V3,
-                low_frequency_boost: BLOOM_LF_BOOST_V3,
-                prefilter: BloomPrefilter {
-                    threshold: BLOOM_THRESHOLD_V3,
-                    threshold_softness: BLOOM_SOFTNESS_V3,
-                },
-                ..Bloom::NATURAL
-            }
-        } else {
-            Bloom {
-                intensity: 0.18,
-                prefilter: BloomPrefilter {
-                    threshold: 1.0,
-                    threshold_softness: 0.4,
-                },
-                ..Bloom::NATURAL
-            }
+        //
+        // v4 drops the threshold once more and widens the intensity, because
+        // [`grade::EV_TRIM_V4`] moved where the frame's bright end sits — see
+        // [`BLOOM_THRESHOLD_V4`]. All four numbers now come from one place so the
+        // three generations cannot drift apart, and so `VOXELFORGE_LOOK_BLOOM`
+        // sweeps every one of them.
+        Bloom {
+            intensity: bloom_intensity,
+            low_frequency_boost: bloom_lf,
+            prefilter: BloomPrefilter {
+                threshold: bloom_threshold,
+                threshold_softness: bloom_softness,
+            },
+            ..Bloom::NATURAL
         },
         distance_fog(),
     )
@@ -2433,7 +2625,10 @@ fn pcss_width(tier_on: bool) -> Option<f32> {
     let shipped = match look_gen() {
         LookGen::V1 => PCSS_WIDTH_V1,
         LookGen::V2 => PCSS_WIDTH,
-        LookGen::V3 => PCSS_WIDTH_V3,
+        // v4 keeps v3's width: the PCSS ladder on [`PCSS_WIDTH_V3`] was measured
+        // against this camera and nothing v4 changes moves the blocker distances
+        // it was fitted to.
+        LookGen::V3 | LookGen::V4 => PCSS_WIDTH_V3,
     };
     match std::env::var("VOXELFORGE_LOOK_PCSS") {
         Ok(v) if v.trim().eq_ignore_ascii_case("off") => None,
@@ -2714,7 +2909,10 @@ fn apply_look_to_sun(
             // needs, so the tier that gets PCSS is the lowest tier that can
             // resolve it — not the highest tier that can afford it. Low keeps its
             // fixed Gaussian: no history buffer, nothing to resolve into.
-            LookGen::V3 => !matches!(*quality, LookQuality::Low),
+            // v4 inherits the tier rule unchanged — see [`FIRST_CASCADE_FAR_BOUND_V4`]
+            // for the one shadow knob it does move, which is the cascade split and
+            // not which tiers get a penumbra.
+            LookGen::V3 | LookGen::V4 => !matches!(*quality, LookQuality::Low),
         };
         let volumetric = matches!(*quality, LookQuality::High | LookQuality::Ultra);
         // Golden-hour key. This is what makes sunlit surfaces order `R > G > B`
@@ -2749,7 +2947,9 @@ fn apply_look_to_sun(
                 // v3 tightens this — see [`FIRST_CASCADE_FAR_BOUND_V3`]: the near
                 // cascade is what keeps the contact end crisp under a penumbra
                 // half again as wide, so it gets more texels per block.
-                first_cascade_far_bound: if v3() {
+                first_cascade_far_bound: if v4() {
+                    FIRST_CASCADE_FAR_BOUND_V4
+                } else if v3() {
                     FIRST_CASCADE_FAR_BOUND_V3
                 } else {
                     16.0
