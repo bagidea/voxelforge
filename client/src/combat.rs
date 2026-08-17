@@ -1547,10 +1547,36 @@ pub fn spawn_husk_of_kind(
         crate::enemies::spawn_enemy(commands, meshes, materials, kind, feet, 0.0);
     commands.entity(root).insert((
         Enemy::at(feet, surface, kind),
-        Health::new(HP_HUSK),
+        Health::new(kind_hp(kind)),
         Poise::new(POISE_HUSK),
     ));
     println!("HUSK2_SPAWN kind={} at ({wx:.1},{surface:.1},{wz:.1})", kind.id());
+}
+
+/// Max HP per enemy kind. The Bone Sentinel is the tank of the first playable
+/// (§4.1); the Ghoul Reaver is the light, fast one, and the Thornclaw Stalker
+/// sits in between. Same combat kit, different endurance.
+fn kind_hp(kind: crate::enemies::EnemyKind) -> f32 {
+    use crate::enemies::EnemyKind;
+    match kind {
+        EnemyKind::Reaver => 50.0,
+        EnemyKind::Sentinel => HP_HUSK,
+        EnemyKind::Stalker => 65.0,
+    }
+}
+
+/// What an enemy drops into the player's bag on death. The only meaningful
+/// consumable is the health potion, so the drop table is all potions with a
+/// per-kind count: the heavier the fight, the bigger the reward. The drop is
+/// applied in `husk_ai`'s death block via `Inventory::add`.
+fn loot(kind: crate::enemies::EnemyKind) -> (crate::inventory::ItemKind, u32) {
+    use crate::enemies::EnemyKind;
+    use crate::inventory::ItemKind;
+    match kind {
+        EnemyKind::Reaver => (ItemKind::HealthPotion, 1),
+        EnemyKind::Sentinel => (ItemKind::HealthPotion, 2),
+        EnemyKind::Stalker => (ItemKind::HealthPotion, 1),
+    }
 }
 
 /// Spawn the two HUD bars (health, stamina) + numeric readouts + the lock-on reticle.
@@ -2068,6 +2094,7 @@ pub fn husk_ai(
     mut kin: ResMut<PlayerKinematics>,
     tac: Res<AiTactics>,
     mut evade: ResMut<HuskEvade>,
+    mut inv: ResMut<crate::inventory::Inventory>,
     mut enemy_q: Query<
         (Entity, &mut Transform, &mut Enemy, &Health, &mut Poise, Option<&Knockback>),
         (With<Enemy>, Without<FlyCam>),
@@ -2147,6 +2174,17 @@ pub fn husk_ai(
                     entity,
                     position: etf.translation,
                 });
+                // Loot loop: the kill pays into the item bag, so fighting has a
+                // reason. `add` stacks the drop on an existing slot (or a fresh
+                // one) and returns any part the full bag couldn't hold.
+                let (item, n) = loot(e.kind);
+                let leftover = inv.add(item, n);
+                println!(
+                    "LOOT_DROP kind={} +{} (leftover {})",
+                    e.kind.id(),
+                    n,
+                    leftover
+                );
                 info!("COMBAT enemy died — EnemyDied fired at {:?}", etf.translation);
             }
             if !shoved {

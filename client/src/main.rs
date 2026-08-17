@@ -812,6 +812,7 @@ fn spawn_encounter(
     };
     enc.spawned = true;
     let dist = if cfg.combat_demo { 2.2 } else { 5.0 };
+    // The tank: the Bone Sentinel, dead ahead (the first-playable guard).
     combat::spawn_guard_husk(
         &mut commands,
         &mut meshes,
@@ -820,8 +821,19 @@ fn spawn_encounter(
         tf.translation.z - dist,
         None,
     );
+    // Second enemy type: a Ghoul Reaver flanking to the player's right and a
+    // little deeper — lighter and faster than the Sentinel, drops one potion.
+    combat::spawn_husk_of_kind(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        crate::enemies::EnemyKind::Reaver,
+        tf.translation.x + 3.0,
+        tf.translation.z - dist - 2.0,
+        None,
+    );
     hud::spawn_hud(&mut commands);
-    println!("SPAWN_ENCOUNTER husk {dist} blocks in front of the player");
+    println!("SPAWN_ENCOUNTER sentinel+reaver {dist} blocks in front of the player");
 }
 
 /// Returning to the editor tears down the encounter (husk + HUD bars + lock
