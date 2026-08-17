@@ -1,0 +1,12 @@
+2026-08-17T19:20:41.764009Z  INFO bevy_diagnostic::system_information_diagnostics_plugin::internal: SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+2026-08-17T19:20:42.182255Z  INFO bevy_render::renderer: AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+2026-08-17T19:20:42.829040Z  INFO bevy_pbr::cluster: GPU clustering is supported on this device.
+2026-08-17T19:20:42.915164Z  INFO bevy_render::batching::gpu_preprocessing: GPU preprocessing is fully supported on this device.
+2026-08-17T19:20:42.916874Z  INFO bevy_egui::render: Using bindless_mode_array_size 16 (Device maximum 1048576)
+2026-08-17T19:20:42.926381Z  INFO bevy_winit::system: Creating new window Voxelforge — Phase 0 spike (65v0)
+2026-08-17T19:20:44.345270Z ERROR bevy_asset::server: Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ab_stage\assets\audio/music_theme.wav
+2026-08-17T19:20:44.349209Z ERROR bevy_asset::server: Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ab_stage\assets\audio/ambient_wind.wav
+2026-08-17T19:20:44.349548Z ERROR bevy_asset::server: Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ab_stage\assets\audio/ambient_campfire.wav
+2026-08-17T19:20:44.349853Z ERROR bevy_asset::server: Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ab_stage\assets\audio/ambient_village.wav
+2026-08-17T19:20:44.372847Z ERROR bevy_asset::server: Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_poppy_ab_stage\assets\audio/player_respawn.wav
+2026-08-17T19:20:49.301311Z  INFO bevy_render::view::window::screenshot: Screenshot saved to E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\docs\look-ab-poppy-2026-08-18\control-onebinary\outdoor-noon_gen-v3.png
