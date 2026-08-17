@@ -1,0 +1,39 @@
+{
+  "_comment": [
+    "Block atlas manifest — read at startup by client/src/block_atlas.rs.",
+    "This file is the ENTIRE contract between the art set and the engine.",
+    "To ship a new set: drop 16x16 PNGs in this folder, then edit `tiles` (name",
+    "-> file) and `kinds` (block kind -> which tile each face wears). No Rust",
+    "change, no rebuild. `tile_px` may change too, as long as it is even.",
+    "Tiles are packed with a wrapped gutter, so every tile must be SEAMLESS.",
+    "Face keys: `all` sets top+side+bottom; `top`/`side`/`bottom` override it.",
+    "Art set + hue rationale: see PALETTE.md (Monanisa, 2026-08-17)."
+  ],
+  "tile_px": 16,
+  "tiles": [
+    { "name": "oak_planks", "file": "oak_planks.png" },
+    { "name": "oak_log_side", "file": "oak_log_side.png" },
+    { "name": "oak_log_top", "file": "oak_log_top.png" },
+    { "name": "floorboards", "file": "floorboards.png" },
+    { "name": "sand", "file": "sand.png" },
+    { "name": "roof_tile", "file": "roof_tile.png" },
+    { "name": "stone_bricks", "file": "stone_bricks.png" },
+    { "name": "clay_plaster", "file": "clay_plaster.png" },
+    { "name": "grass_top", "file": "grass_top.png" },
+    { "name": "grass_side", "file": "grass_side.png" },
+    { "name": "leaves", "file": "leaves.png" },
+    { "name": "glass", "file": "glass.png" }
+  ],
+  "kinds": {
+    "plank": { "all": "oak_planks" },
+    "floorboard": { "all": "floorboards" },
+    "log": { "top": "oak_log_top", "side": "oak_log_side", "bottom": "oak_log_top" },
+    "sand": { "all": "sand" },
+    "roof_tile": { "all": "roof_tile" },
+    "stone": { "all": "stone_bricks" },
+    "plaster": { "all": "clay_plaster" },
+    "grass": { "top": "grass_top", "side": "grass_side", "bottom": "grass_side" },
+    "leaves": { "all": "leaves" },
+    "glass": { "all": "glass" }
+  }
+}
