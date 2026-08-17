@@ -205,6 +205,16 @@ pub struct TileSet {
     /// [`load`] applies [`AtlasMode::Detail`] on its own copy, so a caller that
     /// wants the artist's albedo verbatim gets it.
     pub tiles: Vec<Vec<u8>>,
+    /// Each tile's `file` from the manifest, same order and length as [`Self::tiles`].
+    ///
+    /// Kept because a decoded RGBA buffer cannot tell you what it was called, and
+    /// the PBR pass in `voxel.rs` needs exactly that: an authored normal map is
+    /// found by *name* (`oak_planks.png` → `oak_planks_n.png`), the one convention
+    /// that lets an artist add maps by dropping files in the folder without also
+    /// editing `atlas.json` and without this module growing a second manifest
+    /// schema for them. Storing the name here rather than re-reading the manifest
+    /// downstream keeps `atlas.json` parsed in exactly one place.
+    pub files: Vec<String>,
     pub kinds: BTreeMap<String, FaceTiles>,
     pub mode: AtlasMode,
     pub dir: PathBuf,
@@ -214,13 +224,21 @@ impl TileSet {
     /// The raw tile one face of `kind` wears, or `None` if the manifest has no
     /// such kind.
     pub fn face_tile(&self, kind: &str, face: Face) -> Option<&[u8]> {
+        Some(&self.tiles[self.face_index(kind, face)?])
+    }
+
+    /// That same face's source file name, for finding its companion PBR maps.
+    pub fn face_file(&self, kind: &str, face: Face) -> Option<&str> {
+        Some(self.files[self.face_index(kind, face)?].as_str())
+    }
+
+    fn face_index(&self, kind: &str, face: Face) -> Option<usize> {
         let f = self.kinds.get(kind)?;
-        let i = match face {
+        Some(match face {
             Face::Top => f.top,
             Face::Side => f.side,
             Face::Bottom => f.bottom,
-        };
-        Some(&self.tiles[i])
+        })
     }
 }
 
@@ -320,6 +338,7 @@ pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
 
     // ---- decode every tile ------------------------------------------------
     let mut tiles: Vec<Vec<u8>> = Vec::with_capacity(manifest.tiles.len());
+    let mut files: Vec<String> = Vec::with_capacity(manifest.tiles.len());
     let mut index_of: BTreeMap<&str, usize> = BTreeMap::new();
     for (i, entry) in manifest.tiles.iter().enumerate() {
         let path = dir.join(&entry.file);
@@ -334,6 +353,7 @@ pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
             ));
         }
         tiles.push(rgba.into_raw());
+        files.push(entry.file.clone());
         index_of.insert(entry.name.as_str(), i);
     }
 
@@ -363,6 +383,7 @@ pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
     Ok(Some(TileSet {
         tile_px,
         tiles,
+        files,
         kinds,
         mode,
         dir,
@@ -383,6 +404,9 @@ pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
         kinds: face_tiles,
         mode,
         dir,
+        // The packed-atlas consumer addresses tiles by index; only the per-face
+        // material path in `voxel.rs` cares what they were called.
+        files: _,
     } = set;
 
     // `Detail` normalises a *copy*: `load_tiles` hands back the artist's albedo

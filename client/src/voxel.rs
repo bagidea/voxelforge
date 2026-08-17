@@ -447,31 +447,229 @@ pub fn roughness_ceiling(id: BlockId) -> f32 {
     (block_surface(id).perceptual_roughness + spread).min(1.0)
 }
 
+// ---------------------------------------------------------------------------
+// authored PBR maps
+// ---------------------------------------------------------------------------
+
+/// Where the metallic-roughness map a material is wearing came from, because the
+/// two provenances need OPPOSITE factors and getting that backwards is silent.
+///
+/// Bevy MULTIPLIES `perceptual_roughness` / `metallic` into the map's green /
+/// blue channels. The procedural map ([`build_face_metallic_roughness`]) is
+/// authored as a *ratio* against [`roughness_ceiling`] precisely so that
+/// multiplication lands on the table's value — that contract is documented on
+/// `roughness_ceiling` and must not change. An artist's file is the opposite: its
+/// green channel IS the roughness they want to see, so the factor has to be
+/// identity or every authored surface renders quietly smoother than the PNG says,
+/// with nothing anywhere reporting it — the exact failure `roughness_ceiling` was
+/// written to prevent, arriving from the other side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MrSource {
+    /// No map at all — the table's scalars stand alone.
+    #[default]
+    None,
+    /// [`build_face_metallic_roughness`]: green is a ratio against the ceiling.
+    Procedural,
+    /// A `*_r.png`. Green is absolute roughness; BLUE IS NOT METALNESS.
+    ///
+    /// A roughness map is very often shipped as a grey PNG (R=G=B=roughness), and
+    /// Bevy reads blue as metalness unconditionally. Take blue at face value and
+    /// every rough surface in the game turns to metal. So this variant keeps the
+    /// table's `metallic` factor (0.0 for everything in this palette), which
+    /// multiplies whatever is in blue back down to nothing.
+    AuthoredRoughness,
+    /// A `*_mr.png`: green roughness, blue metalness, both absolute.
+    AuthoredMr,
+    /// A `*_orm.png`: the glTF packing — RED occlusion, green roughness, blue
+    /// metalness. Its red channel is a real AO map, so the same texture feeds
+    /// `occlusion_texture` as well and costs one upload, not two.
+    AuthoredOrm,
+}
+
+impl MrSource {
+    /// The `perceptual_roughness` factor to pair with this provenance.
+    fn roughness_factor(self, id: BlockId) -> f32 {
+        match self {
+            MrSource::None => block_surface(id).perceptual_roughness,
+            MrSource::Procedural => roughness_ceiling(id),
+            // Identity: the file is the answer.
+            _ => 1.0,
+        }
+    }
+
+    /// The `metallic` factor to pair with it. See [`MrSource::AuthoredRoughness`]
+    /// for why only the two *packed* formats are allowed to drive metalness.
+    fn metallic_factor(self, id: BlockId) -> f32 {
+        match self {
+            MrSource::AuthoredMr | MrSource::AuthoredOrm => 1.0,
+            _ => block_surface(id).metallic,
+        }
+    }
+}
+
+/// The texture set one face wears, already resolved between authored and derived.
+#[derive(Default)]
+pub struct BlockMaps {
+    pub normal: Option<Handle<Image>>,
+    pub metallic_roughness: Option<Handle<Image>>,
+    pub occlusion: Option<Handle<Image>>,
+    pub mr_source: MrSource,
+}
+
+/// File-name suffixes searched for an authored map, in preference order.
+///
+/// `_n` / `_r` are the two Monanisa's art drop is named for; the longer spellings
+/// are here so a set exported straight out of Substance/Blender ("…_normal.png",
+/// "…_orm.png") lands without a rename step. First hit wins, so adding a spelling
+/// can never change what an existing folder resolves to.
+const NORMAL_SUFFIXES: &[&str] = &["_n", "_normal", "_nrm"];
+/// Roughness-only spellings — blue is NOT trusted, see [`MrSource::AuthoredRoughness`].
+const ROUGHNESS_SUFFIXES: &[&str] = &["_r", "_rough", "_roughness"];
+/// Packed metallic-roughness (green/blue) spellings.
+const MR_SUFFIXES: &[&str] = &["_mr", "_metallic_roughness"];
+/// Packed occlusion-roughness-metallic (red/green/blue) spellings.
+const ORM_SUFFIXES: &[&str] = &["_orm", "_arm"];
+/// Standalone ambient-occlusion spellings — red channel is read, nothing else.
+const AO_SUFFIXES: &[&str] = &["_ao", "_occlusion"];
+
+/// `VOXELFORGE_MAT_MAPS=off` — ignore authored PNGs and use the derived maps.
+///
+/// The A/B lever for the art drop itself: it answers "is this frame different
+/// because of Monanisa's maps, or because of everything else that moved?" from
+/// ONE binary, which is the only form of that answer worth quoting.
+fn authored_maps_enabled() -> bool {
+    !matches!(std::env::var("VOXELFORGE_MAT_MAPS"), Ok(v) if v.trim().eq_ignore_ascii_case("off"))
+}
+
+/// Load `<tile stem><suffix>.png` from the art folder for one face, first hit wins.
+///
+/// `Rgba8Unorm`, never sRGB: every map this finds is DATA (a direction, a
+/// roughness, an occlusion), and an sRGB view would bend all three through a
+/// transfer curve meant for colour. Any resolution is accepted — chunk UVs are
+/// measured in blocks and the sampler repeats, so a 256² normal map over a 16²
+/// albedo is a legal (and welcome) upgrade, not a mismatch.
+///
+/// Every miss is silent (a folder without the art is the normal state of a fresh
+/// checkout) but every *failure* is loud: a PNG that exists and will not decode
+/// is a broken delivery, and falling back without saying so is how it ships.
+fn authored_map(id: BlockId, face: Face, suffixes: &[&str]) -> Option<Image> {
+    if !authored_maps_enabled() {
+        return None;
+    }
+    let set = tile_set()?;
+    let file = set.face_file(atlas_kind(id), face)?;
+    let stem = std::path::Path::new(file).file_stem()?.to_str()?;
+    for suffix in suffixes {
+        let path = set.dir.join(format!("{stem}{suffix}.png"));
+        if !path.is_file() {
+            continue;
+        }
+        match image::open(&path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let (w, h) = rgba.dimensions();
+                if w == 0 || h == 0 {
+                    println!("BLOCK_PBR {} is empty — ignored", path.display());
+                    continue;
+                }
+                println!("BLOCK_PBR authored {} {w}x{h}", path.display());
+                return Some(image_from_rgba(
+                    w as usize,
+                    h as usize,
+                    rgba.into_raw(),
+                    TextureFormat::Rgba8Unorm,
+                    voxel_sampler(true),
+                ));
+            }
+            Err(e) => println!("BLOCK_PBR {} failed to decode ({e}) — derived map kept", path.display()),
+        }
+    }
+    None
+}
+
+/// One face's four maps, authored where a file exists and derived where it does not.
+///
+/// This is the fallback contract in one place: the loader never *requires* the art
+/// drop, so a checkout with an empty `assets/textures/blocks/` renders exactly what
+/// it rendered before the loader existed, and a folder with only `brick_n.png` in
+/// it gets an authored normal on brick and derived everything else. Per FACE, not
+/// per block — grass ships a top and a side that have no business sharing a relief.
+pub fn face_maps(id: BlockId, face: Face) -> FaceMaps {
+    // `VOXELFORGE_FLAT_MATERIAL` is the kill switch for the whole surface rig and
+    // has to outrank the art too, or the "before" half of every material A/B
+    // quietly keeps whatever files happen to be on disk.
+    if flat_material() {
+        return FaceMaps::default();
+    }
+
+    let normal = authored_map(id, face, NORMAL_SUFFIXES).or_else(|| build_face_normal_map(id, face));
+
+    // Ordered most-informative first: an ORM carries everything a `_r` does plus
+    // AO, so finding one means there is nothing left for the thinner spellings to
+    // add. Only the fall-through reaches the derived map.
+    let (mr, mr_source) = if let Some(i) = authored_map(id, face, ORM_SUFFIXES) {
+        (Some(i), MrSource::AuthoredOrm)
+    } else if let Some(i) = authored_map(id, face, MR_SUFFIXES) {
+        (Some(i), MrSource::AuthoredMr)
+    } else if let Some(i) = authored_map(id, face, ROUGHNESS_SUFFIXES) {
+        (Some(i), MrSource::AuthoredRoughness)
+    } else {
+        match build_face_metallic_roughness(id, face) {
+            Some(i) => (Some(i), MrSource::Procedural),
+            None => (None, MrSource::None),
+        }
+    };
+
+    // An ORM's red channel IS the occlusion map, so that case is left empty here
+    // and `build_block_materials` binds the SAME handle twice rather than decoding
+    // the file again. A dedicated `_ao.png` still wins — an artist who shipped
+    // both meant the standalone one.
+    let occlusion = match authored_map(id, face, AO_SUFFIXES) {
+        Some(i) => Some(i),
+        None if mr_source == MrSource::AuthoredOrm => None,
+        None => build_face_occlusion(id, face),
+    };
+
+    FaceMaps {
+        normal,
+        mr,
+        occlusion,
+        mr_source,
+    }
+}
+
+/// [`face_maps`]'s result, before the images are handed to `Assets<Image>`.
+#[derive(Default)]
+pub struct FaceMaps {
+    pub normal: Option<Image>,
+    pub mr: Option<Image>,
+    pub occlusion: Option<Image>,
+    pub mr_source: MrSource,
+}
+
 /// The StandardMaterial for one block type, given its (repeating) tile texture
-/// and — where the material has any — its derived normal / roughness maps.
+/// and — where the material has any — its normal / roughness / occlusion maps.
 ///
 /// This is the per-type material the single shared atlas material can't be. Pair
 /// it with [`greedy_mesh_chunk_split`], which produces one mesh per type *and*
 /// the tangents a normal map is silently dropped without.
-pub fn block_material(
-    id: BlockId,
-    texture: Handle<Image>,
-    normal_map: Option<Handle<Image>>,
-    metallic_roughness: Option<Handle<Image>>,
-) -> StandardMaterial {
+pub fn block_material(id: BlockId, texture: Handle<Image>, maps: BlockMaps) -> StandardMaterial {
     let s = block_surface(id);
-    let mapped_roughness = metallic_roughness.is_some();
     StandardMaterial {
         base_color: Color::srgba(1.0, 1.0, 1.0, s.alpha),
         base_color_texture: Some(texture),
-        normal_map_texture: normal_map,
-        metallic_roughness_texture: metallic_roughness,
-        perceptual_roughness: if mapped_roughness {
-            roughness_ceiling(id)
-        } else {
-            s.perceptual_roughness
-        },
-        metallic: s.metallic,
+        normal_map_texture: maps.normal,
+        metallic_roughness_texture: maps.metallic_roughness,
+        // Reads the RED channel only, and darkens the DIFFUSE INDIRECT term —
+        // the same term SSAO bites, which is why the two compose instead of
+        // double-darkening a sunlit face: under a 20 000-lux key a lit face is
+        // almost all direct light and barely moves, while the inside of a mortar
+        // joint is nearly all ambient and takes the full bite. That asymmetry is
+        // the whole point — it is what stops a wall reading as a photograph of a
+        // wall pasted onto a flat plane.
+        occlusion_texture: maps.occlusion,
+        perceptual_roughness: maps.mr_source.roughness_factor(id),
+        metallic: maps.mr_source.metallic_factor(id),
         reflectance: s.reflectance,
         emissive: s.emissive,
         alpha_mode: if s.alpha_blend {
@@ -566,18 +764,61 @@ pub fn build_block_materials(
     images: &mut Assets<Image>,
     materials: &mut Assets<StandardMaterial>,
 ) -> Vec<Handle<StandardMaterial>> {
+    let ao_on = occlusion_maps_enabled();
     let mut out = Vec::with_capacity(N_COLS);
     for id in 0..N_TILES as u8 {
         let id = BlockId(id);
         for face in Face::ALL {
             let tile = images.add(build_face_texture(id, face));
-            let normal = build_face_normal_map(id, face).map(|i| images.add(i));
-            let rough = build_face_metallic_roughness(id, face).map(|i| images.add(i));
-            out.push(materials.add(block_material(id, tile, normal, rough)));
+            let m = face_maps(id, face);
+            let metallic_roughness = m.mr.map(|i| images.add(i));
+            let occlusion = match (ao_on, m.occlusion, m.mr_source) {
+                (false, _, _) => None,
+                (true, Some(i), _) => Some(images.add(i)),
+                // An ORM already sits in `Assets<Image>`, and its red channel is
+                // the occlusion map. Bind the handle a second time: one upload,
+                // two slots.
+                (true, None, MrSource::AuthoredOrm) => metallic_roughness.clone(),
+                (true, None, _) => None,
+            };
+            out.push(materials.add(block_material(
+                id,
+                tile,
+                BlockMaps {
+                    normal: m.normal.map(|i| images.add(i)),
+                    metallic_roughness,
+                    occlusion,
+                    mr_source: m.mr_source,
+                },
+            )));
         }
     }
     debug_assert_eq!(out.len(), N_COLS);
     out
+}
+
+/// Is the occlusion map bound at all?
+///
+/// The one-binary A/B for the third map, and it reads `VOXELFORGE_LOOK_GEN` — the
+/// SAME variable `look.rs` forks its generations on, deliberately, so that one
+/// value picks the whole before/after and there is no way to shoot a pair that is
+/// half of one generation and half of the other. It is read here rather than
+/// imported from `look.rs` because the shot binaries compose these modules in
+/// different subsets, and a material that will not link without the look module
+/// is a worse coupling than four lines of duplicated string matching.
+///
+/// `v1`/`v2`/`v3` ⇒ no occlusion texture (the surface rig as it shipped
+/// 2026-08-17). Unset or `v4` ⇒ bound. `VOXELFORGE_MAT_AO=0` also removes it, by
+/// driving [`build_face_occlusion`]'s strength to zero.
+fn occlusion_maps_enabled() -> bool {
+    !matches!(
+        std::env::var("VOXELFORGE_LOOK_GEN")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "v1" | "1" | "legacy" | "v2" | "2" | "before" | "v3" | "3"
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1243,6 +1484,101 @@ pub fn build_face_metallic_roughness(id: BlockId, face: Face) -> Option<Image> {
     ))
 }
 
+/// How dark a fully-occluded texel gets, as a fraction removed from the ambient
+/// term. Scaled per block by [`BlockRelief::relief`], so a material declared flat
+/// gets no AO for the same reason it gets no normal map.
+///
+/// 0.85 and not 1.0: an occlusion map multiplies the *whole* indirect term, and a
+/// texel that reaches 0 has no sky, no bounce and no IBL at all — a mortar joint
+/// that renders as a hole punched through the wall. The floor below is the second
+/// half of the same guard.
+pub const AO_MAP_STRENGTH: f32 = 0.85;
+
+/// The darkest an AO texel is allowed to get. See [`AO_MAP_STRENGTH`].
+pub const AO_MAP_FLOOR: f32 = 0.32;
+
+/// How hard a height *difference* is turned into occlusion. Heights are 0..1
+/// luminance, and the gap between a brick face and its mortar joint is ~0.15–0.3
+/// of that range, so a gain of 3 puts a deep joint at full occlusion and leaves
+/// ordinary tile noise nearly untouched.
+const AO_CAVITY_GAIN: f32 = 3.0;
+
+/// Radius of the neighbourhood a texel is compared against, in texels.
+///
+/// AO is "how much of the sky can this point see", and at tile scale the honest
+/// cheap answer is "how far below its surroundings does it sit". Radius 2 (a 5×5
+/// box) is wide enough to see across a mortar joint at 16 px/tile and narrow
+/// enough that a plank edge still reads as an edge instead of a gradient.
+const AO_RADIUS: i32 = 2;
+
+/// The per-texel ambient occlusion for one face, or `None` where the material has
+/// no relief to occlude.
+///
+/// THE THIRD MAP, AND THE ONE THE OTHER TWO CANNOT FAKE. A normal map changes
+/// which way a texel faces, so it only pays out where there is a *direct* light
+/// to catch — move into open shade and a normal-mapped wall is exactly as flat as
+/// an unmapped one, because ambient arrives from everywhere and does not care
+/// which way anything points. That is the flatness left in the frame after the
+/// normal/roughness pass: every surface not in the sun is lit by a term with no
+/// spatial structure whatsoever. Occlusion is the map that gives that term
+/// structure — the joint stays dark when the sun leaves.
+///
+/// Derived from the same height field as the other two ([`face_height`], so it
+/// reads the artist's tile where there is one) for the reason the module header
+/// gives: three maps disagreeing about where the grooves are is worse than none.
+pub fn build_face_occlusion(id: BlockId, face: Face) -> Option<Image> {
+    if flat_material() {
+        return None;
+    }
+    let strength =
+        block_relief(id).relief * AO_MAP_STRENGTH * env_scale("VOXELFORGE_MAT_AO");
+    if strength <= 0.0 {
+        return None;
+    }
+
+    let px = TILE_PX as i32;
+    let taps = ((2 * AO_RADIUS + 1) * (2 * AO_RADIUS + 1)) as f32;
+    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
+    for ly in 0..px {
+        for lx in 0..px {
+            let h = face_height(id, face, lx, ly);
+            // Wrapped, like every other sample here: the tile repeats across a
+            // merged quad, so a neighbourhood that stopped at the edge would draw
+            // a dark seam down every 16th column of a long wall.
+            let mut local = 0.0;
+            for dy in -AO_RADIUS..=AO_RADIUS {
+                for dx in -AO_RADIUS..=AO_RADIUS {
+                    local += face_height(id, face, lx + dx, ly + dy);
+                }
+            }
+            local /= taps;
+            // Only *below* its surroundings occludes. A texel standing proud is
+            // not "negatively occluded" — clamping at zero keeps this a
+            // darkening-only term, so it can never brighten past the lighting
+            // rig's own answer.
+            let cavity = ((local - h) * AO_CAVITY_GAIN).clamp(0.0, 1.0);
+            let ao = (1.0 - strength * cavity).max(AO_MAP_FLOOR);
+            let v = (ao * 255.0).round() as u8;
+            let i = (ly as usize * TILE_PX + lx as usize) * 4;
+            // Bevy reads RED. Green and blue mirror it so that a dumped PNG is a
+            // legible greyscale AO map instead of a red-tinted puzzle, and so
+            // that binding this by mistake as an `_orm` still means the same
+            // thing in the one channel that matters.
+            data[i] = v;
+            data[i + 1] = v;
+            data[i + 2] = v;
+            data[i + 3] = 255;
+        }
+    }
+    Some(image_from_rgba(
+        TILE_PX,
+        TILE_PX,
+        data,
+        TextureFormat::Rgba8Unorm,
+        voxel_sampler(true),
+    ))
+}
+
 /// Base colour for a tile — one lookup, straight off the sim palette.
 ///
 /// The lamp used to be special-cased here with its own literal, from back when
@@ -1710,12 +2046,166 @@ mod tests {
 
     #[test]
     fn block_material_carries_the_surface_and_the_texture() {
-        let m = block_material(LAMP, Handle::default(), None, None);
+        let m = block_material(LAMP, Handle::default(), BlockMaps::default());
         assert_eq!(m.emissive, block_surface(LAMP).emissive);
         assert!(m.base_color_texture.is_some());
-        let pane = block_material(BlockId::OBSIDIAN, Handle::default(), None, None);
+        let pane = block_material(BlockId::OBSIDIAN, Handle::default(), BlockMaps::default());
         assert!(matches!(pane.alpha_mode, AlphaMode::Blend));
         assert!(pane.base_color.alpha() < 1.0);
+    }
+
+    // ---- the authored-PBR contract ----
+
+    /// The trap this whole `MrSource` enum exists for.
+    ///
+    /// A roughness map is very commonly a GREY png (R=G=B=roughness), and Bevy
+    /// reads blue as metalness unconditionally and multiplies the `metallic`
+    /// factor into it. Let that factor go to 1.0 for an authored map and every
+    /// rough surface in the game turns to chrome — a bug that would arrive with
+    /// the art drop, not with the code, and so would be blamed on the art.
+    #[test]
+    fn an_authored_roughness_map_can_never_make_metal() {
+        for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
+            let m = block_material(
+                id,
+                Handle::default(),
+                BlockMaps {
+                    metallic_roughness: Some(Handle::default()),
+                    mr_source: MrSource::AuthoredRoughness,
+                    ..default()
+                },
+            );
+            assert_eq!(
+                m.metallic,
+                block_surface(id).metallic,
+                "{}: a *_r.png must not drive metalness",
+                id.name()
+            );
+            // …while its green channel IS the answer, so the factor is identity.
+            assert_eq!(
+                m.perceptual_roughness,
+                1.0,
+                "{}: an authored roughness map must not be re-scaled by the ceiling",
+                id.name()
+            );
+        }
+    }
+
+    /// The other half: a PACKED map (`_mr` / `_orm`) is authored with metalness
+    /// in blue on purpose, so there the factor must be identity too.
+    #[test]
+    fn a_packed_authored_map_drives_both_channels() {
+        for src in [MrSource::AuthoredMr, MrSource::AuthoredOrm] {
+            let m = block_material(
+                BlockId::STONE,
+                Handle::default(),
+                BlockMaps {
+                    metallic_roughness: Some(Handle::default()),
+                    mr_source: src,
+                    ..default()
+                },
+            );
+            assert_eq!(m.metallic, 1.0, "{src:?}: blue is metalness");
+            assert_eq!(m.perceptual_roughness, 1.0, "{src:?}: green is roughness");
+        }
+    }
+
+    /// The procedural map's contract is the OPPOSITE one and must not have moved:
+    /// its green is a ratio against [`roughness_ceiling`].
+    #[test]
+    fn the_procedural_map_still_carries_the_ceiling() {
+        for id in [BlockId::WOOD, BlockId::COBBLESTONE, BlockId::SNOW] {
+            let m = block_material(
+                id,
+                Handle::default(),
+                BlockMaps {
+                    metallic_roughness: Some(Handle::default()),
+                    mr_source: MrSource::Procedural,
+                    ..default()
+                },
+            );
+            assert_eq!(m.perceptual_roughness, roughness_ceiling(id), "{}", id.name());
+            assert_eq!(m.metallic, block_surface(id).metallic, "{}", id.name());
+        }
+    }
+
+    /// The occlusion map has to reach `occlusion_texture` — the slot is new, and a
+    /// map built but never bound is the single most likely way this pass ships as
+    /// a no-op.
+    #[test]
+    fn the_occlusion_map_reaches_its_slot() {
+        let m = block_material(
+            BlockId::BRICK,
+            Handle::default(),
+            BlockMaps {
+                occlusion: Some(Handle::default()),
+                ..default()
+            },
+        );
+        assert!(m.occlusion_texture.is_some());
+        assert!(block_material(BlockId::BRICK, Handle::default(), BlockMaps::default())
+            .occlusion_texture
+            .is_none());
+    }
+
+    /// AO is a DARKENING-ONLY term with a floor: it must dip below white
+    /// somewhere on a relief tile, and must never reach black anywhere, or a
+    /// mortar joint renders as a hole punched through the wall.
+    #[test]
+    fn occlusion_darkens_cavities_without_reaching_black() {
+        let img = build_face_occlusion(BlockId::BRICK, Face::Side).expect("brick has relief");
+        let red: Vec<u8> = img
+            .data
+            .as_ref()
+            .expect("occlusion map has pixel data")
+            .chunks_exact(4)
+            .map(|p| p[0])
+            .collect();
+        let (min, max) = (
+            *red.iter().min().unwrap(),
+            *red.iter().max().unwrap(),
+        );
+        assert!(min < max, "an AO map with no variation is not an AO map");
+        assert!(
+            min as f32 / 255.0 >= AO_MAP_FLOOR - 0.01,
+            "AO floor breached: {min}/255 is below {AO_MAP_FLOOR}"
+        );
+        assert!(max <= 255, "AO can only darken, never brighten past 1.0");
+    }
+
+    /// A material declared flat gets no AO, for the same reason it gets no normal
+    /// map — three maps that disagree about whether a surface has relief is worse
+    /// than none of them.
+    #[test]
+    fn a_flat_material_gets_no_occlusion() {
+        for id in [BlockId::GLASS, BlockId::OBSIDIAN] {
+            assert!(
+                build_face_normal_map(id, Face::Side).is_none(),
+                "{}: precondition — this block is declared flat",
+                id.name()
+            );
+            assert!(
+                build_face_occlusion(id, Face::Side).is_none(),
+                "{}: a flat material must not carry an occlusion map",
+                id.name()
+            );
+        }
+    }
+
+    /// Every relief block gets all THREE maps, not two. The pass is only as good
+    /// as its least-covered surface.
+    #[test]
+    fn every_relief_block_gets_all_three_maps() {
+        for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
+            if build_face_normal_map(id, Face::Side).is_none() {
+                continue; // declared flat — covered by the test above
+            }
+            assert!(
+                build_face_occlusion(id, Face::Side).is_some(),
+                "{}: has relief but no occlusion map",
+                id.name()
+            );
+        }
     }
 
     // ---- material response: relief + finish ----
@@ -1743,14 +2233,22 @@ mod tests {
                 id.name()
             );
 
-            let mapped = block_material(id, Handle::default(), None, Some(Handle::default()));
+            let mapped = block_material(
+                id,
+                Handle::default(),
+                BlockMaps {
+                    metallic_roughness: Some(Handle::default()),
+                    mr_source: MrSource::Procedural,
+                    ..default()
+                },
+            );
             assert_eq!(
                 mapped.perceptual_roughness,
                 ceiling,
                 "{}: a mapped material must carry the ceiling as its factor",
                 id.name()
             );
-            let plain = block_material(id, Handle::default(), None, None);
+            let plain = block_material(id, Handle::default(), BlockMaps::default());
             assert_eq!(
                 plain.perceptual_roughness,
                 base,
@@ -1997,7 +2495,7 @@ mod tests {
         let s = block_surface(BlockId::GLASS);
         assert!(s.alpha_blend, "glass must draw in the transparent pass");
         assert_eq!(s.alpha, 1.0, "a material-wide fade would dim the leading too");
-        let m = block_material(BlockId::GLASS, Handle::default(), None, None);
+        let m = block_material(BlockId::GLASS, Handle::default(), BlockMaps::default());
         assert!(matches!(m.alpha_mode, AlphaMode::Blend));
         assert!(!m.double_sided, "a two-sided pane double-blends with itself");
         // No normal map: a map derived from a tile whose interest is in the
