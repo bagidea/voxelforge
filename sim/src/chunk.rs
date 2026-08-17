@@ -133,7 +133,7 @@ impl ChunkData {
 
     /// Number of solid (non-air) blocks — useful as a quick sanity check.
     pub fn solid_count(&self) -> usize {
-        self.blocks.iter().filter(|b| b.is_opaque()).count()
+        self.blocks.iter().filter(|b| b.is_solid()).count()
     }
 
     #[inline]

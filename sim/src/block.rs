@@ -30,6 +30,8 @@ impl BlockId {
     pub const MOSS:        Self = Self(14);
     pub const LIMESTONE:   Self = Self(15);
     pub const LAMP:        Self = Self(16);
+    /// The first block that is solid but **not opaque** — see [`BlockId::is_opaque`].
+    pub const GLASS:       Self = Self(17);
 
     /// All placeable (non-air) blocks in palette order — used by the client HUD
     /// cycle and the editor's pick row.
@@ -50,11 +52,28 @@ impl BlockId {
         Self::MOSS,
         Self::LIMESTONE,
         Self::LAMP,
+        Self::GLASS,
     ];
 
+    /// Does this block **occupy** its cell? Everything but air.
+    ///
+    /// This is the question collision, map saving, spawn clearance and the LOD
+    /// downsample are actually asking. They asked [`BlockId::is_opaque`] until
+    /// glass arrived, because the two answers used to be the same one.
+    #[inline]
+    pub fn is_solid(self) -> bool {
+        self.0 != 0
+    }
+
+    /// Does this block **hide what is behind it**?
+    ///
+    /// The mesher's question, and only the mesher's: a face is culled when its
+    /// neighbour is opaque, and ambient occlusion is cast by opaque blocks. A
+    /// pane of glass is solid to a player and invisible to both — which is why
+    /// this is no longer just "not air".
     #[inline]
     pub fn is_opaque(self) -> bool {
-        self.0 != 0
+        self.0 != 0 && self.0 != Self::GLASS.0
     }
 
     /// Human-readable name (lowercase, no spaces) — used by map files and the HUD.
@@ -77,6 +96,7 @@ impl BlockId {
             Self::MOSS        => "moss",
             Self::LIMESTONE   => "limestone",
             Self::LAMP        => "lamp",
+            Self::GLASS       => "glass",
             _                 => "unknown",
         }
     }
@@ -117,6 +137,11 @@ impl BlockId {
             // so unifying the two changed no pixel. Awaiting Monanisa; see
             // `docs/note-to-monanisa-lamp-albedo-gap-2026-08-14.md`.
             Self::LAMP        => [255, 196, 118],   // #ffc476
+            // The pane's colour is the artist's `glass.png`, alpha and all — this
+            // entry only exists so the block is never error-magenta on the
+            // procedural fallback path (`VOXELFORGE_ATLAS_MODE=off`). A pale
+            // cool tint, because that is what an untextured pane should read as.
+            Self::GLASS       => [198, 222, 226],
             _                 => [255, 0, 255], // error magenta
         }
     }
@@ -162,6 +187,24 @@ mod tests {
                 "{} drifted off docs/block-palette.md §6.1 (#{hex:06x})",
                 id.name()
             );
+        }
+    }
+
+    /// `is_solid` and `is_opaque` used to be the same function. They are not any
+    /// more, and the split is load-bearing: collision asks the first, the mesher
+    /// asks the second, and swapping them gives you either a world you fall
+    /// through or a pane you cannot see past.
+    #[test]
+    fn glass_is_the_only_solid_block_that_is_not_opaque() {
+        assert!(BlockId::GLASS.is_solid());
+        assert!(!BlockId::GLASS.is_opaque());
+        assert!(!BlockId::AIR.is_solid());
+        assert!(!BlockId::AIR.is_opaque());
+        for &id in BlockId::ALL_PLACEABLE {
+            if id == BlockId::GLASS {
+                continue;
+            }
+            assert!(id.is_solid() && id.is_opaque(), "{} changed meaning", id.name());
         }
     }
 
