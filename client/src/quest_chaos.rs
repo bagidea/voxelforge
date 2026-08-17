@@ -100,7 +100,7 @@ const DETOUR_EAST_X: f32 = 49.5;
 /// `zone_early`: the ordinary gate route with a there-and-back leg through
 /// `guard_post_east` spliced onto the end, walked while q3 is still Locked.
 ///
-/// The first five legs are `quest.rs`'s `GATE_ROUTE` verbatim — the demo has to
+/// The first two legs are `quest.rs`'s `GATE_ROUTE` verbatim — the demo has to
 /// reach the gate square either way, and q2's `o1_gate` fires there. The
 /// detour then drops south off the plateau onto [`LANE_Z`], runs east into the
 /// region, comes back along the same lane, and climbs the ramp to end up beside
@@ -109,12 +109,9 @@ const DETOUR_EAST_X: f32 = 49.5;
 /// `scripts/act1_loop_audit.py` asserts the shared prefix still matches
 /// `GATE_ROUTE` in `quest.rs`; a route that drifts is a route that walks into a
 /// wall and blames the fix.
-pub const GATE_ROUTE_ZONE_EARLY: [(f32, f32); 10] = [
-    (GATE_X, 22.0),          // north — clear the shelter posts (x=29/35)
-    (45.0, 22.0),            // east along clear ground south of the longhouse
-    (45.0, RAMP_FOOT_Z),     // north along the open east field
-    (GATE_X, RAMP_FOOT_Z),   // west onto the ramp column
-    (GATE_X, GATE_SQUARE_Z), // up the ramp onto the gate square (q2 o1_gate)
+pub const GATE_ROUTE_ZONE_EARLY: [(f32, f32); 7] = [
+    (GATE_X, 22.0),          // north through the longhouse floor (shared leg 0)
+    (GATE_X, GATE_SQUARE_Z), // north up the ramp onto the gate square (shared leg 1; q2 o1_gate)
     (GATE_X, LANE_Z),        // drop south off the plateau onto the clear lane
     (DETOUR_EAST_X, LANE_Z), // EAST into guard_post_east — q3 is still Locked
     (GATE_X, LANE_Z),        // back west along the same proven lane
@@ -123,7 +120,7 @@ pub const GATE_ROUTE_ZONE_EARLY: [(f32, f32); 10] = [
 ];
 
 /// How many legs of [`GATE_ROUTE_ZONE_EARLY`] are `GATE_ROUTE` verbatim.
-pub const GATE_ROUTE_SHARED_LEGS: usize = 5;
+pub const GATE_ROUTE_SHARED_LEGS: usize = 2;
 
 /// `kill_early`: where the demo stands to fight Garren.
 ///
@@ -350,9 +347,12 @@ mod tests {
         assert_eq!(GATE_ROUTE_ZONE_EARLY[n - 3], (GATE_X, LANE_Z));
         assert_eq!(GATE_ROUTE_ZONE_EARLY[n - 2], (GATE_X, RAMP_FOOT_Z));
         assert_eq!(GATE_ROUTE_ZONE_EARLY[n - 1], (GATE_X, GATE_SQUARE_Z));
-        // Same column the ordinary route climbs.
-        assert_eq!(GATE_ROUTE_ZONE_EARLY[3], (GATE_X, RAMP_FOOT_Z));
-        assert_eq!(GATE_ROUTE_ZONE_EARLY[4], (GATE_X, GATE_SQUARE_Z));
+        // The shared prefix (the ordinary route) ends on the gate square, in the
+        // same column the return leg climbs back to.
+        assert_eq!(
+            GATE_ROUTE_ZONE_EARLY[GATE_ROUTE_SHARED_LEGS - 1],
+            (GATE_X, GATE_SQUARE_Z)
+        );
     }
 
     /// Every east-west leg of the detour runs on the lane that is documented

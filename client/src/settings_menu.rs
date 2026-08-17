@@ -31,7 +31,7 @@ pub struct GameSettings {
     pub graphics: LookQuality,
     /// Window mode + resolution.
     pub display: DisplaySettings,
-    /// Master / SFX / ambient(=music) / UI volumes.
+    /// Master / SFX / music / ambient / UI volumes.
     pub audio: AudioSettings,
     /// Editor/play keybindings.
     pub keybindings: KeyBindings,
@@ -658,7 +658,7 @@ fn audio_tab(
     audio: &mut AudioSettings,
 ) {
     ui.heading("Audio");
-    ui.label(egui::RichText::new("Master, SFX, music/ambient, and UI volumes.").color(theme::TEXT_MUTED));
+    ui.label(egui::RichText::new("Master, SFX, music, ambient, and UI volumes.").color(theme::TEXT_MUTED));
     ui.add_space(10.0);
 
     fn volume_slider(ui: &mut egui::Ui, label: &str, value: &mut f32) -> bool {
@@ -673,7 +673,8 @@ fn audio_tab(
     let mut dirty = false;
     dirty |= volume_slider(ui, "Master", &mut audio.master);
     dirty |= volume_slider(ui, "SFX", &mut audio.sfx);
-    dirty |= volume_slider(ui, "Music / Ambient", &mut audio.ambient);
+    dirty |= volume_slider(ui, "Music", &mut audio.music);
+    dirty |= volume_slider(ui, "Ambient", &mut audio.ambient);
     dirty |= volume_slider(ui, "UI", &mut audio.ui);
 
     if dirty {
