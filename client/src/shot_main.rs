@@ -12,6 +12,12 @@
 // `voxelforge` binary via main.rs, so the main build is the type-check. This bin
 // stays self-contained: it renders `hero.rs` only.
 
+// The file-backed block texture atlas (`block_atlas.rs`). `hero.rs` reaches it as
+// `crate::block_atlas`, so every crate root that declares `mod hero` must declare
+// this too. Bevy + serde only, no other lane.
+#[path = "block_atlas.rs"]
+mod block_atlas;
+
 #[path = "hero.rs"]
 mod hero;
 

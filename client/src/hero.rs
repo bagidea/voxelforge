@@ -49,7 +49,66 @@ use bevy::camera::{
     Camera, ClearColorConfig, Exposure, PerspectiveProjection, Projection,
 };
 
+use crate::block_atlas::{self, AtlasMode, BlockAtlas};
 use crate::Cfg;
+
+/// Binds each palette material to the textured cube mesh it should be drawn with.
+///
+/// The scene authors ~60 `put`/`fill` calls that name a MATERIAL, never a mesh —
+/// that is the vocabulary the whole room is written in, and rewriting every call
+/// site to also pass a block kind would be a 600-line diff whose only content is
+/// an argument. Keying off the material handle instead keeps the authoring
+/// untouched: the palette declares "this handle is oak planks" once, and
+/// [`VoxelGrid::flush`] looks up the right per-face cube when it spawns the cell.
+///
+/// Materials with no entry (steel, the window panes, dust motes) fall back to the
+/// plain untextured cube, which is exactly what they want.
+#[derive(Default)]
+pub struct BlockSkins {
+    mesh_for: std::collections::HashMap<AssetId<StandardMaterial>, Handle<Mesh>>,
+    /// One mesh per KIND, not per material — two materials sharing a kind share
+    /// the mesh handle, so Bevy still batches them into one draw call.
+    by_kind: std::collections::HashMap<String, Handle<Mesh>>,
+}
+
+impl BlockSkins {
+    /// Give `mat` the atlas texture and bind it to `kind`'s per-face cube.
+    ///
+    /// In `Detail` mode the material keeps its authored `base_color` and the tile
+    /// (normalised to unit mean luminance) only adds variation — the signed-off
+    /// grade is preserved by construction. In `Albedo` mode the tile IS the
+    /// colour, so `base_color` drops to white or the art set gets tinted twice.
+    fn skin(
+        &mut self,
+        atlas: &BlockAtlas,
+        tex: &Handle<Image>,
+        meshes: &mut Assets<Mesh>,
+        mats: &mut Assets<StandardMaterial>,
+        mat: &Handle<StandardMaterial>,
+        kind: &str,
+    ) {
+        let Some(uv) = atlas.face_uv(kind) else {
+            println!("ATLAS_SKIN missing kind {kind:?} — material left flat");
+            return;
+        };
+        let mesh = self
+            .by_kind
+            .entry(kind.to_string())
+            .or_insert_with(|| meshes.add(block_atlas::cube_mesh(uv)))
+            .clone();
+        if let Some(mut m) = mats.get_mut(mat) {
+            m.base_color_texture = Some(tex.clone());
+            if atlas.mode == AtlasMode::Albedo {
+                m.base_color = Color::WHITE;
+            }
+        }
+        self.mesh_for.insert(mat.id(), mesh);
+    }
+
+    fn mesh(&self, mat: &Handle<StandardMaterial>) -> Option<&Handle<Mesh>> {
+        self.mesh_for.get(&mat.id())
+    }
+}
 
 /// Warm golden-hour palette (linear-ish sRGB authoring; tone-map does the rest).
 mod pal {
@@ -163,11 +222,28 @@ pub fn setup_hero(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     cfg: Res<Cfg>,
 ) {
     // Single unit-cube mesh, instanced across the whole room (same mesh + same
     // material auto-batches, so a few thousand blocks stay cheap on a 1060).
+    // Still the fallback for anything the atlas has no kind for.
     let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
+
+    // ---- block texture atlas -------------------------------------------
+    // The room was built out of flat `base_color` cubes, which is why the
+    // signed-off beauty frame reads as untextured colour blocks: every "texture"
+    // in it is really an adjacent-cell tone pair, i.e. the block-grid checker.
+    // A failure to load is NOT fatal — the scene falls back to exactly the
+    // frame that was signed off, and says why on stdout.
+    let atlas = match block_atlas::load(None) {
+        Ok(a) => a,
+        Err(e) => {
+            println!("ATLAS load failed ({e}) — flat materials kept");
+            None
+        }
+    };
+    let mut skins = BlockSkins::default();
 
     // ---- materials ------------------------------------------------------
     let matte = |c: Color, rough: f32| StandardMaterial {
@@ -263,6 +339,45 @@ pub fn setup_hero(
         reflectance: 0.5,
         ..default()
     });
+    // ---- bind palette materials to atlas kinds --------------------------
+    // The mapping is here, next to the palette it describes, and nowhere else.
+    // A material named in this block gains real 16 px albedo; one left out keeps
+    // the flat look on purpose — `steel`, `pane_lo`/`pane_hi` and the dust motes
+    // are a mirror, a light source and sub-pixel specks, none of which want a
+    // wood grain on them.
+    //
+    // `frame` is deliberately `log`: it is the one surface in the kitchen with a
+    // real top/side split (cut end vs bark), so it is also the per-face proof
+    // that the atlas addresses three windows and not one.
+    if let Some(atlas) = atlas.as_ref() {
+        let tex = images.add(atlas.image.clone());
+        let mut bind = |mat: &Handle<StandardMaterial>, kind: &str| {
+            skins.skin(atlas, &tex, &mut meshes, &mut mats, mat, kind);
+        };
+        // wood: cabinetry, counters, tabletops
+        for m in [&wood_a, &wood_b, &counter, &counter_dk, &cabinet] {
+            bind(m, "plank");
+        }
+        for m in [&table_h, &table_d] {
+            bind(m, "plank");
+        }
+        // floor parquet — weathered board tile, distinct from interior planks
+        for m in [&plank_h, &plank_m, &plank_d, &plank_seam] {
+            bind(m, "floorboard");
+        }
+        // walls: lime plaster, the one cool-cast wall material in the set
+        for m in [&wall_a, &wall_b, &wall_a_w, &wall_b_w] {
+            bind(m, "plaster");
+        }
+        for m in [&ceramic, &ceramic_sh] {
+            bind(m, "plaster");
+        }
+        bind(&frame, "log");
+        bind(&accent, "leaves");
+        bind(&book, "roof_tile");
+        bind(&glass_teal, "glass");
+    }
+
     // Parquet plank picker: tone varies per-BOARD (constant x) via a cheap
     // deterministic hash so neighbours differ without an A/B/A/B checker, with a
     // staggered board-joint seam every ~6 tiles down each plank (real flooring
@@ -667,7 +782,7 @@ pub fn setup_hero(
     // the GPU pick. `report_voxel_overlaps` is the standing proof it stays that
     // way; the dust motes below are the only cubes that bypass the grid, and
     // they're a different mesh at fractional positions, so they can't collide.
-    let placed = grid.flush(&mut commands, &cube);
+    let placed = grid.flush(&mut commands, &cube, &skins);
     println!("VOXEL_CELLS={placed}");
 
     // ---- sun (golden key, streaming through the +X window) -------------
@@ -1159,14 +1274,31 @@ impl VoxelGrid {
     /// Spawn one cube per occupied cell and return how many. Sorted, because a
     /// `HashMap`'s iteration order is deliberately randomised per run and this
     /// whole type exists to stop render output depending on spawn order.
-    fn flush(self, commands: &mut Commands, cube: &Handle<Mesh>) -> usize {
+    fn flush(
+        self,
+        commands: &mut Commands,
+        cube: &Handle<Mesh>,
+        skins: &BlockSkins,
+    ) -> usize {
         let mut cells: Vec<((i32, i32, i32), Handle<StandardMaterial>)> =
             self.cells.into_iter().collect();
         cells.sort_by_key(|(k, _)| *k);
         let mut nocast_placed = 0usize;
+        let mut textured = 0usize;
         for ((x, y, z), mat) in &cells {
+            // The per-face cube for this material's block kind, or the plain one.
+            // Cells sharing a kind share the mesh handle, so this does not cost a
+            // draw call per cell — it costs one per (kind, material) pair, the
+            // same batching the single-cube version had.
+            let mesh = match skins.mesh(mat) {
+                Some(m) => {
+                    textured += 1;
+                    m
+                }
+                None => cube,
+            };
             let mut e = commands.spawn((
-                Mesh3d(cube.clone()),
+                Mesh3d(mesh.clone()),
                 MeshMaterial3d(mat.clone()),
                 Transform::from_xyz(*x as f32 + 0.5, *y as f32 + 0.5, *z as f32 + 0.5),
                 VoxelCell,
@@ -1180,6 +1312,11 @@ impl VoxelGrid {
         // and a render driver that greps 0 here knows the bake did not take without
         // having to eyeball a frame for it.
         println!("VOXEL_NOCAST={nocast_placed}");
+        // Printed for the same reason as VOXEL_NOCAST: "the atlas is wired" is a
+        // claim a runlog should be able to settle without eyeballing a frame. 0
+        // here with a successful ATLAS line above means the palette binding, not
+        // the loader, is what broke.
+        println!("VOXEL_TEXTURED={textured}/{}", cells.len());
         cells.len()
     }
 }

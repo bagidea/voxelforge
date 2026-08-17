@@ -11,6 +11,7 @@
 
 mod anim;
 mod audio;
+mod block_atlas;
 mod characters;
 mod combat;
 mod cutscene;

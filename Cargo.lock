@@ -5642,6 +5642,7 @@ dependencies = [
  "bevy_egui",
  "dot_vox",
  "fastrand",
+ "image",
  "serde",
  "serde_json",
  "voxelforge-sim",

@@ -68,6 +68,16 @@ path = "src/vfx_proof_main.rs"
 name = "voxelforge_enemyshot"
 path = "src/enemy_shot_main.rs"
 
+# Block-atlas showcase (Poppy) — the OUTDOOR stage the atlas is actually for.
+# `voxelforge_shot`'s hero scene is an interior kitchen, so no frame in it shows a
+# block under sky; this bin builds a grass/sand/cottage/oak stage out of the same
+# `block_atlas::load` + `cube_mesh` calls hero.rs makes. It links block_atlas.rs and
+# NOTHING else, so it can render the before/after pair while any other lane is
+# mid-edit. See src/atlas_shot_main.rs.
+[[bin]]
+name = "voxelforge_atlasshot"
+path = "src/atlas_shot_main.rs"
+
 [features]
 # PCSS soft shadows (bible pass #4 / gate G4) are behind an experimental Bevy
 # flag; on by default so the hero shot gets penumbras out of the box.
@@ -89,6 +99,12 @@ bevy_egui = "0.41"
 # Map files are plain JSON (see maps/FORMAT.md) — both already in the lock via bevy.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Block atlas tiles are PNGs decoded at startup (block_atlas.rs), before Bevy's
+# async asset pipeline can hand back pixels — the atlas has to be packed and
+# mipped synchronously to build the per-face cube meshes in the same system.
+# Already in the lock at this exact version via bevy_image, so listing it direct
+# adds a name, not a compile.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # SFX volume/pitch jitter (audio.rs) so repeated hits don't sound like a
 # stuck sample. Already resolved transitively (bevy deps), listed directly
 # since audio.rs calls it.
