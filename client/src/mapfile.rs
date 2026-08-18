@@ -67,6 +67,8 @@ pub fn block_id_from_name(name: &str) -> Option<BlockId> {
         "limestone" => BlockId::LIMESTONE,
         "lamp" => BlockId::LAMP,
         "glass" => BlockId::GLASS,
+        "water" => BlockId::WATER,
+        "metal" => BlockId::METAL,
         _ => return None,
     })
 }

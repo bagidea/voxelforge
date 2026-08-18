@@ -32,6 +32,17 @@ impl BlockId {
     pub const LAMP:        Self = Self(16);
     /// The first block that is solid but **not opaque** — see [`BlockId::is_opaque`].
     pub const GLASS:       Self = Self(17);
+    /// The second solid-but-not-opaque block, and the only **liquid**: a river.
+    ///
+    /// Solid so a player stands on its surface (same contract as the pane — the
+    /// mesher's opinion must not leak into collision), see-through so the sandy
+    /// bed under it renders. The client mesher additionally drops its top face
+    /// to 14/16 of the cell; that is presentation, not data, and lives in
+    /// `client/src/voxel.rs`.
+    pub const WATER:       Self = Self(18);
+    /// Opaque structural metal — the one block in the palette whose material
+    /// response is allowed a `metallic > 0`.
+    pub const METAL:       Self = Self(19);
 
     /// All placeable (non-air) blocks in palette order — used by the client HUD
     /// cycle and the editor's pick row.
@@ -53,6 +64,8 @@ impl BlockId {
         Self::LIMESTONE,
         Self::LAMP,
         Self::GLASS,
+        Self::WATER,
+        Self::METAL,
     ];
 
     /// Does this block **occupy** its cell? Everything but air.
@@ -73,7 +86,16 @@ impl BlockId {
     /// this is no longer just "not air".
     #[inline]
     pub fn is_opaque(self) -> bool {
-        self.0 != 0 && self.0 != Self::GLASS.0
+        self.0 != 0 && self.0 != Self::GLASS.0 && self.0 != Self::WATER.0
+    }
+
+    /// Is this the liquid? Water is the only one; the question exists apart
+    /// from "not opaque" because the client mesher treats a liquid column as
+    /// having a *surface* (top face lowered, side faces shaved to match) while
+    /// a pane keeps its full cell.
+    #[inline]
+    pub fn is_liquid(self) -> bool {
+        self.0 == Self::WATER.0
     }
 
     /// Human-readable name (lowercase, no spaces) — used by map files and the HUD.
@@ -97,6 +119,8 @@ impl BlockId {
             Self::LIMESTONE   => "limestone",
             Self::LAMP        => "lamp",
             Self::GLASS       => "glass",
+            Self::WATER       => "water",
+            Self::METAL       => "metal",
             _                 => "unknown",
         }
     }
@@ -142,6 +166,15 @@ impl BlockId {
             // procedural fallback path (`VOXELFORGE_ATLAS_MODE=off`). A pale
             // cool tint, because that is what an untextured pane should read as.
             Self::GLASS       => [198, 222, 226],
+            // Same status as the pane: Monanisa's `water.png` / `metal.png` are
+            // the real colour, and these entries exist so the procedural
+            // fallback path (`VOXELFORGE_ATLAS_MODE=off`) paints a believable
+            // deep-water blue and a bright worked metal instead of magenta.
+            // Water is the sunset-valley river blue-green, dark enough that a
+            // 0.6-alpha material over it still reads as water; metal is a warm
+            // unweathered steel bright enough to take the key.
+            Self::WATER       => [38, 92, 118],    // #265c76
+            Self::METAL       => [178, 174, 166],  // #b2aea6
             _                 => [255, 0, 255], // error magenta
         }
     }
@@ -193,19 +226,42 @@ mod tests {
     /// `is_solid` and `is_opaque` used to be the same function. They are not any
     /// more, and the split is load-bearing: collision asks the first, the mesher
     /// asks the second, and swapping them gives you either a world you fall
-    /// through or a pane you cannot see past.
+    /// through or a pane you cannot see past. Water joins glass in the
+    /// solid-but-see-through pair — a river you stand on and see the bed of.
     #[test]
-    fn glass_is_the_only_solid_block_that_is_not_opaque() {
+    fn exactly_glass_and_water_are_solid_but_not_opaque() {
         assert!(BlockId::GLASS.is_solid());
         assert!(!BlockId::GLASS.is_opaque());
+        assert!(BlockId::WATER.is_solid());
+        assert!(!BlockId::WATER.is_opaque());
         assert!(!BlockId::AIR.is_solid());
         assert!(!BlockId::AIR.is_opaque());
         for &id in BlockId::ALL_PLACEABLE {
-            if id == BlockId::GLASS {
+            if id == BlockId::GLASS || id == BlockId::WATER {
                 continue;
             }
             assert!(id.is_solid() && id.is_opaque(), "{} changed meaning", id.name());
         }
+    }
+
+    /// The liquid is a class of exactly one today, and the questions "is it the
+    /// liquid" and "can you see through it" must not collapse into each other:
+    /// the mesher lowers a liquid's surface and leaves a pane's cell whole.
+    #[test]
+    fn water_is_the_only_liquid_and_it_is_not_opaque() {
+        assert!(BlockId::WATER.is_liquid());
+        for &id in BlockId::ALL_PLACEABLE {
+            assert_eq!(
+                id.is_liquid(),
+                id == BlockId::WATER,
+                "{} has the wrong liquid answer",
+                id.name()
+            );
+        }
+        assert!(BlockId::WATER.is_liquid() && !BlockId::WATER.is_opaque());
+        // Metal is an ordinary opaque solid that merely responds like a metal.
+        assert!(BlockId::METAL.is_solid() && BlockId::METAL.is_opaque());
+        assert!(!BlockId::METAL.is_liquid());
     }
 
     /// The magenta arm is the "somebody added a BlockId and forgot its colour"

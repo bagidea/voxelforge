@@ -66,6 +66,9 @@ build a level.
 | `moss`         | 14  | Creeping green ground cover. |
 | `limestone`    | 15  | Light sedimentary stone.     |
 | `lamp`         | 16  | Emissive lantern block.      |
+| `glass`        | 17  | See-through pane.            |
+| `water`        | 18  | River block — solid to stand on, see-through; the mesher draws its surface 2/16 below the cell top. |
+| `metal`        | 19  | Structural metal (metallic PBR response). |
 
 Names are case-insensitive on load.
 

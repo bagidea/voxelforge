@@ -77,8 +77,8 @@ use crate::block_atlas::{self, Face, TileSet};
 pub const LAMP: BlockId = BlockId::LAMP;
 
 /// Number of block types the texture tables cover — the 16 sim blocks, [`LAMP`],
-/// and [`BlockId::GLASS`].
-const N_TILES: usize = 18;
+/// [`BlockId::GLASS`], [`BlockId::WATER`] and [`BlockId::METAL`].
+const N_TILES: usize = 20;
 
 /// Edge length of a **procedurally baked** tile, and nothing else.
 ///
@@ -408,6 +408,35 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
             alpha_blend: !glass_opaque(),
             ..default()
         },
+        // The river. The OPPOSITE transparency contract from the pane: the
+        // artist's `water.png` is an opaque tile, so the see-through comes from
+        // a material-wide alpha here — which is correct for water, because
+        // water has no leading or mullions to preserve; what must survive the
+        // fade is the SPECULAR, and a PBR specular lives above the diffuse term
+        // and does not fade with `base_color.a`. Near-mirror roughness so the
+        // low sun lays a glitter path down the channel, reflectance high for
+        // the same reason. The bed under it renders because water is not
+        // opaque (see `hides`), and the surface sits 2/16 below the cell top
+        // (see [`WATER_TOP_OFFSET`]).
+        BlockId::WATER => BlockSurface {
+            perceptual_roughness: 0.06,
+            metallic: 0.0,
+            reflectance: 0.55,
+            alpha: 0.62,
+            alpha_blend: true,
+            ..default()
+        },
+        // The one block in the palette allowed to answer "metal" — the whole
+        // reason [`MrSource`] distinguishes spellings is so this can exist
+        // without every grey `*_r.png` in the folder turning to chrome with it.
+        // See `authored_map`: the roughness spelling's blue channel is authored
+        // FROM this table, never trusted from the file.
+        BlockId::METAL => BlockSurface {
+            perceptual_roughness: 0.34,
+            metallic: 1.0,
+            reflectance: 0.60,
+            ..default()
+        },
         LAMP => BlockSurface {
             perceptual_roughness: 0.45,
             reflectance: 0.30,
@@ -469,6 +498,14 @@ pub fn block_relief(id: BlockId) -> BlockRelief {
         // tile whose interest is in the ALPHA channel would read the transparent
         // pane as a hole and emboss its own frame. Flat, no map.
         BlockId::GLASS => g(0.00, 0.00),
+        // The river's shape is the ripples in the artist's `water_n.png`, which
+        // `face_maps` binds as an AUTHORED map independent of this table — a
+        // derived relief derived from the albedo's luminance would fight the
+        // drawn ripples instead of following them. Derived: flat, like a pane.
+        BlockId::WATER => g(0.00, 0.04),
+        // Sheet metal: drawn curvature at a modest amplitude, and a finish that
+        // swings between brushed and polished — the widest tell of the family.
+        BlockId::METAL => g(0.30, 0.10),
         // STONE, CLAY — matte mineral.
         _ => g(0.55, 0.10),
     }
@@ -682,10 +719,26 @@ fn authored_map(id: BlockId, face: Face, suffixes: &[&str]) -> Option<Image> {
                     continue;
                 }
                 println!("BLOCK_PBR authored {} {w}x{h}", path.display());
+                let mut raw = rgba.into_raw();
+                // The roughness-only spelling authors ONE channel. Bevy reads
+                // blue as metalness unconditionally, and a grey `*_r.png`
+                // (R=G=B) would silently make [`BlockId::METAL`]'s metalness
+                // track its own roughness — polished patches turning to chrome
+                // exactly where they are smoothest. So blue is authored HERE
+                // from the surface table, never trusted from the file: for
+                // every non-metal this writes 0 (byte-identical to what a
+                // careful artist ships anyway), and for METAL it writes the
+                // one 1.0 the table grants.
+                if suffixes == ROUGHNESS_SUFFIXES {
+                    let b = (block_surface(id).metallic.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    for p in raw.chunks_exact_mut(4) {
+                        p[2] = b;
+                    }
+                }
                 return Some(image_from_rgba(
                     w as usize,
                     h as usize,
-                    rgba.into_raw(),
+                    raw,
                     TextureFormat::Rgba8Unorm,
                     voxel_sampler(true),
                 ));
@@ -807,6 +860,13 @@ pub fn block_material(id: BlockId, texture: Handle<Image>, maps: BlockMaps) -> S
 /// remove. Under [`glass_opaque`] the pane is opaque again and casts again, so
 /// the A/B lever stays honest here too.
 pub fn casts_shadow(id: BlockId) -> bool {
+    // Water, like the pane, occludes almost nothing a shadow map can express —
+    // a river's shadow is a black stripe down a valley, and the sunset-on-water
+    // read depends on the sun reaching it. Unlike the pane there is no A/B
+    // lever: an opaque river was never a shipped look to preserve.
+    if id == BlockId::WATER {
+        return false;
+    }
     id != BlockId::GLASS || glass_opaque()
 }
 
@@ -934,6 +994,17 @@ fn occlusion_maps_enabled() -> bool {
 // meshing
 // ---------------------------------------------------------------------------
 
+/// How far the surface of a water column sits below the top of its cell, in
+/// 1/16ths of a block (2 ⇒ the meniscus is at 14/16 = 0.875).
+///
+/// The classic voxel-water read: a full cube of water next to a full cube of
+/// bank is a hard step, and the eye refuses it. Two sixteenths is deep enough
+/// to read as a surface from any angle and shallow enough that a submerged
+/// column (water above) still joins its neighbour without a seam — a cell
+/// with water above it carries offset 0, so the shaved surface quad and the
+/// full-height column below it tile exactly.
+const WATER_TOP_OFFSET: u8 = 2;
+
 /// One exposed face cell in a slice mask.
 ///
 /// `id` is 0 for "no face", `+block` for a front (+q) face and `-block` for a
@@ -944,10 +1015,18 @@ fn occlusion_maps_enabled() -> bool {
 /// Without it a wall merges into one quad, the corner darkening gets averaged
 /// across the whole wall, and the AO silently disappears exactly where it was
 /// supposed to appear.
+///
+/// `top` is [`WATER_TOP_OFFSET`] for the face of a surface water cell and 0 for
+/// everything else — water only, never glass, because a pane keeps its whole
+/// cell while a liquid has a surface to drop. It rides the SAME equality trick
+/// as `ao`: a surface cell and a submerged cell of one column must never merge
+/// (their side quads end at different heights), and comparing the offset here
+/// is what keeps them apart.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct MaskFace {
     id: i32,
     ao: [u8; 4],
+    top: u8,
 }
 
 /// Occlusion level 0..=3 for one face corner, from its two edge neighbours and
@@ -1080,20 +1159,34 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                     let b = chunk.get(x[0] + q[0], x[1] + q[1], x[2] + q[2]);
                     // A face exists where a block meets something that does not
                     // hide it. `a != b` is what stops a pane-to-pane join from
-                    // drawing two internal surfaces inside a run of glass.
+                    // drawing two internal surfaces inside a run of glass — and,
+                    // now, inside a run of water: river-to-river faces are the
+                    // same no-draw.
                     //
-                    // At most one side can win: if both are solid, the loser is
-                    // always the one facing an opaque neighbour, and two solid
-                    // non-hiding blocks of DIFFERENT types would be the only way
-                    // to tie — which needs a second transparent block type to
-                    // exist. When one arrives, this is the line that has to grow
-                    // a second mask layer; until then the assert below holds it.
+                    // At most one side can win when the tiebreak has an opinion:
+                    // if both are solid, the loser is the one facing an opaque
+                    // neighbour. The one tie left is two DIFFERENT see-through
+                    // blocks meeting — a pane against a river — where the mask
+                    // genuinely holds one face and `a`'s wins. The visible cost
+                    // is a missing pane face at a glass/water contact, a rare
+                    // adjacency no shipped map contains; growing a second mask
+                    // layer for it is not worth the merge-key complexity today.
                     let show_a = a.is_solid() && !hides(b) && a != b;
                     let show_b = b.is_solid() && !hides(a) && a != b;
-                    debug_assert!(
-                        !(show_a && show_b),
-                        "two transparent block types meet at {x:?} — the mask only holds one face"
-                    );
+                    if show_a && show_b {
+                        // The one tie the mask cannot hold both of, and it is
+                        // now a real state rather than an impossible one: two
+                        // DIFFERENT see-through blocks meeting — a pane against
+                        // a river. `a`'s face wins and the pane's is dropped;
+                        // the visible cost is one missing face at a
+                        // glass/water contact, an adjacency no shipped map
+                        // contains. Anything else reaching here is a bug in
+                        // this predicate, not a supported tie.
+                        debug_assert!(
+                            !hides(a) && !hides(b),
+                            "unexpected double-show at {x:?} — {a:?} vs {b:?}"
+                        );
+                    }
 
                     mask[n] = if !show_a && !show_b {
                         MaskFace::default()
@@ -1101,10 +1194,14 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                         // Which side draws decides both the winding and which
                         // layer the occluders are sampled from: AO is cast by
                         // the blocks sitting in front of the face, never behind.
-                        let (id, air_d) = if show_a {
-                            (a.0 as i32, x[d] + 1)
+                        let (id, air_d, cell) = if show_a {
+                            (a.0 as i32, x[d] + 1, [x[0], x[1], x[2]])
                         } else {
-                            (-(b.0 as i32), x[d])
+                            (
+                                -(b.0 as i32),
+                                x[d],
+                                [x[0] + q[0], x[1] + q[1], x[2] + q[2]],
+                            )
                         };
                         let solid = |du: i32, dv: i32| -> bool {
                             let mut p = [0i32; 3];
@@ -1121,7 +1218,22 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                             ao_corner(solid(1, 0), solid(0, 1), solid(1, 1)),
                             ao_corner(solid(-1, 0), solid(0, 1), solid(-1, 1)),
                         ];
-                        MaskFace { id, ao }
+                        // A liquid's face knows whether it belongs to a surface
+                        // cell: submerged cells (water directly above) carry 0
+                        // so their sides run full height and join the column
+                        // above, surface cells carry [`WATER_TOP_OFFSET`] so the
+                        // quad's top edge comes down to the meniscus. Out-of-
+                        // chunk reads are AIR by `ChunkData::get`, which is the
+                        // right answer at a chunk-top boundary too.
+                        let top = if id.unsigned_abs() as u8 == BlockId::WATER.0 {
+                            match chunk.get(cell[0], cell[1] + 1, cell[2]) {
+                                BlockId::WATER => 0,
+                                _ => WATER_TOP_OFFSET,
+                            }
+                        } else {
+                            0
+                        };
+                        MaskFace { id, ao, top }
                     };
                     n += 1;
                 }
@@ -1159,10 +1271,41 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                         du[u] = w as f32;
                         let mut dv = [0f32; 3];
                         dv[v] = h as f32;
-                        let p = [x[0] as f32, x[1] as f32, x[2] as f32];
+                        let mut p = [x[0] as f32, x[1] as f32, x[2] as f32];
 
                         let front = c.id > 0;
                         let block = c.id.unsigned_abs() as u8;
+
+                        // A water surface quad sits below the cell top. The top
+                        // face's plane drops by the offset; a side face's upper
+                        // edge comes down with it, so the shoreline shows the
+                        // bank's side wall standing above the waterline instead
+                        // of water meeting the world at a hard glass edge.
+                        //
+                        // `du`/`dv` each carry exactly one nonzero component,
+                        // and for the two side sweeps that component is the
+                        // vertical extent (d == 0 ⇒ u is Y, d == 2 ⇒ v is Y) —
+                        // shaving it lowers only the quad's top edge, leaving
+                        // the bottom edge on the bed where the column below
+                        // continues. Safe against merging because the mask
+                        // compares `top` (see [`MaskFace`]), and a merged run
+                        // can never straddle surface and submerged cells: two
+                        // vertically adjacent surface cells cannot exist, since
+                        // the cell above a surface cell is air by definition.
+                        let woff = if block == BlockId::WATER.0 {
+                            c.top as f32 / 16.0
+                        } else {
+                            0.0
+                        };
+                        if woff > 0.0 {
+                            if d == 1 && front {
+                                p[1] -= woff;
+                            } else if d == 0 {
+                                du[1] -= woff;
+                            } else if d == 2 {
+                                dv[1] -= woff;
+                            }
+                        }
                         let mut nrm = [0f32; 3];
                         nrm[d] = if front { 1.0 } else { -1.0 };
 
@@ -2216,10 +2359,135 @@ mod tests {
             lamp.emissive.red > 1.0,
             "a lantern that never exceeds 1.0 is invisible to bloom"
         );
-        // Nothing in this palette is a metal.
-        for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
+        // Exactly one block in the palette is a metal, on purpose.
+        assert_eq!(
+            block_surface(BlockId::METAL).metallic,
+            1.0,
+            "metal is the point of the block"
+        );
+        for id in BlockId::ALL_PLACEABLE
+            .iter()
+            .copied()
+            .chain([LAMP])
+            .filter(|id| *id != BlockId::METAL)
+        {
             assert_eq!(block_surface(id).metallic, 0.0, "{} is not metal", id.name());
         }
+    }
+
+    // ---- water: a river has a surface, and you can see its bed ----
+
+    /// Positions and normals of a split mesh, as parallel quad groups.
+    fn quad_geometry(mesh: &Mesh) -> Vec<([f32; 3], [[f32; 3]; 4])> {
+        let pos = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(v)) => v.clone(),
+            _ => panic!("no positions"),
+        };
+        let nrm = normals(mesh);
+        pos.chunks(4)
+            .zip(nrm.chunks(4))
+            .map(|(p, n)| (n[0], [p[0], p[1], p[2], p[3]]))
+            .collect()
+    }
+
+    /// The load-bearing geometry of [`WATER_TOP_OFFSET`]: a lone surface cell's
+    /// mesh must stop 2/16 short of the cell top — top face AND side walls, or
+    /// the river reads as a hard glass step against its bank.
+    #[test]
+    fn a_surface_water_cell_stops_below_the_cell_top() {
+        let mut c = ChunkData::empty(ChunkPos::new(0, 0, 0));
+        c.set(8, 8, 8, BlockId::WATER);
+        let parts = greedy_mesh_chunk_split(&c);
+        let (_, mesh, quads) = parts
+            .iter()
+            .find(|(k, _, _)| k.block == BlockId::WATER)
+            .expect("water mesh");
+        assert_eq!(*quads, 6, "a lone cell draws six faces");
+        let want = 8.0 + 1.0 - WATER_TOP_OFFSET as f32 / 16.0;
+        let max_y = quad_geometry(mesh)
+            .iter()
+            .flat_map(|(_, p)| p.iter())
+            .map(|v| v[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            (max_y - want).abs() < 1e-4,
+            "water's highest vertex is {max_y}, the surface should sit at {want}"
+        );
+        // And the bottom cap stays on the bed — the shave is top-only.
+        let min_y = quad_geometry(mesh)
+            .iter()
+            .flat_map(|(_, p)| p.iter())
+            .map(|v| v[1])
+            .fold(f32::INFINITY, f32::min);
+        assert!((min_y - 8.0).abs() < 1e-4, "the bed edge moved: {min_y}");
+    }
+
+    /// A column keeps one surface: the submerged cells run full height and the
+    /// surface cell's shaved sides land exactly on top of them, with no
+    /// internal water-to-water face in between.
+    #[test]
+    fn a_water_column_has_one_surface_and_no_internal_faces() {
+        let mut c = ChunkData::empty(ChunkPos::new(0, 0, 0));
+        for y in 7..9 {
+            c.set(8, y, 8, BlockId::WATER);
+        }
+        let parts = greedy_mesh_chunk_split(&c);
+        let (key, mesh, quads) = parts
+            .iter()
+            .find(|(k, _, _)| k.block == BlockId::WATER)
+            .expect("water mesh");
+        assert_eq!(key.block, BlockId::WATER);
+        // 1×1×2 bar: 2 caps + 4 sides = 6 quads, exactly like stone or glass.
+        assert_eq!(*quads, 6, "internal water faces were emitted");
+        // The sides are two quads (full-height cell below, shaved cell above);
+        // the shaved one must END at 14/16 above the bed cell, not leave a gap.
+        let top = 9.0 - WATER_TOP_OFFSET as f32 / 16.0;
+        let seam = 8.0; // boundary between the submerged and surface cells
+        let mut saw_full = false;
+        let mut saw_shaved = false;
+        for (n, p) in quad_geometry(mesh) {
+            if n[1].abs() > 0.5 {
+                continue; // caps
+            }
+            let ys: Vec<f32> = p.iter().map(|v| v[1]).collect();
+            if ys.iter().all(|y| (*y - seam).abs() < 1e-4 || (*y - (seam - 1.0)).abs() < 1e-4) {
+                saw_full = true; // spans [7, 8]
+            } else if ys.contains(&top) && ys.contains(&seam) {
+                saw_shaved = true; // spans [8, 8.875]
+            }
+        }
+        assert!(saw_full, "the submerged cell's side must run full height");
+        assert!(saw_shaved, "the surface cell's side must land on the meniscus");
+    }
+
+    /// The see-through claim, the reason `is_opaque` grew a second exception:
+    /// the sand under a river keeps its top face, and the river above it draws
+    /// no face against the sand (nothing to see there) — you look THROUGH the
+    /// water at the bed, not at a hole.
+    #[test]
+    fn water_does_not_hide_the_bed_below_it() {
+        let mut c = ChunkData::empty(ChunkPos::new(0, 0, 0));
+        c.set(8, 8, 8, BlockId::SAND);
+        c.set(8, 9, 8, BlockId::WATER);
+        let parts = greedy_mesh_chunk_split(&c);
+        let quads = |b: BlockId| -> usize {
+            parts
+                .iter()
+                .filter(|(k, _, _)| k.block == b)
+                .map(|(_, _, q)| q)
+                .sum()
+        };
+        // The sand keeps all six faces — a naive `is_solid` neighbour test
+        // would cull its top and leave a hole under the river.
+        assert_eq!(quads(BlockId::SAND), 6, "the water culled the bed below it");
+        // The water loses only its bottom face (against the sand); its top is
+        // the lowered surface and its four sides stand against air.
+        assert_eq!(quads(BlockId::WATER), 5);
+        // And the material actually blends, or the geometry is a lie.
+        let s = block_surface(BlockId::WATER);
+        assert!(s.alpha_blend && s.alpha < 1.0);
+        assert!(!casts_shadow(BlockId::WATER), "a river must not shade its valley");
+        assert!(casts_shadow(BlockId::METAL), "a metal block is an occluder");
     }
 
     #[test]
@@ -2511,11 +2779,14 @@ mod tests {
         );
     }
 
-    /// The grade in the material table is a decision per material, and two of
+    /// The grade in the material table is a decision per material, and some of
     /// its entries are load-bearing zeroes: a bumped pane frosts over and loses
-    /// its mirror, and a glowing surface has no shading to modulate.
+    /// its mirror, a glowing surface has no shading to modulate, and water's
+    /// shape belongs to its authored ripples, not a derived bump. Rather than
+    /// pin the flat set by hand (it drifted stale the moment glass landed), the
+    /// derived maps are checked AGAINST the tables that drive them.
     #[test]
-    fn deliberately_flat_materials_get_no_map() {
+    fn derived_maps_follow_the_relief_tables() {
         assert!(
             build_face_normal_map(BlockId::OBSIDIAN, Face::Side).is_none(),
             "bumping the pane only frosts it and kills the reflection"
@@ -2528,18 +2799,27 @@ mod tests {
             build_face_metallic_roughness(LAMP, Face::Side).is_none(),
             "a glowing surface has no shading to modulate"
         );
-        // Everything else in the palette has both.
-        for id in BlockId::ALL_PLACEABLE
-            .iter()
-            .copied()
-            .filter(|id| *id != BlockId::OBSIDIAN)
-        {
-            assert!(
-                build_face_normal_map(id, Face::Side).is_some()
-                    && build_face_metallic_roughness(id, Face::Side).is_some(),
-                "{} lost its material response",
+        for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
+            let r = block_relief(id);
+            assert_eq!(
+                build_face_normal_map(id, Face::Side).is_some(),
+                r.relief > 0.0,
+                "{}: normal map disagrees with its relief grade",
                 id.name()
             );
+            assert_eq!(
+                build_face_metallic_roughness(id, Face::Side).is_some(),
+                r.roughness_spread > 0.0,
+                "{}: roughness map disagrees with its finish spread",
+                id.name()
+            );
+            if r.relief > 0.0 {
+                assert!(
+                    build_face_occlusion(id, Face::Side).is_some(),
+                    "{}: has relief but no occlusion map",
+                    id.name()
+                );
+            }
         }
     }
 
@@ -2730,6 +3010,8 @@ mod tests {
             BlockId::LEAVES,
             BlockId::LIMESTONE,
             BlockId::GLASS,
+            BlockId::WATER,
+            BlockId::METAL,
         ] {
             assert!(
                 kinds.contains_key(atlas_kind(id)),
