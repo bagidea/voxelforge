@@ -90,7 +90,10 @@ Q_CHROMA_MAX = 0.055  # ...or its chromaticity spread says it spans 2 materials
 
 # Published numbers this file must reproduce before it is allowed to judge.
 # Source: `python scripts/grade_axes.py <ref>` -- see the control block.
-C0_REF = os.path.join(ROOT, "_fl_v4_20260818", "golden-beauty-shot-ref-nohud2.png")
+# Tracked copy (md5 e3eb80a42bccc81721f6b2cf6f6a71f9) -- byte-identical to the
+# _fl_v4_20260818/ working copy this used to point at, which .gitignore:166 (`_*/`)
+# eats, so control() died on a clean clone.
+C0_REF = os.path.join(ROOT, "docs", "assets", "golden-beauty-shot-ref.png")
 C0_EXPECT = {"micro_rms": 5.24, "p95": 165.83}
 C0_TOL = 0.02
 
@@ -343,6 +346,15 @@ def _write_synth(outdir):
         p = os.path.join(outdir, "synth_%s.png" % kind)
         Image.fromarray(_synth(kind)).save(p)
         paths[kind] = p
+    # A null PARTNER for 'flat': the same plate re-"captured". Not a different
+    # scene and not the same bytes -- judge() refuses a byte-identical null,
+    # correctly, because that is not a noise floor. +-1 LSB of dither is what a
+    # re-run of one binary under one env actually looks like.
+    base = np.asarray(Image.open(paths["flat"]).convert("RGB"), dtype=np.float32)
+    jit = np.random.default_rng(11).normal(0.0, 0.8, base.shape).astype(np.float32)
+    p = os.path.join(outdir, "synth_flat_null.png")
+    Image.fromarray(np.clip(base + jit, 0, 255).astype(np.uint8)).save(p)
+    paths["flat_null"] = p
     return paths
 
 
@@ -350,8 +362,7 @@ def _write_synth(outdir):
 # control mode
 # ---------------------------------------------------------------------------
 GOLDEN = [
-    ("golden-beauty-ref", os.path.join(ROOT, "_fl_v4_20260818",
-                                       "golden-beauty-shot-ref-nohud2.png")),
+    ("golden-beauty-ref", C0_REF),
     ("wide-hero-final", os.path.join(ROOT, "docs", "assets", "wide-hero-final.png")),
     ("outdoor-noon_after", os.path.join(ROOT, "docs", "assets", "look",
                                         "outdoor-noon_after.png")),
@@ -359,6 +370,9 @@ GOLDEN = [
                                           "evening-raking_after.png")),
     ("night-firelit_after", os.path.join(ROOT, "docs", "assets", "look",
                                          "night-firelit_after.png")),
+    # NOT a render -- a 1322x11500 contact board of ~40 panels + chrome. It rides
+    # in C1 as a non-degeneracy row ONLY (does the metric return a real number on
+    # accepted work). Never calibrate a per-frame threshold on it.
     ("beauty-board", os.path.join(ROOT, "docs", "assets", "beauty-board.png")),
 ]
 
@@ -484,6 +498,20 @@ def control():
     print("       only because both plates use the SAME albedo tiles -- which is")
     print("       what chroma_std + one-lever provenance are there to prove.")
 
+    # -- C6: the PASS path itself. A gate nobody has watched pass is not a gate --
+    # C3 proves the METRIC moves; C6 drives the whole judge() -- criteria, null
+    # floor, exit code -- on plates it must approve, so "everything FAILs" can
+    # never be mistaken for a verdict.
+    print("\nC6  END-TO-END: judge(flat -> relief) against a jittered null must"
+          "\n    PASS and exit 0 -- proof the criteria are satisfiable")
+    print("-" * 78)
+    rc = judge(sp["flat"], sp["relief"], null=(sp["flat"], sp["flat_null"]),
+               out=os.path.join(out, "poscontrol"), labels=("flat", "relief"))
+    print("-" * 78)
+    print("  [%s] judge() exit %d (want 0)" % ("PASS" if rc == 0 else "FAIL", rc))
+    if rc != 0:
+        fails.append("C6 judge cannot pass its own positive control (exit %d)" % rc)
+
     print("\n" + "=" * 78)
     if fails:
         print("CONTROL FAILED -- fix the metric before judging anything:")
@@ -492,7 +520,8 @@ def control():
         return 1
     print("CONTROL PASSED -- the instrument reproduces a published number, scores")
     print("approved frames as sane, is deterministic, moves on planted relief and")
-    print("does not move on a coloured albedo change.")
+    print("does not move on a coloured albedo change -- and its own gate is")
+    print("satisfiable end to end (C6 exit 0).")
     json.dump({k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
                for k, v in list(rows.items()) + list(sy.items())},
               open(os.path.join(out, "control.json"), "w"), indent=2)
@@ -572,6 +601,17 @@ def judge(before, after, null=None, out=None, labels=("off", "on")):
         print("  |d %-12s| = %.5f" % (k, floor[k]))
     print("  |d per-tile shade_resid| median = %.5f" % floor_tile)
 
+    # A floor shot in a different scene is not this scene's floor. Cannot be
+    # proven wrong from the pixels, so this warns rather than refuses -- but a
+    # margin inside ~2x of a BORROWED floor is not a result, it is a coin flip.
+    def _stem(p):
+        return os.path.basename(p).rsplit(".", 1)[0].rsplit("_", 1)[0]
+    borrowed = _stem(after) not in (_stem(null[0]), _stem(null[1]))
+    if borrowed:
+        print("  !! BORROWED FLOOR: null is '%s', plates are '%s'. Any M1/M3/M4"
+              "\n     margin near the floor below is UNDETERMINED, not a verdict."
+              % (_stem(null[0]), _stem(after)))
+
     if floor["shade_resid"] == 0.0 and floor["micro_rms"] == 0.0:
         print("\nREFUSED: the null pair is byte-identical -- that is not a capture"
               "\nnoise floor, it is the same file twice.")
@@ -582,15 +622,21 @@ def judge(before, after, null=None, out=None, labels=("off", "on")):
     verdicts = []
 
     def row(name, ok, detail, hard=True):
-        verdicts.append((name, ok, hard))
+        verdicts.append((name, ok, hard, detail))
         print("  [%s] %-34s %s" % ("PASS" if ok else ("FAIL" if hard else "ADV"),
                                    name, detail))
 
     print("\n=== CRITERIA (differential -- this framing has no absolute target) ===")
-    m1 = d["shade_resid"] > 3 * floor["shade_resid"] and share_up >= 60.0
+    # Both halves of M1 must come from the SAME reduction. The per-plate medians
+    # are taken over each plate's OWN qualifying tiles (88 vs 89, 79 vs 82...),
+    # so B-A of them subtracts two different populations -- and it is not the
+    # number the control calibrated: C3's +0.1038 is the PAIRED median. Gate the
+    # paired median against the paired null floor; per-plate stays printed above.
+    med_tile = float(np.median(d_tile))
+    m1 = med_tile > 3 * floor_tile and share_up >= 60.0
     row("M1 relief registers", m1,
-        "d %+.4f vs 3x floor %.4f, %.1f%% of tiles rose (need >=60%%)"
-        % (d["shade_resid"], 3 * floor["shade_resid"], share_up))
+        "paired median %+.4f vs 3x paired floor %.4f, %.1f%% of tiles rose"
+        " (need >=60%%)" % (med_tile, 3 * floor_tile, share_up))
 
     # M2 needs a floor that cannot collapse to zero. A null pair whose chroma
     # happens to land on the same value would otherwise make this clause
@@ -629,7 +675,7 @@ def judge(before, after, null=None, out=None, labels=("off", "on")):
         " legitimately reduce highlights" % (d["spec_cov"], 3 * floor["spec_cov"]),
         hard=False)
 
-    hard_fail = [n for n, ok, hard in verdicts if hard and not ok]
+    hard_fail = [n for n, ok, hard, _ in verdicts if hard and not ok]
     print()
     if hard_fail:
         print("VERDICT: FAIL -- %s" % ", ".join(hard_fail))
@@ -643,6 +689,13 @@ def judge(before, after, null=None, out=None, labels=("off", "on")):
                 "after": {k: v for k, v in B.items() if not k.startswith("_")},
                 "delta": d, "floor": floor, "floor_tile": floor_tile,
                 "tiles_both": int(both.sum()), "share_up": share_up,
+                "paired_median": med_tile,
+                "null": [os.path.basename(p) for p in null],
+                # carried so a caption generated off this file cannot quietly
+                # drop the caveat the run itself printed
+                "borrowed_floor": borrowed,
+                "criteria": [{"name": n, "ok": bool(ok), "hard": bool(h),
+                              "detail": det} for n, ok, h, det in verdicts],
                 "verdict": "FAIL" if hard_fail else "PASS",
                 "failed": hard_fail}
         p = os.path.join(out, "matmaps-verdict.json")

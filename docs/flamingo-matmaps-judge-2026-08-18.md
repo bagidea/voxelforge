@@ -1,4 +1,4 @@
-# ตัวตัดสิน matmaps on-vs-off — calibrate เสร็จ พร้อมรับรูปของ Poppy
+# ตัวตัดสิน matmaps on-vs-off — calibrate เสร็จ + ตัดสินเพลตจริงแล้ว
 
 **Flamingo · 2026-08-18** · สคริปต์: `scripts/_fl_matmaps_judge.py` · control log ดิบทั้งใบอยู่ใน[ภาคผนวก](#ภาคผนวก--control-log-ดิบ-ทั้งใบ)ท้ายเอกสาร
 
@@ -13,8 +13,8 @@
 | | |
 |---|---|
 | **สคริปต์** | `scripts/_fl_matmaps_judge.py` — `control` (calibrate ตัวเอง) และ `judge BEFORE.png AFTER.png` |
-| **control** | **PASS ทั้งชุด (C0–C5) · exit 0** — ทวนเลขที่ `grade_axes.py` เผยแพร่ไว้ได้ตรง, ให้คะแนนเฟรมที่อนุมัติแล้วเป็นเลขปกติ, ขยับเมื่อปลูก relief จริง, ไม่ขยับเมื่อเปลี่ยนแค่ albedo |
-| **ติดอยู่ 1 อย่าง** | **ยังตัดสินไม่ได้จนกว่าจะมี null pair** — ต้องยิง `after` ซ้ำอีกใบใต้ env เดิม (เพิ่ม 1 บรรทัดใน `_poppy_matmaps/shoot_ab.sh`) ไม่มีพื้นเสียง ก็แยก "+0.4% เพราะ normal map" กับ "+0.4% เพราะ renderer หายใจ" ไม่ออก. สคริปต์จะ **exit 2 = REFUSED TO GATE** ไม่แอบให้ผ่าน |
+| **control** | **PASS ทั้งชุด (C0–C6) · exit 0 จาก clone เปล่า** — ทวนเลขที่ `grade_axes.py` เผยแพร่ไว้ได้ตรง, ให้คะแนนเฟรมที่อนุมัติแล้วเป็นเลขปกติ, ขยับเมื่อปลูก relief จริง, ไม่ขยับเมื่อเปลี่ยนแค่ albedo, และ **C6 บังคับให้ `judge()` ผ่านของจริงได้ exit 0** |
+| **คำตัดสิน** | **ไม่มีคู่ไหนผ่านเกต — `VOXELFORGE_MAT_MAPS=on` ยังไม่ควรเปิดเป็น default** · อาร์ม `shipped` FAIL เพราะ art set ไม่ถึง loader เลย (ผลที่ควรเป็น) · อาร์ม `atlas16` maps ถึงจริงและ**ภาพเปลี่ยนแรง** แต่ตก **M4 (กินช่วงค่า)** ทั้ง day และ night → §5 |
 
 ---
 
@@ -53,7 +53,8 @@ albedo ที่เป็น **โทนเทา** ก็ achromatic เหม�
 | `micro_rms` | **5.245** | 5.24 | ✅ PASS (tol 0.02) |
 | `p95` | **165.826** | 165.83 | ✅ PASS |
 
-(เฟรม: `_fl_v4_20260818/golden-beauty-shot-ref-nohud2.png`)
+(เฟรม: `docs/assets/golden-beauty-shot-ref.png` — byte-identical กับ `_fl_v4_20260818/golden-beauty-shot-ref-nohud2.png`
+ที่ใช้ตอนแรก md5 `e3eb80a4…` เท่ากัน แต่ตัวนี้ track อยู่ใน git จริง)
 ⇒ local contrast ของผม **คือ** แกน micro-contrast ตัวเดียวกับที่ rubric ใช้ ไม่ใช่ตัวที่สองที่จะไปเถียงกันทีหลัง
 
 ### C1 · เฟรมที่อนุมัติแล้วต้องได้คะแนนที่ "อ่านออก"
@@ -101,6 +102,14 @@ amplitude ของ noise ที่ **ผมเลือกเอง** ⇒ ก�
 
 *(เพลตสังเคราะห์ 4 ใบของ control — ไฟล์ทำงานอยู่ที่ `_fl_matmaps_control/` ซึ่ง `.gitignore:166 _*/` กินทั้งโฟลเดอร์ จึงคัดสำเนามาไว้ที่ `docs/assets/look/` ให้ตามรอยได้จาก clone เปล่า)*
 
+> **แก้ 2026-08-18 (รีวิวจับได้)** — ตอนแรก `C0_REF` และ `GOLDEN[0]` ชี้ไปที่
+> `_fl_v4_20260818/golden-beauty-shot-ref-nohud2.png` ซึ่ง **`.gitignore:166 (`_*/`)` กินไปด้วย**
+> ⇒ บน clone เปล่า `control` ตาย exit 1 (`C0 missing ref / C1 missing golden-beauty-ref`)
+> ทั้งที่เมตริกไม่ได้พังเลย. สำเนา **byte-identical** อยู่ใน git อยู่แล้ว
+> (`docs/assets/golden-beauty-shot-ref.png`, md5 `e3eb80a42bccc81721f6b2cf6f6a71f9`, 1 607 736 B ทั้งคู่)
+> จึงย้าย path ไปใช้ตัวที่ track. พิสูจน์: `git archive HEAD | tar -x -C <tmp>` (tracked-only จริง ๆ
+> ไม่มีโฟลเดอร์ `_*/` ติดไปเลย) แล้วรัน `control` ในนั้น → **exit 0, MISSING = 0 บรรทัด**
+
 ---
 
 ## 3. ซ้อมกลไกตัดสิน 5 รอบ — ทุกทางออกยิงจริงแล้ว
@@ -138,7 +147,7 @@ amplitude ของ noise ที่ **ผมเลือกเอง** ⇒ ก�
 
 | # | ชั้น | เกณฑ์ | ผูกกับ rubric ข้อไหน |
 |---|---|---|---|
-| **M1** | ⛔ HARD | `shade_resid` (median tile) เพิ่มขึ้น **> 3× noise floor** **และ** tile ที่เพิ่มขึ้น **≥ 60%** ของ tile ที่ผ่านคุณสมบัติทั้งสองใบ | **Pass 7a** — "3 วัสดุตอบแสงต่างกันเห็นชัด". นี่คือข้ออ้างหลักของ matmaps: normal map ที่ผูกจริงต้องเปลี่ยนแสงเงาบนหน้าบล็อก |
+| **M1** | ⛔ HARD | **paired median** ของ Δ`shade_resid` (tile เดียวกันสองใบ) เพิ่มขึ้น **> 3× paired noise floor** **และ** tile ที่เพิ่มขึ้น **≥ 60%** ของ tile ที่ผ่านคุณสมบัติทั้งสองใบ | **Pass 7a** — "3 วัสดุตอบแสงต่างกันเห็นชัด". นี่คือข้ออ้างหลักของ matmaps: normal map ที่ผูกจริงต้องเปลี่ยนแสงเงาบนหน้าบล็อก |
 | **M2** | ⛔ HARD | \|Δ`chroma_std`\| ≤ **max(3× null, 2% ของ before)** | ยาม one-lever. ไม่ใช่คุณภาพลุค แต่เป็นความสุจริตของคู่ภาพ — Δ ที่ albedo ขยับด้วย จะ attribute ให้ normal map ไม่ได้ |
 | **M3** | ⛔ HARD | `micro_rms` ต้องไม่ลดต่ำกว่า `before − floor` | **G1 voxel hard-edge** — normal map ที่ไปลบรายละเอียด/ทำภาพเนียนขึ้น คือการแลก identity ไม่ใช่การได้ |
 | **M4** | ⛔ HARD | `lum_spread` ต้องไม่ลดเกิน floor | **Pass 6 tone-map** — relief ต้องไม่กินช่วงค่า |
@@ -154,7 +163,108 @@ mask ที่ derive จากผลต่างทำให้ "การเ�
 
 ---
 
-## 5. สิ่งเดียวที่ยังขาด (ฝากถึงเลนที่ยิงรูป)
+### 4.3 แก้ M1 หลังรีวิว — สองครึ่งของเกณฑ์ต้องมาจากการลดรูปเดียวกัน
+
+เวอร์ชันแรก M1 เอา **per-plate** Δ`shade_resid` (`B−A` ของ median รายเพลต) มาคู่กับ `%tile ที่ขึ้น`
+ซึ่งเป็นสถิติ **paired**. สองตัวนี้คนละประชากร — median รายเพลตคิดจาก tile ที่ผ่านคุณสมบัติของ
+**เพลตใครเพลตมัน** (88 vs 89, 79 vs 82…) การลบกันจึงลบคนละกลุ่ม และที่หนักกว่าคือ **ไม่ใช่เลขที่
+control คาลิเบรตไว้** — C3 ที่ประกาศ +0.1038 คือ paired median. ตอนนี้ M1 ใช้ **paired median vs
+3× paired floor** ทั้งคู่ (per-plate ยังพิมพ์ไว้ในตารางด้านบนเหมือนเดิม)
+
+เห็นผลทันทีกับเพลตจริง: `atlas16 / night-firelit` เดิม M1 อ่านว่า `d −0.0023` (per-plate ลด)
+ทั้งที่ **84.2% ของ tile ขึ้น** — เกณฑ์เดียวขัดกันเอง. หลังแก้เป็น paired median `+0.0007` → M1 PASS
+สอดคล้องกับ %tile แล้ว
+
+เพิ่ม **C6** ใน `control` ด้วย: เรียก `judge()` เต็มวง (flat → relief เทียบ null ที่ jitter ±1 LSB)
+แล้ว **บังคับว่าต้อง exit 0** — gate ที่ไม่มีใครเคยเห็นมันผ่าน ไม่ใช่ gate
+(รีวิวรอบก่อนต้องประกอบ PASS path เองด้วยมือ ตอนนี้อยู่ในคำสั่งเดียว)
+
+---
+
+## 5. คำตัดสิน matmaps on-vs-off — เพลตมาแล้ว ยิงจริงแล้ว
+
+Poppy วางเพลตครบตอน 08:02–08:03 (หลัง commit ตัวตัดสิน 1 นาที) พร้อม **null pair** ที่ขอไว้
+(`shipped_day_onNULL.png` / `matmaps_day_onNULL.png`) ⇒ ตัวตัดสินไม่ต้อง refuse แล้ว
+
+**สำคัญก่อนอ่านตัวเลข: มีสองอาร์ม ไม่ใช่อาร์มเดียว** (`_poppy_matmaps/REPORT.md` §3)
+
+| อาร์ม | maps ถึง loader ไหม | หลักฐานจาก log |
+|---|---|---|
+| **shipped** | ❌ **ไม่ถึง** | `BLOCK_ART tile_px=64 != 16 — file set ignored, procedural tiles kept` ⇒ on/off เดินโค้ดเส้นเดียวกัน |
+| **atlas16** | ✅ ถึง | `BLOCK_PBR authored …_n.png 64x64` (Poppy นับได้ 72 ครั้งตอน on, 0 ตอน off) |
+
+### 5.1 ตารางผล (รันจริง ทุกใบ exit ตามที่พิมพ์)
+
+| อาร์ม / ฉาก | M1 | M2 | M3 | M4 | M5 | A6 | verdict |
+|---|---|---|---|---|---|---|---|
+| shipped / day | ❌ +0.0001 vs 0.0005, 59.1% | ✅ | ✅ | ✅ | ✅ | 🔻 | **FAIL — M1** · exit 1 |
+| shipped / evening-raking | — | — | — | — | — | — | **exit 2 ปฏิเสธ** (ไม่มี null ของตัวเอง; วัดได้ tile ขึ้น 47.0%) |
+| shipped / night-firelit | — | — | — | — | — | — | **exit 2 ปฏิเสธ** (tile ขึ้น 39.3%) |
+| atlas16 / day | ❌ −0.0008, 29.1% | ✅ | ✅ | ❌ −1.927 vs 1.159 | ✅ | 🔻 | **FAIL — M1, M4** · exit 1 |
+| atlas16 / evening-raking | ❌ +0.0000, 52.4% | ✅ | ✅ | ✅ | ✅ | 🔻 | **FAIL — M1** · exit 1 |
+| atlas16 / night-firelit | ✅ +0.0007 vs 0.0006, 84.2% | ✅ | ✅ **+3.607** (16× floor) | ❌ **−2.570** vs 1.159 | ✅ | ✅ **+2.23 pt** (32× floor) | **FAIL — M4** · exit 1 |
+
+**สรุปเป็นประโยคเดียว: ไม่มีคู่ไหนผ่านเกต — `VOXELFORGE_MAT_MAPS=on` ยังไม่ควรเปิดเป็น default**
+
+![matmaps verdict card](assets/look/matmaps-verdict-2026-08-18.png)
+
+*(การ์ดสร้างด้วย `scripts/_fl_matmaps_verdict_card.py` — พาเนลคือ **เพลตจริงที่ตัดสิน** ย่อลงมาเฉย ๆ
+ไม่ได้แต่งพิกเซล และทุกตัวอักษร PASS/FAIL อ่านกลับจาก `matmaps-verdict.json` ของคู่นั้นเอง
+caption จึงเลื่อนหนีผลรันไม่ได้)*
+
+**ตาดูก็ตรงกับเลข**: อาร์ม atlas16 ฝั่ง ON **มืดลงและขุ่นขึ้นเห็นได้ด้วยตาเปล่า** โดยเฉพาะ night-firelit
+ที่แสงไฟกองไฟฟุ้งหายไปเกือบหมด — นั่นคือหน้าตาของ `lum_spread` −2.570 (M4 FAIL) ส่วน
+`micro_rms` +3.607 ที่ดูเหมือนกำไร เอาเข้าจริงคือ **ผิวหยาบขึ้น** ไม่ใช่รายละเอียดที่อ่านออก
+
+### 5.2 อ่านผลยังไงให้ไม่หลอกตัวเอง
+
+* **อาร์ม shipped ที่ FAIL คือผลที่ *ควร* เป็น ไม่ใช่ข่าวร้าย** — art set ถูกปฏิเสธที่ loader
+  (`tile_px=64 != 16`) ทั้งสองใบเรนเดอร์จาก procedural tile ชุดเดียวกัน. FAIL ตรงนี้แปลว่า
+  **ตัวตัดสินไม่ยอมออกใบผ่านให้ lever ที่ไม่ได้ทำอะไร** = negative control ที่ยิงจริงบนเพลตจริง
+* **อาร์ม atlas16 คือคำถามจริง** — maps ถึง loader แล้ว และ**ภาพเปลี่ยนจริง เปลี่ยนแรงด้วย**
+  (night-firelit: `micro_rms` +3.607 = 16× floor, `spec_cov` +2.23 pt = 32× floor).
+  แต่**เปลี่ยนแล้วยังไม่ผ่าน**: มัน**กินช่วงค่า** — `lum_spread` −1.927 (day) และ −2.570 (night)
+  เทียบ floor 1.159 ⇒ **M4 FAIL** ซึ่งผูกกับ Pass 6 tone-map โดยตรง. ส่วน day/evening นั้น relief
+  ยัง**ไม่ลงเป็นเงาระดับหน้าบล็อกอย่างสม่ำเสมอ** (tile ที่ขึ้น 29.1% / 52.4% — ต่ำกว่า 60%)
+* **ข้อจำกัดที่ต้องพูดก่อนใครถาม: floor ของ atlas16 evening/night เป็นของ *ฉาก day*** —
+  Poppy ยิง null ไว้ฉากเดียว. ตัวตัดสินพิมพ์เตือนเองแล้ว (`!! BORROWED FLOOR: null is 'matmaps_day',
+  plates are 'matmaps_night-firelit'`). ดังนั้น **M1 PASS ของ night (+0.0007 เทียบเส้น 0.0006) เฉียดเกินกว่า
+  จะเรียกว่าผ่าน** — ผมนับเป็น *ยังไม่ชี้ขาด*. ที่ชี้ขาดได้จริงบนอาร์มนี้คือ **M4 FAIL** ซึ่งห่าง floor 2.2×
+  และ **A6/M3 ของ night** ซึ่งห่าง 16–32× (ใหญ่เกินกว่าที่การยืม floor ข้ามฉากจะพลิกได้)
+* อาร์ม shipped ฉาก evening/night **ไม่มีคำตัดสิน** — exit 2 ไม่ใช่ FAIL แปลว่า *ไม่ยอมตัดสิน*
+
+### 5.3 คำสั่งที่รันจริง (ตามรอยได้)
+
+```bash
+# อาร์ม shipped — null ของฉากตัวเอง
+python scripts/_fl_matmaps_judge.py judge \
+    _poppy_matmaps/plates/shipped_day_off.png _poppy_matmaps/plates/shipped_day_on.png \
+    --null _poppy_matmaps/plates/shipped_day_on.png _poppy_matmaps/plates/shipped_day_onNULL.png \
+    --out _fl_matmaps_verdict/shipped_day                                  # exit 1
+
+# อาร์ม atlas16 — null ยืมจากฉาก day (สคริปต์เตือนเอง)
+python scripts/_fl_matmaps_judge.py judge \
+    docs/assets/look/matmaps_night-firelit_off.png docs/assets/look/matmaps_night-firelit_on.png \
+    --null docs/assets/look/matmaps_day_on.png docs/assets/look/matmaps_day_onNULL.png \
+    --out _fl_matmaps_verdict/atlas16_night-firelit                        # exit 1
+```
+
+> **หมายเหตุการตามรอย** — เพลต `docs/assets/look/matmaps_*.png` เป็นของเลน Poppy และตอนนี้
+> **ยัง untracked** (`_poppy_matmaps/REPORT.md` §5 ระบุว่าจะ publish) ผมไม่ commit ไฟล์ของเลนอื่นเอง
+> ⇒ หลักฐานถาวรฝั่งผมคือ `matmaps-verdict.json` ทุกใบ + การ์ดข้างบน (ซึ่งฝังพิกเซลจริงไว้แล้ว)
+> ถ้าเพลตหาย คำสั่งข้างบนจะรันไม่ได้ ต้องขอให้เลนนั้น commit เพลตด้วย
+
+### 5.4 ที่ยังเปิดค้าง (ฝากเลนที่ยิงรูป)
+
+1. **null pair ของ evening-raking กับ night-firelit** (ทั้งสองอาร์ม) — ยิงฉากละสองครั้งใต้ env เดียวกัน
+   แล้วเลข M1/M4 ของสองฉากนั้นจะเลิกเป็น "ยืม floor"
+2. **shipped/evening + shipped/night ยังไม่มีคำตัดสิน** (exit 2) รอ null เช่นกัน
+3. **แยกไม่ออกว่า M4 มาจาก normal map หรือจาก `_r` roughness** — คู่ปัจจุบันสับสองสวิตช์พร้อมกัน
+   ถ้าอยากรู้ว่าใครกินช่วงค่า ต้องมีอาร์มที่โหลด `_n` อย่างเดียว
+
+---
+
+## 5bis. บันทึกคำขอเดิม (ปิดแล้ว) — null pair
 
 `_poppy_matmaps/shoot_ab.sh` ยิง `before` (`MAT_MAPS=off`) กับ `after` (`on`) — **ขอเพิ่มอีกหนึ่งบรรทัด**:
 
@@ -185,15 +295,19 @@ python scripts/_fl_matmaps_judge.py judge \
 4. **water/metal ไม่อยู่ในเฟรมนี้และใส่ไม่ได้** — `sim/src/block.rs` ไม่มี BlockId ทั้งสอง (Poppy จดไว้ใน
    `shoot_ab.sh` แล้ว) ⇒ Pass 7b ที่พูดถึง "สแตนเลสมี specular streak" **จะทดสอบไม่ได้บนเพลตนี้**
    A6 จึงเป็น advisory ด้วยเหตุผลนี้อีกชั้น
-5. **ยังไม่เคยรันกับรูป matmaps จริงสักใบ** — ทุกเลขในเอกสารนี้คือ control กับเพลตที่อนุมัติแล้ว
-   ไม่มีคำตัดสินเรื่อง matmaps อยู่ในนี้เลย
+5. ~~ยังไม่เคยรันกับรูป matmaps จริงสักใบ~~ — **ปิดแล้ว 2026-08-18**: ยิงครบ 6 คู่ ผลอยู่ใน §5
+6. **floor ข้ามฉากใช้แทนกันไม่ได้** — atlas16 evening/night ยืม floor ของฉาก day มาใช้
+   สคริปต์เตือน `!! BORROWED FLOOR` เอง แต่เตือนไม่ใช่ปฏิเสธ (พิสูจน์ผิดจากพิกเซลไม่ได้)
+   ⇒ margin ที่อยู่ใกล้ floor บนสองฉากนั้น **ยังไม่ชี้ขาด**
+7. **M4 ที่ FAIL บนอาร์ม atlas16 ชี้ตัวการไม่ได้** — คู่ภาพเปิด `_n` กับ `_r` พร้อมกัน
+   จะบอกว่า normal map หรือ roughness เป็นคนกินช่วงค่า ต้องมีอาร์มที่เปิดทีละตัว
 
 ---
 
 ## ภาคผนวก — control log ดิบ ทั้งใบ
 
-`python scripts/_fl_matmaps_judge.py control` · 2026-08-18 · **exit 0**
-(ตัวไฟล์ `_fl_matmaps_control/control.log` โดน `.gitignore:26 *.log` กิน จึงฝังไว้ที่นี่แทน เพื่อให้ทุกเลขในเอกสารนี้ตามรอยกลับไปหาผลรันจริงได้)
+`python scripts/_fl_matmaps_judge.py control` · 2026-08-18 (หลังแก้ path + M1 + C6) · **exit 0**
+(ไฟล์ `_fl_matmaps_control/control.log` โดน `.gitignore:26 *.log` กิน จึงฝังไว้ที่นี่แทน)
 
 ```
 ==============================================================================
@@ -271,9 +385,64 @@ C5  KNOWN CONFOUND (disclosure, not a gate): greyscale albedo noise
        only because both plates use the SAME albedo tiles -- which is
        what chroma_std + one-lever provenance are there to prove.
 
+C6  END-TO-END: judge(flat -> relief) against a jittered null must
+    PASS and exit 0 -- proof the criteria are satisfiable
+------------------------------------------------------------------------------
+metric                               flat      relief
+--------------------------------------------------------
+lum spread L(p95-p5)                38.78       76.22
+local contrast (hi-pass RMS)         3.46        4.22
+specular coverage %                 2.294       9.240
+shading resid (median tile)        0.0227      0.1281
+  shading resid p90                0.0451      0.1453
+  raw logL std                     0.0582      0.1453
+  chroma std (albedo guard)        0.0305      0.0305
+  specular amplitude                15.17       16.60
+  clipped-bright %                   0.00        0.00
+  L p95                            183.37      187.69
+  qualifying tiles                    295         296
+  w x h                           960x720     960x720
+
+delta (relief - flat)                    
+  lum spread L(p95-p5)            37.4404
+  local contrast (hi-pass RMS)     0.7573
+  specular coverage %              6.9460
+  shading resid (median tile)      0.1054
+  shading resid p90                0.1002
+  raw logL std                     0.0871
+  chroma std (albedo guard)        0.0000
+  specular amplitude               1.4292
+  clipped-bright %                 0.0000
+  L p95                            4.3136
+
+paired tiles qualifying in BOTH plates: 295
+  median per-tile shade_resid delta : +0.1038
+  tiles that rose                    : 100.0%
+
+noise floor from the null pair (synth_flat.png vs synth_flat_null.png):
+  |d lum_spread  | = 0.01201
+  |d micro_rms   | = 0.03468
+  |d spec_cov    | = 0.04013
+  |d shade_resid | = 0.00130
+  |d per-tile shade_resid| median = 0.00048
+
+=== CRITERIA (differential -- this framing has no absolute target) ===
+  [PASS] M1 relief registers                paired median +0.1038 vs 3x paired floor 0.0015, 100.0% of tiles rose (need >=60%)
+  [PASS] M2 one-lever (albedo held)         chroma_std d +0.00004, bar 0.00065 (=max(3x null 0.00022, 2% of 0.0305))
+  [PASS] M3 no blur regression              micro_rms d +0.757, floor 0.035 (relief must not smooth the frame)
+  [PASS] M4 no value-span loss              lum_spread d +37.440, floor 0.012
+  [PASS] M5 highlights not railed           clip_hi d +0.000 pt (a coverage win made of 255s is not a win)
+  [PASS] A6 specular coverage rose          d +6.9460 pt vs 3x floor 0.1204 -- ADVISORY: authored roughness may legitimately reduce highlights
+
+VERDICT: PASS -- authored maps change the shading on the block faces, and nothing else regressed.
+wrote E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_fl_matmaps_control\poscontrol\matmaps-verdict.json
+------------------------------------------------------------------------------
+  [PASS] judge() exit 0 (want 0)
+
 ==============================================================================
 CONTROL PASSED -- the instrument reproduces a published number, scores
 approved frames as sane, is deterministic, moves on planted relief and
-does not move on a coloured albedo change.
+does not move on a coloured albedo change -- and its own gate is
+satisfiable end to end (C6 exit 0).
 wrote E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\_fl_matmaps_control\control.json
 ```
