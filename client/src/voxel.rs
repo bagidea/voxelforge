@@ -79,13 +79,36 @@ pub const LAMP: BlockId = BlockId::LAMP;
 /// Number of block types the texture tables cover — the 16 sim blocks, [`LAMP`],
 /// and [`BlockId::GLASS`].
 const N_TILES: usize = 18;
-const TILE_PX: usize = 16;
+
+/// Edge length of a **procedurally baked** tile, and nothing else.
+///
+/// This used to be *the* tile size, which quietly made it two constants wearing
+/// one name: the size `tile_shade` paints at, and the size the engine was
+/// willing to accept from an art manifest. The second reading pinned the file
+/// set to 16 px and threw away anything else (see [`tile_set`]), so a 64 px art
+/// drop could not reach a frame at all — while `atlas.json` promised in writing
+/// that `tile_px` may change with no Rust change.
+///
+/// The two are now separate. This one is the fallback bake size and stays 16:
+/// every `tile_shade` pattern's period (plank courses of 4, brick heads every 8,
+/// the lantern's radial falloff) is written against it. The *source* size is
+/// [`source_tile_px`], read from the manifest at runtime.
+const PROC_TILE_PX: usize = 16;
 
 /// Faces a block distinguishes: top, side, bottom (see [`Face`]).
 const N_FACES: usize = 3;
 
 /// Columns in the far-LOD atlas — one per (block, face) pair.
 const N_COLS: usize = N_TILES * N_FACES;
+
+/// Widest far-LOD atlas this will build, in texels.
+///
+/// wgpu's `downlevel_defaults` guarantee `max_texture_dimension_2d` of 8192, and
+/// the LOD atlas is the one image here whose width scales with the manifest:
+/// [`N_COLS`] = 54 columns, so a 151 px manifest is the largest that still fits.
+/// Past that the tiles are packed at a smaller cell and [`atlas_tile_px`] says
+/// so out loud — a texture that silently fails to allocate is a black world.
+const MAX_ATLAS_WIDTH: usize = 8192;
 
 // ---------------------------------------------------------------------------
 // the file-backed art set
@@ -104,25 +127,25 @@ const N_COLS: usize = N_TILES * N_FACES;
 fn tile_set() -> Option<&'static TileSet> {
     static SET: std::sync::OnceLock<Option<TileSet>> = std::sync::OnceLock::new();
     SET.get_or_init(|| match block_atlas::load_tiles(None) {
-        Ok(Some(set)) if set.tile_px as usize == TILE_PX => {
+        Ok(Some(set)) => {
+            // Any even `tile_px` — `block_atlas::load_tiles` already rejects odd
+            // and zero, and every consumer here now sizes itself off the set.
+            //
+            // There used to be a `== PROC_TILE_PX` gate on this arm that dropped
+            // the whole file set when the manifest said anything but 16. It cost
+            // Monanisa's entire 64 px drop: albedo, normals and roughness all
+            // fell on the floor together, silently as far as a frame was
+            // concerned, and `atlas.json`'s own header promised the opposite
+            // ("`tile_px` may change too, as long as it is even. No Rust change,
+            // no rebuild"). The doc was right and the code was wrong.
             println!(
-                "BLOCK_ART file-backed dir={} tiles={} kinds={}",
+                "BLOCK_ART file-backed dir={} tiles={} kinds={} tile_px={}",
                 set.dir.display(),
                 set.tiles.len(),
-                set.kinds.len()
-            );
-            Some(set)
-        }
-        Ok(Some(set)) => {
-            // The split path bakes one standalone TILE_PX texture per face and
-            // the LOD atlas packs TILE_PX columns; a manifest at another size
-            // would need both rebuilt around it. Refuse loudly instead of
-            // silently rescaling somebody's pixel art.
-            println!(
-                "BLOCK_ART tile_px={} != {TILE_PX} — file set ignored, procedural tiles kept",
+                set.kinds.len(),
                 set.tile_px
             );
-            None
+            Some(set)
         }
         Ok(None) => None, // mode=off; block_atlas already said so
         Err(e) => {
@@ -152,6 +175,88 @@ fn atlas_kind(id: BlockId) -> &'static str {
 /// hero material's existing graded colour — same tiles, two jobs.)
 fn face_tile(id: BlockId, face: Face) -> Option<&'static [u8]> {
     tile_set()?.face_tile(atlas_kind(id), face)
+}
+
+/// Edge length of the ACTIVE art source, in texels: the manifest's `tile_px`
+/// when a file set loaded, [`PROC_TILE_PX`] when nothing did.
+///
+/// The other half of the constant that used to be [`PROC_TILE_PX`]. Everything
+/// that bakes a texture *around* the art — the standalone face texture, the
+/// three derived maps, the LOD atlas cell, the atlas UV inset — measures itself
+/// here, so a manifest at 16, 64 or 128 px needs no rebuild, which is what
+/// `atlas.json` has claimed all along.
+fn source_tile_px() -> usize {
+    tile_set().map_or(PROC_TILE_PX, |s| s.tile_px as usize)
+}
+
+/// Edge length of the tile [`face_texels`] returns for ONE face.
+///
+/// Per face, not per set: a manifest that names no kind for cobblestone leaves
+/// that block on its 16 px procedural tile while the blocks beside it wear the
+/// artist's 64 px art, and the split path is happy with that — each face bakes
+/// its own standalone texture, so sizes never have to agree. Only [`build_atlas`],
+/// which packs them all into one image, has to reconcile them.
+fn face_px(id: BlockId, face: Face) -> usize {
+    match tile_set() {
+        Some(set) if set.face_tile(atlas_kind(id), face).is_some() => set.tile_px as usize,
+        _ => PROC_TILE_PX,
+    }
+}
+
+/// The cell size the far-LOD atlas packs its [`N_COLS`] columns at.
+///
+/// The source size, clamped so the packed image cannot exceed
+/// [`MAX_ATLAS_WIDTH`]. Tiles that are not this size — the procedural 16 px ones
+/// standing next to a 64 px art set, or every tile at all if the clamp bit — are
+/// resampled into it by [`scale_tile_nearest`].
+///
+/// Printed once, because "how wide is the atlas this run" is exactly the sort of
+/// number that is obvious in a debugger and invisible in a bug report.
+fn atlas_tile_px() -> usize {
+    static PX: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *PX.get_or_init(|| {
+        let want = source_tile_px();
+        let cap = MAX_ATLAS_WIDTH / N_COLS;
+        let px = want.min(cap).max(1);
+        if px < want {
+            println!(
+                "BLOCK_ART LOD atlas capped: {N_COLS} cols × {want}px = {}px exceeds \
+                 max_texture_dimension_2d {MAX_ATLAS_WIDTH}; packing at {px}px",
+                N_COLS * want
+            );
+        }
+        println!(
+            "BLOCK_ART LOD atlas {}x{} ({} KiB) cell={px}px",
+            N_COLS * px,
+            px,
+            N_COLS * px * px * 4 / 1024
+        );
+        px
+    })
+}
+
+/// Nearest-neighbour resample of a square RGBA tile, `src_px` → `dst_px`.
+///
+/// Nearest and not a filter, for the same reason [`voxel_sampler`] mags with
+/// `Nearest`: this is pixel art, and the only case this runs in anger — a 16 px
+/// procedural tile taking its column in a 64 px atlas — is an exact 4× where
+/// nearest is not an approximation but the answer. It is written for any ratio
+/// so that the [`MAX_ATLAS_WIDTH`] clamp has something to fall on.
+fn scale_tile_nearest(src: &[u8], src_px: usize, dst_px: usize) -> Vec<u8> {
+    if src_px == dst_px {
+        return src.to_vec();
+    }
+    let mut out = vec![0u8; dst_px * dst_px * 4];
+    for y in 0..dst_px {
+        let sy = y * src_px / dst_px;
+        for x in 0..dst_px {
+            let sx = x * src_px / dst_px;
+            let s = (sy * src_px + sx) * 4;
+            let d = (y * dst_px + x) * 4;
+            out[d..d + 4].copy_from_slice(&src[s..s + 4]);
+        }
+    }
+    out
 }
 
 /// The face slot a block ACTUALLY needs a separate mesh and material for.
@@ -466,8 +571,12 @@ pub fn roughness_ceiling(id: BlockId) -> f32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MrSource {
     /// No map at all — the table's scalars stand alone.
+    ///
+    /// Spelled `Absent` and not `None`: a variant named `None` in a module that
+    /// also matches on `Option` is a pattern-resolution trap waiting for the next
+    /// reader, and it would cost a silent wrong branch, not a compile error.
     #[default]
-    None,
+    Absent,
     /// [`build_face_metallic_roughness`]: green is a ratio against the ceiling.
     Procedural,
     /// A `*_r.png`. Green is absolute roughness; BLUE IS NOT METALNESS.
@@ -490,7 +599,7 @@ impl MrSource {
     /// The `perceptual_roughness` factor to pair with this provenance.
     fn roughness_factor(self, id: BlockId) -> f32 {
         match self {
-            MrSource::None => block_surface(id).perceptual_roughness,
+            MrSource::Absent => block_surface(id).perceptual_roughness,
             MrSource::Procedural => roughness_ceiling(id),
             // Identity: the file is the answer.
             _ => 1.0,
@@ -616,7 +725,7 @@ pub fn face_maps(id: BlockId, face: Face) -> FaceMaps {
     } else {
         match build_face_metallic_roughness(id, face) {
             Some(i) => (Some(i), MrSource::Procedural),
-            None => (None, MrSource::None),
+            None => (None, MrSource::Absent),
         }
     };
 
@@ -1128,8 +1237,13 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                             // a raw 0.0..1.0 and could pick up the wrap row).
                             let col = material_index(BlockId(block), face).min(N_COLS - 1);
                             let t = col as f32;
-                            let inset_u = 0.5 / (N_COLS * TILE_PX) as f32;
-                            let inset_v = 0.5 / TILE_PX as f32;
+                            // Half a texel of the atlas AS PACKED — `atlas_tile_px`,
+                            // not the procedural bake size. Insetting by 0.5/16
+                            // into a 64 px atlas would inset by two texels and
+                            // shave a visible sliver off every LOD block face.
+                            let atlas_px = atlas_tile_px();
+                            let inset_u = 0.5 / (N_COLS * atlas_px) as f32;
+                            let inset_v = 0.5 / atlas_px as f32;
                             let u0 = t / N_COLS as f32 + inset_u;
                             let u1 = (t + 1.0) / N_COLS as f32 - inset_u;
                             let (v0t, v1t) = (inset_v, 1.0 - inset_v);
@@ -1253,7 +1367,7 @@ fn hash_quad(wx: f32, wy: f32, wz: f32, salt: u32) -> f32 {
 /// too), not from a painted border.
 fn tile_shade(id: BlockId, lx: usize, ly: usize) -> i32 {
     let (x, y) = (lx as u32, ly as u32);
-    let px = TILE_PX as u32;
+    let px = PROC_TILE_PX as u32;
     match id {
         // Plank courses, 4 texels tall: a soft groove at the course line and a
         // long grain streak along it. Height 4 divides 16, so it tiles.
@@ -1334,7 +1448,7 @@ const NORMAL_STRENGTH: f32 = 4.0;
 /// ridge into every block boundary — the same class of bug as the old painted
 /// border, just in the normal instead of the colour.
 fn tile_height(id: BlockId, lx: i32, ly: i32) -> f32 {
-    let px = TILE_PX as i32;
+    let px = PROC_TILE_PX as i32;
     let x = lx.rem_euclid(px) as usize;
     let y = ly.rem_euclid(px) as usize;
     (0.5 + tile_shade(id, x, y) as f32 / (2.0 * SHADE_SPAN)).clamp(0.0, 1.0)
@@ -1352,13 +1466,19 @@ fn tile_height(id: BlockId, lx: i32, ly: i32) -> f32 {
 /// Luminance in linear light for the same reason `block_atlas` averages there:
 /// sRGB bytes are not proportional to light, and a height field built from them
 /// crushes its own midtones.
+///
+/// The wrap modulus is the TILE'S OWN size, resolved in the same match that
+/// finds it. Reading an artist's 64² tile with a 16 stride is not a rounding
+/// error — it walks the first four rows of the image and calls them the whole
+/// surface, so a normal map built from a 64 px art set would be four rows of it
+/// tiled sixteen times over.
 fn face_height(id: BlockId, face: Face, lx: i32, ly: i32) -> f32 {
-    let px = TILE_PX as i32;
-    let x = lx.rem_euclid(px) as usize;
-    let y = ly.rem_euclid(px) as usize;
-    match face_tile(id, face) {
-        Some(t) => {
-            let i = (y * TILE_PX + x) * 4;
+    match tile_set().and_then(|s| s.face_tile(atlas_kind(id), face).map(|t| (s.tile_px as usize, t)))
+    {
+        Some((px, t)) => {
+            let x = lx.rem_euclid(px as i32) as usize;
+            let y = ly.rem_euclid(px as i32) as usize;
+            let i = (y * px + x) * 4;
             (0.2126 * srgb_to_linear(t[i])
                 + 0.7152 * srgb_to_linear(t[i + 1])
                 + 0.0722 * srgb_to_linear(t[i + 2]))
@@ -1408,9 +1528,12 @@ pub fn build_face_normal_map(id: BlockId, face: Face) -> Option<Image> {
         return None;
     }
 
-    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
-    for ly in 0..TILE_PX as i32 {
-        for lx in 0..TILE_PX as i32 {
+    // The face's OWN size: a derived map has to be per-texel with the albedo it
+    // was derived from, or the relief lands on a grid the colour does not have.
+    let tpx = face_px(id, face);
+    let mut data = vec![0u8; tpx * tpx * 4];
+    for ly in 0..tpx as i32 {
+        for lx in 0..tpx as i32 {
             let h = |dx: i32, dy: i32| face_height(id, face, lx + dx, ly + dy);
             // Central differences: symmetric, so a groove tilts both of its
             // walls by the same amount instead of leaning the whole tile one way.
@@ -1422,7 +1545,7 @@ pub fn build_face_normal_map(id: BlockId, face: Face) -> Option<Image> {
                 1.0,
             )
             .normalize();
-            let px = (ly as usize * TILE_PX + lx as usize) * 4;
+            let px = (ly as usize * tpx + lx as usize) * 4;
             data[px] = encode_unorm(n.x);
             data[px + 1] = encode_unorm(n.y);
             data[px + 2] = encode_unorm(n.z);
@@ -1430,8 +1553,8 @@ pub fn build_face_normal_map(id: BlockId, face: Face) -> Option<Image> {
         }
     }
     Some(image_from_rgba(
-        TILE_PX,
-        TILE_PX,
+        tpx,
+        tpx,
         data,
         TextureFormat::Rgba8Unorm,
         voxel_sampler(true),
@@ -1456,19 +1579,25 @@ pub fn build_face_metallic_roughness(id: BlockId, face: Face) -> Option<Image> {
 
     let base = block_surface(id).perceptual_roughness;
     let ceiling = roughness_ceiling(id);
-    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
-    for ly in 0..TILE_PX {
-        for lx in 0..TILE_PX {
+    let tpx = face_px(id, face);
+    let mut data = vec![0u8; tpx * tpx * 4];
+    for ly in 0..tpx {
+        for lx in 0..tpx {
             let h = face_height(id, face, lx as i32, ly as i32);
             // Hollows dusty, high points polished — dust settles where the
             // surface is worn away, and what stands proud is what gets rubbed.
             let worn = spread * (1.0 - 2.0 * h);
-            // Plus coarse 4×4 patchiness, so a long wall is not one uniform
-            // finish. Uniform gloss over a whole wall is its own kind of flat.
-            let patch = spread * 0.35 * dither((lx / 4) as u32, (ly / 4) as u32, 81, 100) as f32
+            // Plus coarse patchiness — FOUR patches across the tile whatever the
+            // tile's resolution, so a 64 px art set gets the same broad "this
+            // stretch of wall is duller than that one" read and not sixteen
+            // times finer speckle. (`lx * 4 / tpx` is `lx / 4` exactly at 16 px,
+            // so the procedural tiles come out byte-identical.)
+            let patch = spread
+                * 0.35
+                * dither((lx * 4 / tpx) as u32, (ly * 4 / tpx) as u32, 81, 100) as f32
                 / 100.0;
             let rough = (base + worn + patch).clamp(0.0, ceiling);
-            let px = (ly * TILE_PX + lx) * 4;
+            let px = (ly * tpx + lx) * 4;
             data[px] = 255; // unused by StandardMaterial (occlusion slot)
             data[px + 1] = (rough / ceiling * 255.0).round() as u8;
             data[px + 2] = 0;
@@ -1476,8 +1605,8 @@ pub fn build_face_metallic_roughness(id: BlockId, face: Face) -> Option<Image> {
         }
     }
     Some(image_from_rgba(
-        TILE_PX,
-        TILE_PX,
+        tpx,
+        tpx,
         data,
         TextureFormat::Rgba8Unorm,
         voxel_sampler(true),
@@ -1503,13 +1632,43 @@ pub const AO_MAP_FLOOR: f32 = 0.32;
 /// ordinary tile noise nearly untouched.
 const AO_CAVITY_GAIN: f32 = 3.0;
 
-/// Radius of the neighbourhood a texel is compared against, in texels.
+/// Radius of the neighbourhood a texel is compared against, in texels, **at
+/// [`PROC_TILE_PX`]**.
 ///
 /// AO is "how much of the sky can this point see", and at tile scale the honest
 /// cheap answer is "how far below its surroundings does it sit". Radius 2 (a 5×5
 /// box) is wide enough to see across a mortar joint at 16 px/tile and narrow
 /// enough that a plank edge still reads as an edge instead of a gradient.
+///
+/// Scaled per tile by [`ao_radius`]: the sentence above only holds "at 16
+/// px/tile", and a joint drawn on a 64 px tile is four times as many texels
+/// wide, so a fixed radius would look across a quarter of it and grade the
+/// inside of the joint as open sky.
 const AO_RADIUS: i32 = 2;
+
+/// [`AO_RADIUS`] in the texels of a tile that is `tpx` across — the same
+/// fraction of a tile at any resolution, never below 1.
+#[inline]
+fn ao_radius(tpx: usize) -> i32 {
+    ((AO_RADIUS as usize * tpx / PROC_TILE_PX) as i32).max(1)
+}
+
+/// One face's height field, materialised once at its own resolution.
+///
+/// [`face_height`] resolves the manifest per call (a map lookup keyed by a
+/// block's name), which is free at 16 px and is not at 64: the occlusion pass
+/// alone takes `(2r+1)²` samples per texel, and with the radius scaling too that
+/// is 289 × 4096 × 54 lookups for one art set. Sampling the field once and
+/// indexing it wrapped is the same arithmetic with the lookup hoisted out.
+fn face_height_field(id: BlockId, face: Face, tpx: usize) -> Vec<f32> {
+    let mut h = vec![0.0f32; tpx * tpx];
+    for ly in 0..tpx {
+        for lx in 0..tpx {
+            h[ly * tpx + lx] = face_height(id, face, lx as i32, ly as i32);
+        }
+    }
+    h
+}
 
 /// The per-texel ambient occlusion for one face, or `None` where the material has
 /// no relief to occlude.
@@ -1536,19 +1695,23 @@ pub fn build_face_occlusion(id: BlockId, face: Face) -> Option<Image> {
         return None;
     }
 
-    let px = TILE_PX as i32;
-    let taps = ((2 * AO_RADIUS + 1) * (2 * AO_RADIUS + 1)) as f32;
-    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
+    let tpx = face_px(id, face);
+    let px = tpx as i32;
+    let radius = ao_radius(tpx);
+    let taps = ((2 * radius + 1) * (2 * radius + 1)) as f32;
+    let field = face_height_field(id, face, tpx);
+    let at = |x: i32, y: i32| field[y.rem_euclid(px) as usize * tpx + x.rem_euclid(px) as usize];
+    let mut data = vec![0u8; tpx * tpx * 4];
     for ly in 0..px {
         for lx in 0..px {
-            let h = face_height(id, face, lx, ly);
+            let h = at(lx, ly);
             // Wrapped, like every other sample here: the tile repeats across a
             // merged quad, so a neighbourhood that stopped at the edge would draw
             // a dark seam down every 16th column of a long wall.
             let mut local = 0.0;
-            for dy in -AO_RADIUS..=AO_RADIUS {
-                for dx in -AO_RADIUS..=AO_RADIUS {
-                    local += face_height(id, face, lx + dx, ly + dy);
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    local += at(lx + dx, ly + dy);
                 }
             }
             local /= taps;
@@ -1559,7 +1722,7 @@ pub fn build_face_occlusion(id: BlockId, face: Face) -> Option<Image> {
             let cavity = ((local - h) * AO_CAVITY_GAIN).clamp(0.0, 1.0);
             let ao = (1.0 - strength * cavity).max(AO_MAP_FLOOR);
             let v = (ao * 255.0).round() as u8;
-            let i = (ly as usize * TILE_PX + lx as usize) * 4;
+            let i = (ly as usize * tpx + lx as usize) * 4;
             // Bevy reads RED. Green and blue mirror it so that a dumped PNG is a
             // legible greyscale AO map instead of a red-tinted puzzle, and so
             // that binding this by mistake as an `_orm` still means the same
@@ -1571,8 +1734,8 @@ pub fn build_face_occlusion(id: BlockId, face: Face) -> Option<Image> {
         }
     }
     Some(image_from_rgba(
-        TILE_PX,
-        TILE_PX,
+        tpx,
+        tpx,
         data,
         TextureFormat::Rgba8Unorm,
         voxel_sampler(true),
@@ -1641,23 +1804,27 @@ fn image_from_rgba(
     image
 }
 
-/// One block face's 16×16 RGBA texels: the artist's tile when the manifest has
-/// one, otherwise the procedural pattern.
+/// One block face's RGBA texels, `face_px(id, face)` square: the artist's tile
+/// when the manifest has one, otherwise the procedural pattern at
+/// [`PROC_TILE_PX`].
 ///
 /// The single place the two art sources meet. Every consumer — the near split
 /// path's per-face texture, the far LOD atlas, the height field behind the
 /// normal and roughness maps — reads through here, so a block cannot be painted
 /// from the file set and lit from the procedural one.
+///
+/// The two sources are allowed to disagree about size. Ask [`face_px`] what came
+/// back; do not assume.
 fn face_texels(id: BlockId, face: Face) -> Vec<u8> {
     if let Some(t) = face_tile(id, face) {
         return t.to_vec();
     }
-    let mut data = vec![0u8; TILE_PX * TILE_PX * 4];
+    let mut data = vec![0u8; PROC_TILE_PX * PROC_TILE_PX * 4];
     let base = tile_base(id);
-    for ly in 0..TILE_PX {
-        for lx in 0..TILE_PX {
+    for ly in 0..PROC_TILE_PX {
+        for lx in 0..PROC_TILE_PX {
             let shade = tile_shade(id, lx, ly);
-            let px = (ly * TILE_PX + lx) * 4;
+            let px = (ly * PROC_TILE_PX + lx) * 4;
             for c in 0..3 {
                 data[px + c] = (base[c] as i32 + shade).clamp(0, 255) as u8;
             }
@@ -1678,19 +1845,26 @@ fn face_texels(id: BlockId, face: Face) -> Vec<u8> {
 /// It reads the same [`face_texels`] the near chunks do. That is not tidiness:
 /// the LOD ring sits directly behind the near ring in every frame, and two art
 /// sets meeting at that boundary is a visible line across the world.
+///
+/// This is the ONE consumer that cannot let the two sources keep their own
+/// sizes: every column has to be the same width or the layout stops being
+/// `col * cell`. So each tile is resampled into [`atlas_tile_px`] — an exact 4×
+/// point upscale for a 16 px procedural tile standing beside a 64 px art set,
+/// which is what "nearest" means for pixel art, not an approximation of it.
 pub fn build_atlas() -> Image {
-    let w = N_COLS * TILE_PX;
-    let h = TILE_PX;
+    let cell = atlas_tile_px();
+    let w = N_COLS * cell;
+    let h = cell;
     let mut data = vec![0u8; w * h * 4];
 
     for col in 0..N_COLS {
         let id = BlockId((col / N_FACES) as u8);
         let face = Face::ALL[col % N_FACES];
-        let tile = face_texels(id, face);
+        let tile = scale_tile_nearest(&face_texels(id, face), face_px(id, face), cell);
         for ty in 0..h {
-            for lx in 0..TILE_PX {
-                let src = (ty * TILE_PX + lx) * 4;
-                let dst = (ty * w + col * TILE_PX + lx) * 4;
+            for lx in 0..cell {
+                let src = (ty * cell + lx) * 4;
+                let dst = (ty * w + col * cell + lx) * 4;
                 data[dst..dst + 4].copy_from_slice(&tile[src..src + 4]);
             }
         }
@@ -1705,16 +1879,22 @@ pub fn build_atlas() -> Image {
     )
 }
 
-/// Build the standalone 16×16 tile for one block face, sampled with `Repeat`.
+/// Build the standalone tile for one block face, at that face's own resolution,
+/// sampled with `Repeat`.
 ///
 /// Used by the split path, where UVs are measured in blocks — so this texture
 /// tiles once per block no matter how many blocks a merged quad covers. That is
 /// the reason the near path cannot simply address a window inside the packed
 /// `block_atlas` image: no address mode repeats a *sub-rectangle*.
+///
+/// Standalone is also why the near path needs no resampling at all: each face
+/// gets its own image, so a 64 px artist tile and a 16 px procedural one live
+/// side by side at full resolution and neither is stretched to meet the other.
 pub fn build_face_texture(id: BlockId, face: Face) -> Image {
+    let tpx = face_px(id, face);
     image_from_rgba(
-        TILE_PX,
-        TILE_PX,
+        tpx,
+        tpx,
         face_texels(id, face),
         TextureFormat::Rgba8UnormSrgb,
         voxel_sampler(true),
@@ -1779,26 +1959,23 @@ mod tests {
     #[test]
     fn atlas_tiles_have_no_painted_border() {
         let img = build_atlas();
-        let w = N_COLS * TILE_PX;
+        let cell = atlas_tile_px();
+        let w = N_COLS * cell;
         let data = img.data.as_ref().expect("atlas has pixel data");
         let lum = |tx: usize, ty: usize| -> i32 {
             let p = (ty * w + tx) * 4;
             data[p] as i32 + data[p + 1] as i32 + data[p + 2] as i32
         };
         // Dirt: a flat mineral whose pattern is pure low-amplitude dither, so
-        // any edge-vs-centre gap would have to be a painted frame. Deliberately
-        // a block the shipped `atlas.json` names NO kind for — this test is about
-        // the procedural generator, and an artist's tile is allowed a dark edge
-        // (mortar, leading, a plank groove) without that being the old bug.
-        let t = material_index(BlockId::DIRT, Face::Side) * TILE_PX;
-        let centre = lum(t + 8, 8);
-        for k in 0..TILE_PX {
-            for (tx, ty) in [
-                (t + k, 0),
-                (t + k, TILE_PX - 1),
-                (t, k),
-                (t + TILE_PX - 1, k),
-            ] {
+        // any edge-vs-centre gap would have to be a painted frame. An artist's
+        // tile is allowed a dark edge (mortar, leading, a plank groove) without
+        // that being the old bug, and the test binary's working directory is the
+        // crate root, where `assets/textures/blocks` does not resolve — so this
+        // reads the procedural generator, which is what it is about.
+        let t = material_index(BlockId::DIRT, Face::Side) * cell;
+        let centre = lum(t + cell / 2, cell / 2);
+        for k in 0..cell {
+            for (tx, ty) in [(t + k, 0), (t + k, cell - 1), (t, k), (t + cell - 1, k)] {
                 let edge = lum(tx, ty);
                 assert!(
                     (edge - centre).abs() < 60,
@@ -1813,16 +1990,17 @@ mod tests {
     #[test]
     fn atlas_tile_corners_are_not_the_darkest_texels() {
         let img = build_atlas();
-        let w = N_COLS * TILE_PX;
+        let cell = atlas_tile_px();
+        let w = N_COLS * cell;
         let data = img.data.as_ref().unwrap();
-        let t = material_index(BlockId::DIRT, Face::Side) * TILE_PX;
+        let t = material_index(BlockId::DIRT, Face::Side) * cell;
         let lum = |tx: usize, ty: usize| -> i32 {
             let p = (ty * w + tx) * 4;
             data[p] as i32 + data[p + 1] as i32 + data[p + 2] as i32
         };
         let corner = lum(t, 0);
-        let darkest_interior = (1..TILE_PX - 1)
-            .flat_map(|y| (1..TILE_PX - 1).map(move |x| (x, y)))
+        let darkest_interior = (1..cell - 1)
+            .flat_map(|y| (1..cell - 1).map(move |x| (x, y)))
             .map(|(x, y)| lum(t + x, y))
             .min()
             .unwrap();
@@ -2161,16 +2339,14 @@ mod tests {
             .chunks_exact(4)
             .map(|p| p[0])
             .collect();
-        let (min, max) = (
-            *red.iter().min().unwrap(),
-            *red.iter().max().unwrap(),
-        );
+        let (min, max) = (*red.iter().min().unwrap(), *red.iter().max().unwrap());
+        // Darkening-only: nothing may sit above the unoccluded 1.0.
+        assert_eq!(max, 255, "AO must leave open surfaces untouched");
         assert!(min < max, "an AO map with no variation is not an AO map");
         assert!(
             min as f32 / 255.0 >= AO_MAP_FLOOR - 0.01,
             "AO floor breached: {min}/255 is below {AO_MAP_FLOOR}"
         );
-        assert!(max <= 255, "AO can only darken, never brighten past 1.0");
     }
 
     /// A material declared flat gets no AO, for the same reason it gets no normal
@@ -2270,7 +2446,8 @@ mod tests {
             build_face_metallic_roughness(id, Face::Side).expect("wood has a finish spread");
         let data = img.data.as_ref().unwrap();
 
-        let eff: Vec<f32> = (0..TILE_PX * TILE_PX)
+        let n = face_px(id, Face::Side).pow(2);
+        let eff: Vec<f32> = (0..n)
             .map(|i| data[i * 4 + 1] as f32 / 255.0 * ceiling)
             .collect();
         let lo = eff.iter().cloned().fold(f32::INFINITY, f32::min);
@@ -2280,7 +2457,7 @@ mod tests {
             "effective roughness {lo}..{hi} must straddle the table value {base}"
         );
         // Blue is metallic. Nothing in this palette is a metal.
-        assert!((0..TILE_PX * TILE_PX).all(|i| data[i * 4 + 2] == 0));
+        assert!((0..n).all(|i| data[i * 4 + 2] == 0));
     }
 
     /// Wrapped, not clamped. Every `tile_shade` pattern is seamless and the
@@ -2290,8 +2467,8 @@ mod tests {
     #[test]
     fn tile_height_wraps_instead_of_clamping() {
         for id in [BlockId::WOOD, BlockId::BRICK, BlockId::COBBLESTONE] {
-            let last = TILE_PX as i32 - 1;
-            for k in 0..TILE_PX as i32 {
+            let last = PROC_TILE_PX as i32 - 1;
+            for k in 0..PROC_TILE_PX as i32 {
                 assert_eq!(
                     tile_height(id, -1, k),
                     tile_height(id, last, k),
@@ -2316,8 +2493,9 @@ mod tests {
         let img = build_face_normal_map(BlockId::BRICK, Face::Side).expect("brick has relief");
         assert_eq!(img.texture_descriptor.format, TextureFormat::Rgba8Unorm);
         let data = img.data.as_ref().unwrap();
+        let tpx = face_px(BlockId::BRICK, Face::Side);
         let mut tilted = 0;
-        for i in 0..TILE_PX * TILE_PX {
+        for i in 0..tpx * tpx {
             let d = |c: usize| data[i * 4 + c] as f32 / 255.0 * 2.0 - 1.0;
             let (x, y, z) = (d(0), d(1), d(2));
             assert!(z > 0.0, "texel {i} points into the surface");
@@ -2328,7 +2506,7 @@ mod tests {
             }
         }
         assert!(
-            tilted > TILE_PX,
+            tilted > tpx,
             "only {tilted} texels carry any tilt — the pattern never reached the map"
         );
     }
@@ -2568,7 +2746,12 @@ mod tests {
     fn every_palette_block_has_an_atlas_tile() {
         assert!((LAMP.0 as usize) < N_TILES);
         let img = build_atlas();
-        assert_eq!(img.width() as usize, N_COLS * TILE_PX);
+        assert_eq!(img.width() as usize, N_COLS * atlas_tile_px());
+        assert!(
+            img.width() as usize <= MAX_ATLAS_WIDTH,
+            "the LOD atlas is {} texels wide — past the guaranteed max_texture_dimension_2d",
+            img.width()
+        );
         for id in BlockId::ALL_PLACEABLE.iter().copied().chain([LAMP]) {
             assert_ne!(
                 tile_base(id),
@@ -2576,6 +2759,77 @@ mod tests {
                 "{} falls through to error magenta",
                 id.name()
             );
+        }
+    }
+
+    // ---- manifest-driven tile size ----
+
+    /// A 4× point upscale must duplicate texels, not invent them: this is the
+    /// one operation standing between a 16 px procedural tile and its column in
+    /// a 64 px atlas, and anything that blends there would smear a block's edge
+    /// into its neighbour at the LOD ring.
+    #[test]
+    fn nearest_upscale_duplicates_texels_and_round_trips() {
+        // A 2×2 tile with four distinguishable texels.
+        let src: Vec<u8> = vec![
+            10, 11, 12, 255, // (0,0)
+            20, 21, 22, 255, // (1,0)
+            30, 31, 32, 255, // (0,1)
+            40, 41, 42, 255, // (1,1)
+        ];
+        let up = scale_tile_nearest(&src, 2, 8);
+        assert_eq!(up.len(), 8 * 8 * 4);
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let want = ((y / 4) * 2 + (x / 4)) * 4;
+                let got = (y * 8 + x) * 4;
+                assert_eq!(
+                    &up[got..got + 4],
+                    &src[want..want + 4],
+                    "texel ({x},{y}) is not its source texel"
+                );
+            }
+        }
+        // Same size in, same bytes out — the identity path the near split path
+        // relies on to never touch an artist's pixels.
+        assert_eq!(scale_tile_nearest(&src, 2, 2), src);
+    }
+
+    /// Every consumer must agree with [`face_texels`] about how big a tile is.
+    /// The bug this replaces was exactly this disagreement: `face_height` read a
+    /// 64² tile with a 16 stride, so a manifest at any other size had to be
+    /// thrown away wholesale to keep the renderer honest.
+    #[test]
+    fn every_face_texel_buffer_matches_its_declared_size() {
+        for id in 0..N_TILES as u8 {
+            let id = BlockId(id);
+            for face in Face::ALL {
+                let px = face_px(id, face);
+                assert_eq!(
+                    face_texels(id, face).len(),
+                    px * px * 4,
+                    "{} {face:?}: texel buffer disagrees with face_px",
+                    id.name()
+                );
+                let img = build_face_texture(id, face);
+                assert_eq!(img.width() as usize, px);
+                assert_eq!(img.height() as usize, px);
+                for map in [
+                    build_face_normal_map(id, face),
+                    build_face_metallic_roughness(id, face),
+                    build_face_occlusion(id, face),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    assert_eq!(
+                        (map.width() as usize, map.height() as usize),
+                        (px, px),
+                        "{} {face:?}: a derived map is not per-texel with its albedo",
+                        id.name()
+                    );
+                }
+            }
         }
     }
 }
