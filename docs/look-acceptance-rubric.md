@@ -49,6 +49,13 @@ CEO ไฟเขียว **framing แบบ TILT-DOWN** แล้ว → เ�
 |---|---|---|---|
 | 📐 **calibration ref** | `docs/assets/golden-beauty-shot-ref.png` (1024×1024, กล้องเกือบระดับ, tight, ชามเต็มเฟรม) | เป็น **ที่มาของเลข target** ทั้งชุดใน `grade_axes.TARGETS` + G3/G5/G6 · ใช้ "วางข้างกัน" ตัดสินลุคด้วยตา | **ห้ามเอา target มาทาบเฟรม tilt-down 16:9 ตรงๆ** แล้วบอกว่าตก |
 | 🎯 **framing baseline** | `docs/assets/wide-hero-final.png` (1280×720, **TILT-DOWN**, CEO-approved) | **เฟรมฐานที่เฟรมใหม่ทุกตัวต้องเทียบด้วย** (native control, web parity, regression) · recipe: `scripts/render_wide_hero.sh` | ไม่ใช่ที่มาของ target — ตัวมันเองก็ตก DOF axis โดยตั้งใจ |
+| 🌅 **outdoor/environment ref** (เพิ่ม 2026-08-18) | `docs/refs/ceo_ref_sunset_valley.jpg` (768×1376 portrait, CEO สั่ง) | ที่มาของ target ทั้งชุดใน [**P0-ENV**](#-p0-env--ท้องฟ้า--น้ำ--environment-scripts_pixel_artgap_gradepy--เพิ่ม-2026-08-18) — ฟ้า/น้ำ/aerial/silhouette ซึ่ง **ref สองใบข้างบนวัดไม่ได้เลยเพราะมี sky 0 px** | **ห้ามเอามาเกรด framing/composition** — คนละ aspect (portrait vs 16:9). P0-ENV ทุกแกนตั้งใจให้เป็น per-area หรือ scale-free เพื่อเลี่ยงข้อนี้ |
+
+> ⚠️ **ไฟล์นี้ไม่ใช่ ref ใบเดียวกับที่รายงาน `docs/art-gap-vs-reference-2026-08-17.md` (Kevin) วัด.**
+> ใบนั้นคือ upload อีกใบ (`uploads\1786952280558_…_n.jpg`) ที่บังเอิญเป็น 768×1376 เท่ากัน แต่เป็น
+> **stack 3 แผงแนวตั้ง** ของฉาก "บ้านไม้ริมทะเล" คนละฉากกัน. ใบนี้ตรวจแล้ว **เป็นแผงเดียว**
+> (แถวที่ `std < 8` = **0 แถว**; ที่แถว 459/460 และ 916/917 ซึ่งเป็นตำแหน่งเส้นคั่นของใบนั้น
+> วัดได้ std 28.2/28.5 และ 49.8/50.7) ⇒ **ห้ามเอา logic ตัดแผงของรายงานใบนั้นมาใช้กับไฟล์นี้.**
 
 **ค่าที่ baseline วัดได้จริง** (`grade_axes.py`, วัดสด 2026-07-29 · เรนเดอร์ซ้ำจาก source ปัจจุบันได้ค่าเดิม ±0.15):
 
@@ -182,6 +189,86 @@ python scripts/_flamingo_a62_synth_control.py \
 > control ที่ผ่านบนเพลต 2560×1360 **ไม่ยกมาใช้กับเพลต 1280×640 โดยอัตโนมัติ** — พิกัดที่แปะและขนาด
 > ที่แปะต้อง map ตาม hero bbox ก่อน (นี่คือเหตุผลที่ตารางข้างบนระบุความละเอียดกำกับทุกตัวเลข).
 > การ map นั้น**สคริปต์ทำให้แล้ว** (ตั้งแต่ 2026-08-14) แต่ตัวเลขในตารางยังต้องรันใหม่ต่อ plate class อยู่ดี.
+
+---
+
+## 🌅 P0-ENV — ท้องฟ้า / น้ำ / environment (`scripts/_pixel_artgap_grade.py`) — เพิ่ม 2026-08-18
+
+> **ทำไมถึงเพิ่งมี.** ทุกอย่างเหนือบรรทัดนี้เกรด **เฟรมในร่ม**. ref ที่ใช้ calibrate ทั้งสองใบ
+> (`golden-beauty-shot-ref.png`, `wide-hero-final.png`) มี **sky 0 px** — ตรงกับที่
+> `docs/VERDICT`-ชุด no-approved-outdoor-look บันทึกไว้. ผลคือ **ไม่มีแถวใดในเอกสารนี้
+> วัดท้องฟ้า, น้ำ, aerial perspective หรือ silhouette ระยะไกลเลยแม้แต่แถวเดียว** — ซึ่งเป็น
+> ~6 ใน 8 ของสิ่งที่ภาพอ้างอิงของ CEO (`docs/refs/ceo_ref_sunset_valley.jpg`) ทำได้ดีกว่าเรา.
+> เกรดกลางแจ้งด้วยตารางข้างบนอย่างเดียว = ให้เฟรมที่ท้องฟ้าดับสนิทผ่านฉลุย.
+>
+> รัน: `python scripts/_pixel_artgap_grade.py <frame.png>[=interior] --mask-dir <dir>`
+> control: `python scripts/_pixel_artgap_controls.py` (ต้อง exit 0)
+
+### กติกาเกรด 3 สถานะ — อ่านก่อนใช้
+
+| สถานะ | หมายความว่า | exit |
+|---|---|---|
+| **ok** | วัดได้ และ ≥ 60% ของ REF | 0 |
+| **GAP** | วัดได้ และต่ำกว่าเกต | 1 |
+| **SKIP** | **ปฏิเสธที่จะวัด** — ไม่ใช่ "วัดแล้วได้ศูนย์" | 2 |
+
+`SKIP` เกิดสองกรณี และทั้งสองเป็น **feature ไม่ใช่ bug**:
+1. `<frame>=interior` → แกนท้องฟ้าทั้งชุดข้าม. เฟรมในร่มไม่มีฟ้าให้เกรด การให้ 0 คือวัดการปฏิเสธ ไม่ใช่วัดข้อบกพร่อง.
+2. **degeneracy guard** — ถ้า `sky_void_pct > 20%` หรือ `sky_frac < 3%` แกน silhouette/aerial จะ SKIP.
+   เหตุผลมีของจริง: เวอร์ชันแรกของด่านนี้ให้ `_matmaps_after.png` ได้ **49.04 vs REF 22.33 = "ดีกว่า
+   ภาพอ้างอิง 2.20 เท่า"** เพราะฟ้าดับสนิท ⇒ `|L_sky − L_terrain|` พุ่งสูงสุดด้วยเหตุผลที่แย่ที่สุด.
+   **contrast เทียบกับความว่างเปล่า ไม่ใช่ silhouette.**
+
+### แกน P0-ENV
+
+| แกน | นิยาม | REF (CEO) | เจ้าของเลน | จับอะไร |
+|---|---|---|---|---|
+| **sky_ground_ratio** | `median(L[sky]) / median(L[ground])` | **1.80** | renderer | golden hour = **ฟ้าคือสิ่งที่สว่างที่สุดในเฟรม**. แกนนี้ **ไม่ขึ้นกับ framing/สเกล** เลย → เป็นแกนเดียวที่เทียบภาพ portrait กับ 16:9 ได้โดยไม่ต้องเถียงเรื่อง resample |
+| **sky_frac_pct** | % ของเฟรมที่เป็นฟ้า | 21.85 | world | มีฟ้าอยู่ในช็อตจริงไหม (world-building/กล้อง ไม่ใช่ shader) |
+| **sky_void_pct** | % ของ px ฟ้าที่ `L < 10` | 0.00 | renderer | ฟ้าดับ |
+| **sky_L_range** | `p95 − p5` ของ L ในฟ้า | 172.58 | renderer | ไล่โทนฟ้า — ฟ้าแบนสีเดียว = ทาสี ไม่ใช่ฟ้า |
+| **sky_hue_span_deg** | arc วงกลมที่กิน 80% ของ chroma mass ในฟ้า (bin 10°) | 60.0 | renderer | ช่วงสีฟ้า: ม่วง→ส้ม→ทอง ของ sunset. 10–20° = สีเดียวทั้งผืน |
+| **cool_chroma_pct** | % ของ chroma mass ที่ hue 170–269° | 2.96 | world | น้ำ/ฟ้าเย็น. **0.00 = ในแมพไม่มีบล็อกน้ำเลย** ไม่ใช่ shader พัง |
+| **far_edge_contrast** | mean per-column `|L_sky − L_terrain|` คร่อมเส้นขอบฟ้า (±4/+8 px) | 22.33 | renderer | silhouette ระยะไกลอ่านออกไหม — **มี degeneracy guard** |
+| **far_micro** | hi-pass std ในแถบใต้ขอบฟ้า | 14.06 | art | รายละเอียดที่ยัง "รอด" ถึงระยะไกล |
+| **depth_sat_ratio** | `sat(near) / sat(far)` | 1.28 | renderer | aerial perspective — ของไกลต้องซีดกว่า |
+| **depth_micro_ratio** | `micro(near) / micro(far)` | 0.90 | renderer | aerial perspective ฝั่ง detail |
+| **emissive_blobs** | จำนวน connected component ที่ `L>210 & sat>0.10`, area 4–2000 px | 159 | world | จุดไฟในโลก (โคม/กองไฟ). **ของเราได้ 3 เพราะ `maps/beach_dusk.json` มี `lamp` อยู่ 5 ก้อนจาก 5,380** — world-building ล้วน |
+
+### 🚨 sky mask ต้องพิสูจน์ได้ — ห้ามเชื่อตัวเลขก่อนดู mask
+
+`--mask-dir` เขียน overlay ออกมาทุกครั้ง (ฟ้า=น้ำเงิน · far=ชมพู · near=เขียว). **ดูก่อนอ้างอิงเลข.**
+เวอร์ชันแรกของ detector (high-pass r4 + สแกนคอลัมน์) **ให้ REF ได้ sky 7.34% ทั้งที่ตาอ่านว่า ~28%**
+— มันหยุดที่ **เนื้อเมฆ** แล้วเรียกเมฆว่าพื้นดิน — และยัง **เรียกผนังในร่มที่เบลอว่าเป็นฟ้า (14.49%)**.
+เข้ากติกาข้อ 7 เป๊ะ: **metric ที่ให้คะแนนภาพอ้างอิงต่ำ คือ metric พัง ไม่ใช่ภาพพัง.**
+ตัวปัจจุบันเป็น **flood-fill จากขอบบนของเฟรม ข้าม hard edge (Sobel > 22) ไม่ได้** —
+geometry แบบ voxel มี step discontinuity เสมอ ส่วนเมฆที่วาดไม่มี — ได้ REF 21.85% ตรงกับตา.
+ตัว detector **จงใจไม่ดูความสว่าง** เพื่อให้ฟ้าที่ดับสนิทยังถูกจัดเป็น "ฟ้า" แล้วไปโดนตัดสินที่
+`sky_void_pct` แทนที่จะหลุดไปนับเป็นพื้นดินจนไม่มีใครวัดมันเลย.
+
+### control log — P0-ENV (2026-08-18)
+
+`scripts/_pixel_artgap_controls.py` · **exit 0 · 0 control failure**
+
+- **positive control:** REF เกรดตัวเอง **21/21 แกน** ที่เกต 60% ⇒ เส้นตัดเอื้อมถึงจริง
+- **negative controls (6 ใบ · C1–C6 — C0 ในตารางล่างเป็น identity ไม่ใช่ lesion):** ทำลาย REF ทีละคุณสมบัติ แล้วบังคับว่า **แกนที่ชื่อตรงกันต้องพัง
+  และแกนข้างเคียงที่ระบุชื่อไว้ต้องรอด** — กัน metric ที่ "ตกทุกอย่างเท่ากัน" (ไม่จำเพาะ)
+
+| control | lesion | ต้องพัง | ต้องรอด |
+|---|---|---|---|
+| C0 | ไม่แตะ | — | ทุกแกน 1.00 |
+| C1 | S → 0 | sat/hue_bins/hue_entropy | edge/micro/sky_frac |
+| C2 | blur r4 | edge/micro_r1/micro_r3 | sat/hue/dyn-range |
+| C3 | ทาฟ้าเป็นดำ | sky_L_range/hue_span/**sky_ground_ratio**/sky_void | edge/sat |
+| C4 | เทาแบนทั้งเฟรม | ทุกแกนหลัก | — |
+| C5 | S-curve crush+clip | crush_pct/clip_pct | hue/edge/**tonal_bins** |
+| C6 | บังคับ hue → 30° | hue_bins/hue_entropy | dyn-range/edge |
+
+> 🩹 **C5 เคย FAIL แล้วแก้ที่ control ไม่ใช่ที่ metric.** รอบแรก C5 ระบุว่า `tonal_bins` ต้องพัง
+> แล้วมันได้ **32 → 32**. ตรวจแล้ว **control ผิด ไม่ใช่ metric ผิด**: S-curve บด "ปลายทั้งสองข้าง"
+> แต่ยืดสิ่งที่เหลือจนเต็มช่วง ⇒ histogram occupancy ไม่ขยับ. แกนที่ตั้งชื่อความเสียหายนี้จริง ๆ
+> คือ `crush_pct` / `clip_pct` (0.55→37.77, 10.30→24.74). `tonal_bins` ไม่ได้ถูกทิ้งให้ไร้ control —
+> มันมี negative control ของตัวเองอยู่ที่ C4 (32 → 1).
 
 ---
 
