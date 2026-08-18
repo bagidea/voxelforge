@@ -92,3 +92,30 @@ new hue.
 - This is a texture/palette proposal for whoever wires up UV/material
   mapping next (the current beauty shot renders flat-shaded solid cubes,
   no texture sampling) — it does not by itself change any rendered frame.
+
+## 64x64 PBR upgrade (2026-08-18)
+
+The single biggest gap vs a realistic texture pack was resolution + no PBR:
+every block above was `16x16`, albedo-only. All 19 are now `64x64` with a
+full PBR triplet per block — `<name>.png` (albedo), `<name>_n.png`
+(tangent-space normal map), `<name>_r.png` (roughness, grayscale,
+white = rough / black = mirror-smooth). Same HSV targets/hue rationale as
+every row above — the palette did not move, only the resolution and the
+amount of real per-material structure drawn into it (brick/stone mortar
+courses, individual wood-grain fibers, log rings, per-grain sand/dirt
+speckle, a lantern cage, brushed-metal rivets, water sun-glint, snow
+sparkle). Normal/roughness are derived from a height field authored in the
+*same* per-pixel pass as the albedo (grooves recess + roughen, highlights
+raise + smooth), so the bump/gloss detail is tied to what the albedo
+actually draws rather than decorrelated noise.
+
+Generator: `scripts/_pixel_blocks_gen64.py` (deterministic, same
+per-material seeding as the retired `scripts/_pixel_blocks_gen.py`). Old
+16x16 set backed up verbatim at `assets/textures/blocks_16px_backup/`.
+`contact_sheet.png` is now a before(16px)/after(64px albedo) comparison per
+block; `contact_sheet_pbr.png` is a new albedo/normal/roughness triplet
+sheet for the 64px set. `atlas.json`'s `tile_px` is now `64`, and every
+tile entry gained `normal`/`roughness` keys — inert extra JSON the current
+loader (`TileEntry` in `block_atlas.rs`, no `deny_unknown_fields`) ignores
+until the render lane wires PBR sampling into the pipeline. No Rust
+changed as part of this pass.

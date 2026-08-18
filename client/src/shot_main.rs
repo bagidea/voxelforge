@@ -21,6 +21,25 @@ mod block_atlas;
 #[path = "hero.rs"]
 mod hero;
 
+// The Act I cast (`characters.rs`). Same reason vfx.rs can live here: it is
+// bevy-only and reaches into no other module, so the SAME builder that `scene.rs`
+// spawns the village NPCs with also renders the character contact sheet in this
+// bin — the sheet is the game's geometry, not a look-alike drawn twice.
+#[path = "characters.rs"]
+mod characters;
+
+// Slot-based equipment (`equipment.rs`). `characters.rs` reaches it as
+// `crate::equipment`, which resolves here for exactly the same reason it resolves
+// in `main.rs`: both crate roots declare the module. Bevy-only, no other lane.
+#[path = "equipment.rs"]
+mod equipment;
+
+// New enemy silhouettes (Monanisa, `enemies.rs`). Same reason as
+// `characters.rs` right above: bevy-only, no `crate::` reference, so it
+// compiles into this isolated bin without touching `combat.rs` (Rose's lane).
+#[path = "enemies.rs"]
+mod enemies;
+
 // The VFX layer (`vfx.rs`) is deliberately bevy-only — it reaches into no other
 // lane's module — so it compiles inside this isolated bin exactly as it will inside
 // `voxelforge`. That is what makes it possible to build, run and photograph the VFX
@@ -192,6 +211,37 @@ fn main() -> AppExit {
                 st.at_frame = Some(SHOWCASE_SHOT_FRAME);
             }
             println!("VFX showcase: {which:?} mute={} (fixed 1/60 step)", mute.0);
+        }
+        // `VOXELFORGE_CHARSHOT` swaps the kitchen for the character contact sheet
+        // (line-up / silhouette test / solo portrait). Third stage, same rule as
+        // the VFX one above: unset ⇒ the golden kitchen path is untouched.
+        None if characters::CharShot::from_env().is_some() => {
+            let stage = characters::CharShot::from_env().expect("checked by the guard above");
+            app.insert_resource(stage)
+                .init_resource::<characters::SwapRun>()
+                .add_systems(Startup, characters::setup_charshot)
+                .add_systems(Update, characters::charshot_timeline);
+            // The equipment-swap stages take SEVERAL captures in one process (one
+            // per outfit), so they drive their own screenshots and this bin's
+            // single-grab path has to stand down — otherwise `screenshot_once`
+            // would fire a fourth, unlabelled grab at 3.2 s and quit at 4.4 s,
+            // half-way through the ladder. Every still stage still goes through
+            // the normal path untouched.
+            if stage.owns_capture() {
+                if let Some(mut st) = app.world_mut().get_resource_mut::<ShotState>() {
+                    st.path = None;
+                }
+            }
+            println!("CHARSHOT stage requested: {stage:?} owns_capture={}", stage.owns_capture());
+        }
+        // `VOXELFORGE_ENEMYSHOT` swaps the kitchen for the enemy design
+        // contact sheet (before/line/solo). Same rule as CHARSHOT above:
+        // unset ⇒ the golden kitchen path is untouched.
+        None if enemies::EnemyShot::from_env().is_some() => {
+            let stage = enemies::EnemyShot::from_env().expect("checked by the guard above");
+            app.insert_resource(stage)
+                .add_systems(Startup, enemies::setup_enemyshot);
+            println!("ENEMYSHOT stage requested: {stage:?}");
         }
         None => {
             app.add_systems(Startup, (hero::setup_hero, dup_probe).chain())

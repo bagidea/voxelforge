@@ -131,6 +131,12 @@ pub(crate) struct Cfg {
     /// transform, and spawns water/campfire/boat/flower-pot props over a loaded
     /// `maps/beach_dusk.json`. See `docs/hero-scene-beach-dusk.md` §5.1.
     pub(crate) beachshot: bool,
+    /// `VOXELFORGE_FPS_BENCH=<secs>` — headless steady-state frame-time sampler of
+    /// the loaded play scene (the real map, not the bench grid). Warms up, samples
+    /// `secs` of frame times, prints one `FPS_BENCH` line (median/mean/p95 ms, fps,
+    /// chunk + quad counts) and exits. Gate for the map-density pass so a foliage
+    /// change is priced in FPS, not just in draw-call count.
+    pub(crate) fps_bench: Option<f32>,
     // Hero-shot tunables (env-driven so the shot re-frames without a recompile).
     cam: Option<[f32; 7]>, // ex,ey,ez, tx,ty,tz, fov_deg
     sun: Option<[f32; 3]>, // elevation_deg, azimuth_deg, illuminance
@@ -220,6 +226,9 @@ fn read_cfg() -> Cfg {
     let map_load = std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty());
     let map_save = std::env::var("VOXELFORGE_MAP_SAVE").ok().filter(|s| !s.is_empty());
     let beachshot = std::env::var("VOXELFORGE_BEACHSHOT").is_ok();
+    let fps_bench = std::env::var("VOXELFORGE_FPS_BENCH")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let play = play_demo
         || combat_demo
         || quest_demo
@@ -267,6 +276,7 @@ fn read_cfg() -> Cfg {
         map_load,
         map_save,
         beachshot,
+        fps_bench,
         cam: env_floats("VOXELFORGE_CAM"),
         sun: env_floats("VOXELFORGE_SUN"),
         dof: env_floats("VOXELFORGE_DOF"),
@@ -436,9 +446,25 @@ struct Bench {
     log: String,
 }
 
+/// Headless steady-state FPS sampler for the loaded play scene (the *real* map,
+/// not the ramp's synthetic grid). Gated by `VOXELFORGE_FPS_BENCH=<secs>`: warms
+/// up past `FPS_WARMUP`, collects `sample_secs` of frame times, prints one line
+/// (median/mean/p95 ms, fps, chunk + quad counts) and exits. The quad count is
+/// the draw-call proxy, so a foliage/instance change is priced two ways.
+#[derive(Resource)]
+struct FpsBench {
+    sample_secs: f32,
+    started: bool,
+    start: f32,
+    samples: Vec<f32>,
+}
+
 const WARMUP: f32 = 1.2;
 const PHASE: f32 = 2.0;
 const MAX_SIDE: i32 = 32; // up to 1024 chunks (ramp stops early once FPS dips <55)
+/// FPS-sampler warmup matches `screenshot_once`'s 3.2s shot time, so the sampled
+/// world is the same fully-settled scene the still-shot grades.
+const FPS_WARMUP: f32 = 3.2;
 
 fn main() -> AppExit {
     let mut cfg = read_cfg();
@@ -530,6 +556,12 @@ fn main() -> AppExit {
         took_shot: false,
         shot: cfg.shot.clone(),
         log: String::new(),
+    })
+    .insert_resource(FpsBench {
+        sample_secs: cfg.fps_bench.unwrap_or(0.0),
+        started: false,
+        start: 0.0,
+        samples: Vec::new(),
     });
 
     if cfg.hero {
@@ -697,6 +729,7 @@ fn main() -> AppExit {
                     hud.run_if(main_menu::main_menu_closed),
                     bench_ramp,
                     screenshot_once,
+                    fps_bench_sampler,
                 ),
             )
             // Combat systems. gather_input → player_combat → husk AI run before the
@@ -3239,6 +3272,49 @@ fn screenshot_once(
         // Exit code decided after app.run() via the GATE_FAILED static.
         exit.write(AppExit::Success);
     }
+}
+
+/// `VOXELFORGE_FPS_BENCH=<secs>`: sample the loaded play scene's steady-state
+/// frame time and print one line, then exit. Unlike `bench_ramp` (which grows a
+/// synthetic grid), this samples the *real* map at whatever camera
+/// `VOXELFORGE_CINE` pinned — so running it with the same env as a still-shot
+/// gives an FPS number for the same frame composition the edge metric grades.
+fn fps_bench_sampler(
+    time: Res<Time>,
+    world: Option<Res<World>>,
+    mut bench: ResMut<FpsBench>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if bench.sample_secs <= 0.0 {
+        return;
+    }
+    let now = time.elapsed_secs();
+    if now < FPS_WARMUP {
+        return;
+    }
+    if !bench.started {
+        bench.started = true;
+        bench.start = now;
+    }
+    bench.samples.push(time.delta_secs() * 1000.0);
+    if now - bench.start < bench.sample_secs {
+        return;
+    }
+
+    let mut ms = std::mem::take(&mut bench.samples);
+    ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let n = ms.len();
+    let median_ms = if n > 0 { ms[n / 2] } else { 0.0 };
+    let mean_ms = if n > 0 { ms.iter().sum::<f32>() / n as f32 } else { 0.0 };
+    let p95_idx = if n > 0 { ((n as f32 * 0.95) as usize).min(n - 1) } else { 0 };
+    let p95_ms = if n > 0 { ms[p95_idx] } else { 0.0 };
+    let fps = if median_ms > 0.0 { 1000.0 / median_ms } else { 0.0 };
+    let chunks = world.as_ref().map(|w| w.chunks.len()).unwrap_or(0);
+    let quads = world.as_ref().map(|w| w.total_quads).unwrap_or(0);
+    println!(
+        "FPS_BENCH frames={n} median_ms={median_ms:.2} mean_ms={mean_ms:.2} p95_ms={p95_ms:.2} fps={fps:.1} chunks={chunks} quads={quads}"
+    );
+    exit.write(AppExit::Success);
 }
 
 // ---------------------------------------------------------------------------

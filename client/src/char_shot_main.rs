@@ -72,6 +72,15 @@ fn main() -> AppExit {
         .to_path_buf();
     let asset_path = exe_dir.join("assets");
 
+    // Frame size is an env lever, not a constant. The gear sheet is judged BY EYE
+    // against modern character mods, and 720p of a 2.5-block figure is ~460 px of
+    // character — small enough that a chamfer, a pupil or a knuckle row simply is
+    // not resolved, which would make the sculpt pass unjudgeable rather than bad.
+    // The camera is untouched: `PerspectiveProjection::fov` is VERTICAL in Bevy, so
+    // changing the aspect changes how much of the world is visible left/right and
+    // never how tall the subject is in frame.
+    let res = env_res().unwrap_or((1280, 720));
+
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -82,7 +91,7 @@ fn main() -> AppExit {
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Voxelforge — character shot".into(),
-                    resolution: (1280u32, 720u32).into(),
+                    resolution: (res.0, res.1).into(),
                     present_mode: PresentMode::AutoVsync,
                     ..default()
                 }),
@@ -103,6 +112,17 @@ fn main() -> AppExit {
 
     println!("CHARSHOT bin: stage={:?} owns_capture={}", stage.stage, stage.owns_capture());
     app.run()
+}
+
+/// `VOXELFORGE_RES=1440,1080` → `(1440, 1080)`. Anything unparseable is ignored
+/// rather than defaulted-to-garbage: a typo'd resolution silently shooting a
+/// 1×1 window is the sort of thing that costs an afternoon.
+fn env_res() -> Option<(u32, u32)> {
+    let raw = std::env::var("VOXELFORGE_RES").ok()?;
+    let (w, h) = raw.split_once(&[',', 'x'][..])?;
+    let w: u32 = w.trim().parse().ok()?;
+    let h: u32 = h.trim().parse().ok()?;
+    (w >= 64 && h >= 64 && w <= 7680 && h <= 4320).then_some((w, h))
 }
 
 fn still_shot(
