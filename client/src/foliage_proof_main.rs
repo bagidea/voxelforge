@@ -37,7 +37,37 @@ use foliage::{foliage_material, cross_quad_mesh, FoliageMaterial, FoliagePlugin,
 /// Frame the grab happens on, and the frame the app quits on (same counted-not-
 /// timed discipline as `atlas_shot_main.rs`).
 const SHOT_FRAME: u32 = 90;
-const EXIT_FRAME: u32 = 150;
+/// Frames between the grab and the quit, so the async screenshot write lands
+/// before the process exits (the grab is never the last thing the app does).
+const EXIT_MARGIN: u32 = 60;
+
+/// Capture frame, overridable via `VOXELFORGE_FOLIAGE_SHOT_FRAME`. The sway
+/// harness uses this to grab two wind times from one binary (e.g. frame 90
+/// vs 174) instead of rebuilding for each shot.
+fn shot_frame() -> u32 {
+    std::env::var("VOXELFORGE_FOLIAGE_SHOT_FRAME")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SHOT_FRAME)
+}
+
+/// Sway amplitude override via `VOXELFORGE_FOLIAGE_SWAY_AMP`. 0.0 zeroes the
+/// sway so the harness can shoot a control pair that MUST not move.
+fn sway_amp_override() -> Option<f32> {
+    std::env::var("VOXELFORGE_FOLIAGE_SWAY_AMP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+}
+
+/// The field's wind state, with sway amplitude overridable via env so the
+/// harness can shoot a `sway_amp = 0.0` control arm (grass must not move).
+fn wind_uniform() -> FoliageWindUniform {
+    let mut wind = FoliageWindUniform::default();
+    if let Some(amp) = sway_amp_override() {
+        wind.sway_amp = amp;
+    }
+    wind
+}
 
 #[derive(Resource)]
 struct ShotState {
@@ -102,7 +132,7 @@ fn setup_stage(
 ) {
     let tex = asset_server.load("textures/blocks/vegetation/grass_tall.png");
     let mesh = meshes.add(cross_quad_mesh());
-    let mat = mats.add(foliage_material(tex, FoliageWindUniform::default()));
+    let mat = mats.add(foliage_material(tex, wind_uniform()));
 
     // A field of cross-quads. Each plant is its own entity with its own world
     // transform — the shader derives its phase/amplitude from that world cell,
@@ -192,14 +222,15 @@ fn screenshot_once(
         return;
     };
     state.frame += 1;
-    if !state.took && state.frame >= SHOT_FRAME {
+    let shot = shot_frame();
+    if !state.took && state.frame >= shot {
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path.clone()));
         state.took = true;
         println!("SHOT saved to {path} (frame {})", state.frame);
     }
-    if state.took && state.frame >= EXIT_FRAME {
+    if state.took && state.frame >= shot + EXIT_MARGIN {
         exit.write(AppExit::Success);
     }
 }

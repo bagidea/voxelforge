@@ -141,5 +141,13 @@ fn vertex(in: Vertex) -> VertexOutput {
     out.world_position = world;
     out.world_normal = mesh_functions::mesh_normal_local_to_world(in.normal, in.instance_index);
     out.uv = in.uv;
+#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+    // The fragment stage indexes the per-instance mesh buffer with this
+    // (material bind-group slot + flags in pbr_fragment.wgsl). Bevy defines
+    // VERTEX_OUTPUT_INSTANCE_INDEX unconditionally in the mesh pipeline, so a
+    // vertex shader that skips this hands every blade mesh[0]'s slot and breaks
+    // material lookup. Same line as bevy_pbr's own mesh.wgsl vertex stage.
+    out.instance_index = in.instance_index;
+#endif
     return out;
 }
