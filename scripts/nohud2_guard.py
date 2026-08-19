@@ -95,6 +95,15 @@ REFERENCE_ARTWORK = {
         "to draw - HUD-free by construction, exactly like the *-nohud2.png frames "
         "render_grade.sh names. It is the second control (the rubric quotes its DOF 0.17 as "
         "the known intrinsic-fail baseline), so it has to be re-measurable too.",
+    "docs/refs/ceo_ref_sunset_valley.jpg":
+        "the CEO's sunset-valley art reference - a curated picture handed to the office, "
+        "never rendered by this engine and never near a HUD. It is the REF column of "
+        "_pixel_artgap_grade.AXES (every axis is derived FROM it, so it scores 1.00 by "
+        "construction), which makes it the same case as the golden ref one entry above: "
+        "guarding _pixel_artgap_grade.py without listing it here would refuse the P0-ENV "
+        "table's own calibration source and leave the table unfalsifiable. Not renamed to "
+        "*-nohud2.png for exactly the reason EXEMPT['grade_ref.py'] gives - you do not "
+        "rename the CEO's artwork to satisfy a capture-provenance suffix.",
 }
 
 _REFERENCE_ABS = {
@@ -193,6 +202,18 @@ GUARDED = (
     "cast_shadow_penumbra.py",
     "sun_locked_edges.py",
     "band_map.py",
+    # The P0-ENV art-gap table. Its axes are the rubric's own (dynamic range,
+    # saturation, micro-contrast, flat area) plus the sky/water/depth ones the
+    # interior rubric never had, and it prints them as "% of the CEO reference"
+    # into docs/aaa-scoreboard-live.md — a page written for the CEO to read
+    # top-to-bottom. Exactly the class of number the HUD corrupts: the [E] prompt
+    # glyphs sit at ~250 on the ground, which lifts L_p95, adds strong_edge_pct
+    # and emissive_blobs, and drops flat_pct — four gated axes moved by UI, and
+    # crush/clip read off a frame that has a status line in it. Its own control
+    # harness (_pixel_artgap_controls.py) is untouched by this: it imports
+    # measure() directly and lesions the reference in a temp dir, so it never
+    # goes through the CLI where the guard lives.
+    "_pixel_artgap_grade.py",
     # per-agent probes that print a frame-measured number (diagnostic graders):
     "_flamingo_halo_probe.py",
     "_flamingo_char_dist_solve.py",

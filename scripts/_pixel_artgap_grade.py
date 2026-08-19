@@ -34,6 +34,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -42,6 +43,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from scipy import ndimage
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 
 NORM_AREA = 1_000_000
 
@@ -872,6 +876,19 @@ def main():
     ap.add_argument("--gate", action="store_true",
                     help="exit 1 if any frame fails an axis, 2 if an axis could not be measured")
     a = ap.parse_args()
+
+    # ---- the de-HUD guard, before ANY output ------------------------------
+    # First statement after parsing on purpose: a refusal must leave no number
+    # behind for a human to read out of context, and the very next block prints
+    # "rule 7: verifying the instrument ...". Strip the `=interior` scene suffix
+    # first — the guard is asked about a FILE, and `frame.png=interior` is a
+    # filename it would refuse for the wrong reason. `--ref` is checked in the
+    # same call because it is graded too (measure() runs on it and its numbers
+    # are the REF column); it passes by IDENTITY through
+    # nohud2_guard.REFERENCE_ARTWORK, not by suffix — the CEO's artwork does not
+    # get renamed to satisfy a capture-provenance rule.
+    require_nohud2([spec.partition("=")[0] for spec in a.frames] + [a.ref],
+                   tool="_pixel_artgap_grade.py")
 
     if a.oneshot:
         a.check_controls = a.gate = True
