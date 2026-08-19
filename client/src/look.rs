@@ -2419,6 +2419,32 @@ fn haze_color() -> Color {
         let c = h.fog;
         return Color::srgb(c[0], c[1], c[2]);
     }
+    // COOL DISTANCE TINT, 2026-08-19 — "far mountains fade BLUE". The hour's
+    // horizon haze is warm (the sun sits there, see the paragraph above), but
+    // atmospheric perspective scatters the blue INTO the distance: mountains
+    // against the sky read blue-grey, not orange. `VOXELFORGE_LOOK_FOGCOOL`
+    // (0..1) lerps the haze toward a cool blue-purple so distant geometry fades
+    // blue instead of brown; 0 keeps the warm haze verbatim. The default is small
+    // (not a full flip) because the dome's cream horizon still has to meet the
+    // skyline without a seam — a fully-blue distance haze would carve a dark band
+    // exactly where the warm skyline and the fog meet. Swept via the lever, same
+    // as the other knobs this function already reads.
+    let cool = std::env::var("VOXELFORGE_LOOK_FOGCOOL")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .filter(|c| *c >= 0.0 && *c <= 1.0)
+        .unwrap_or(0.35);
+    let hue = if cool > 0.0 {
+        // cool blue-purple, sRGB — the shadow-side mountain hue of a sunset sky.
+        const COOL: [f32; 3] = [0.42, 0.52, 0.72];
+        [
+            hue[0] + (COOL[0] - hue[0]) * cool,
+            hue[1] + (COOL[1] - hue[1]) * cool,
+            hue[2] + (COOL[2] - hue[2]) * cool,
+        ]
+    } else {
+        hue
+    };
     let lin = Color::srgb(hue[0], hue[1], hue[2]).to_linear();
     // `* h.sky_gain` is the whole point: `apply_fog` mixes this colour into an
     // ALREADY-EXPOSED lit colour and writes it to the same HDR target the sky's
@@ -3806,6 +3832,15 @@ fn load_sky_plate(name: &str) -> Option<SkyPlate> {
 /// sky, which a banded ramp still passes while looking obviously wrong.
 const SKY_LUT_ROWS: usize = 512;
 
+/// Where the highlight knee starts rolling the ramp off, in the authored plate's
+/// own 0-1 sRGB scale. Below this the texels pass through byte-for-byte.
+const SKY_HIGHLIGHT_KNEE: f32 = 0.80;
+
+/// How much further headroom the knee grants above [`SKY_HIGHLIGHT_KNEE`] before
+/// it saturates. A soft (finite) rolloff — not a hard clamp — so the horizon stays
+/// monotonic and no band appears where the cream meets the red.
+const SKY_HIGHLIGHT_SOFT: f32 = 0.22;
+
 /// Build the 1 x [`SKY_LUT_ROWS`] gradient texture from the authored ramp.
 ///
 /// Stored `Rgba8UnormSrgb` — the plate is authored in sRGB and the GPU decodes it
@@ -3825,10 +3860,38 @@ fn build_sky_ramp_lut(plate: &SkyPlate) -> Image {
         let i0 = (t.floor() as usize).min(last);
         let i1 = (i0 + 1).min(last);
         let f = t - i0 as f32;
-        for k in 0..4 {
-            let v = col[i0][k] + (col[i1][k] - col[i0][k]) * f;
-            data[y * 4 + k] = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+
+        // Resample the RGB channels first so the knee below can act on them.
+        let mut rgb = [0.0f32; 3];
+        for k in 0..3 {
+            rgb[k] = col[i0][k] + (col[i1][k] - col[i0][k]) * f;
         }
+
+        // HIGHLIGHT KNEE — the blown-to-white fix. The plate's cream horizon is
+        // authored at 255 sRGB; multiplied by [`SKY_PAINT_GAIN`] it lands past the
+        // tonemapper's shoulder and clips to pure white (`sky_blown_pct` 5.09% vs
+        // REF 0.00%). Roll the MAX channel off above [`SKY_HIGHLIGHT_KNEE`] and
+        // scale all three by the SAME factor, so HUE survives and only brightness
+        // is capped. The violet/mid rows sit below the knee and pass through
+        // unchanged, so the gradient + hue axes are untouched — this is the lever
+        // that lets [`SKY_PAINT_GAIN`] stay high for `sky brighter than ground`
+        // without re-introducing the clip.
+        let m = rgb.iter().cloned().fold(0.0f32, f32::max);
+        if m > SKY_HIGHLIGHT_KNEE {
+            let excess = m - SKY_HIGHLIGHT_KNEE;
+            let rolled = SKY_HIGHLIGHT_KNEE
+                + SKY_HIGHLIGHT_SOFT * (excess / (SKY_HIGHLIGHT_SOFT + excess));
+            let s = rolled / m;
+            for k in 0..3 {
+                rgb[k] *= s;
+            }
+        }
+        for k in 0..3 {
+            data[y * 4 + k] = (rgb[k].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        }
+        // Alpha is carried straight through — the sky plate is opaque.
+        let a = col[i0][3] + (col[i1][3] - col[i0][3]) * f;
+        data[y * 4 + 3] = (a.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
     }
     let mut img = Image::new(
         Extent3d {
@@ -3868,7 +3931,16 @@ fn build_sky_ramp_lut(plate: &SkyPlate) -> Image {
 /// below 1 pulls the whole arc down toward the horizon: at 0.45, half the ramp is
 /// spent by 20 degrees of elevation, so the full violet-to-cream span lands
 /// INSIDE the frame. `VOXELFORGE_SKY_CURVE` sweeps it.
-const SKY_RAMP_CURVE: f32 = 0.45;
+///
+/// LOWERED 0.45 -> 0.30, 2026-08-19. Monanisa measured the 0.45 default against
+/// the CEO reference and the ramp's hue arc never reached the graded frame: sky
+/// hue range stuck at 20 deg (33% of REF 60) and sky tonal gradient at 34.30
+/// (20% of REF 172.58), because the violet zenith still sat above the ~15-30 deg
+/// the vista camera frames. At 0.30, half the ramp is spent by ~9 deg of
+/// elevation (0.5^(1/0.30) = 0.099 elev_frac), so the violet -> red -> cream hue
+/// arc is in-frame instead of just the warm cream band. `VOXELFORGE_SKY_CURVE`
+/// still sweeps it one-binary for the exact rung.
+const SKY_RAMP_CURVE: f32 = 0.30;
 
 fn sky_ramp_curve() -> f32 {
     std::env::var("VOXELFORGE_SKY_CURVE")
@@ -3911,7 +3983,20 @@ fn sky_ramp_curve() -> f32 {
 /// for the skyline to sit against, which is the same trade
 /// `docs/` records under black-sky-wins-silhouette from the other direction.
 /// Anything above this rung should be shot against that axis before it lands.
-const SKY_PAINT_GAIN: f32 = 8.0;
+///
+/// LOWERED 8.0 -> 4.0, 2026-08-19 — the blown-to-white fix, done at the RAMP not
+/// the gain. The 8.0 rung cleared the sky/ground gate but left the cream horizon
+/// clipping to pure white: `sky_blown_pct` 5.09% vs REF 0.00%. The dome is unlit
+/// and its `base_color * texel` is written into the HDR target verbatim, so any
+/// gain above ~4 pushes the 255 sRGB cream straight into the TonyMcMapface
+/// shoulder (confirmed by the 2026-08-19 gain ladder: every rung above 4 lands on
+/// the same shoulder). The real fix is the soft highlight knee in
+/// [`build_sky_ramp_lut`] (caps the cream while the mid/violet keep the gain), so
+/// this rung comes back DOWN to 4.0 to sit just below the shoulder while
+/// [`SKY_RAMP_CURVE`] spreads more of the ramp into frame for gradient + hue.
+/// `VOXELFORGE_SKY_GAIN` still sweeps the exact rung one-binary
+/// (`scripts/_poppy_skysweep_20260819.ps1`).
+const SKY_PAINT_GAIN: f32 = 4.0;
 
 fn sky_paint_gain() -> f32 {
     std::env::var("VOXELFORGE_SKY_GAIN")
