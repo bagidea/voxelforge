@@ -49,6 +49,69 @@ SUFFIX = "-nohud2.png"
 EXIT_REFUSED = 2
 
 # ---------------------------------------------------------------------------
+# REFERENCE ARTWORK - the curated, committed files that never had a HUD.
+# ---------------------------------------------------------------------------
+# EXEMPT (below) exempts a whole SCRIPT. This list exempts a specific FILE, and
+# it exists because the suffix rule had made the rubric's own control impossible
+# to run:
+#
+#   grade_axes.py is the single source of truth for the P0 axes, and its header
+#   defines every target as "close the gap toward REF, where REF =
+#   docs/assets/golden-beauty-shot-ref.png measured by THIS script". grade_axes.py
+#   is GUARDED. The golden ref does not end in -nohud2.png and never will (it is
+#   the CEO-signed artwork; renaming it is what EXEMPT["grade_ref.py"] already
+#   refuses to do). So the one frame the whole table is calibrated against was the
+#   one frame the table's own grader would not measure -- `grade_axes.py
+#   docs/assets/golden-beauty-shot-ref.png` exits 2 with no numbers.
+#
+#   docs/look-acceptance-rubric.md rule 7 says "no control = no verdict": before
+#   any axis may FAIL a teammate's frame, it must be run against work already known
+#   good. A control that cannot be executed is not a strict guard, it is an
+#   unfalsifiable one -- every axis keeps its PASS/FAIL power while nobody can
+#   re-check that REF still scores what the table claims it scores.
+#
+# This is NOT a bypass and NOT an override:
+#   * it is a fixed, in-source list -- no env var, no flag, no argument (the
+#     docstring's "deliberately NO env override" still holds; scripts/tests/
+#     test_nohud2_guard.py enforces it with a plain substring scan over this
+#     file's body, so nothing here may even spell the two forbidden API names);
+#   * entries are resolved to absolute paths under THIS repo, so only these exact
+#     committed files match -- a raw capture someone renames to
+#     "golden-beauty-shot-ref.png" in another directory is still refused;
+#   * the file must still exist on disk;
+#   * everything else still fails closed, exactly as before.
+# Each entry states why the pixels are HUD-free, same rule as EXEMPT: an
+# exemption without a stated reason is how a gate gets quietly loosened.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+REFERENCE_ARTWORK = {
+    "docs/assets/golden-beauty-shot-ref.png":
+        "the golden calibration reference - curated artwork, never a capture, never had a "
+        "HUD. It is the REF column of grade_axes.TARGETS, so refusing it made the P0 table "
+        "impossible to control-run against its own calibration source.",
+    "docs/assets/wide-hero-final.png":
+        "the CEO-approved framing baseline, rendered by scripts/render_wide_hero.sh through "
+        "voxelforge_shot (client/src/shot_main.rs), which draws hero.rs only and has no HUD "
+        "to draw - HUD-free by construction, exactly like the *-nohud2.png frames "
+        "render_grade.sh names. It is the second control (the rubric quotes its DOF 0.17 as "
+        "the known intrinsic-fail baseline), so it has to be re-measurable too.",
+}
+
+_REFERENCE_ABS = {
+    os.path.normcase(os.path.abspath(os.path.join(_REPO_ROOT, rel)))
+    for rel in REFERENCE_ARTWORK
+}
+
+
+def is_reference_artwork(path):
+    """True only for the exact committed reference files listed above.
+
+    Matched by resolved absolute path, so the claim is about a FILE on disk in
+    this repo, not about a name someone can reproduce elsewhere.
+    """
+    return os.path.normcase(os.path.abspath(os.fspath(path))) in _REFERENCE_ABS
+
+# ---------------------------------------------------------------------------
 # COVERAGE REGISTRY - the single source of truth for "which graders are gated".
 # ---------------------------------------------------------------------------
 # The first version of this guard was wired into 2 of the 10 tracked grading
@@ -236,6 +299,13 @@ def require_nohud2(paths, tool=None):
     bad = []
     for p in paths:
         s = os.fspath(p)
+        # Curated reference artwork (see REFERENCE_ARTWORK): HUD-free by
+        # provenance, so it is admitted by identity instead of by suffix. It
+        # still has to exist; nothing else is treated this way.
+        if is_reference_artwork(s):
+            if not os.path.isfile(s):
+                bad.append((s, "missing on disk"))
+            continue
         if not s.lower().endswith(SUFFIX):
             bad.append((s, f"not de-HUDded - filename must end in {SUFFIX}"))
         elif not os.path.isfile(s):
