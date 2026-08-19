@@ -36,10 +36,15 @@
 // Every field is a vec4 on purpose: std140 pads a vec3 to 16 bytes anyway, and a
 // mixed scalar/vec3 layout is the classic silent-corruption bug in a hand-written
 // uniform. Rust-side mirror: `WaterExtension` in `client/src/water.rs`.
+// FIELD ORDER IS AN ABI. `water::tests::the_wgsl_uniform_mirrors_the_rust_struct`
+// parses THIS struct out of THIS file and compares it name-for-name, in order,
+// against `WaterExtension`'s reflected fields — swap two lines here and that test
+// goes red. Do not reorder without reordering the Rust side.
 struct WaterMaterial {
-    // rgb = the colour a 0 m film of water takes; a = unused.
+    // rgb = the colour a 0 m film of water takes; a = opacity at zero depth.
     shallow_color: vec4<f32>,
-    // rgb = the colour water converges on at `depth_scale` metres; a = unused.
+    // rgb = the colour water converges on at `depth_scale` metres;
+    // a = opacity at full depth.
     deep_color: vec4<f32>,
     // rgb = sky at the horizon; a = unused.
     horizon_color: vec4<f32>,
@@ -53,7 +58,11 @@ struct WaterMaterial {
     // z = wave speed, w = depth_scale in metres (Beer's-law falloff distance).
     wave: vec4<f32>,
     // x = Fresnel F0, y = Fresnel exponent, z = glint sharpness (specular power),
-    // w = maximum opacity at full depth (0..1).
+    // w = RESERVED, must be 0. The two opacity stops moved into the alpha
+    // channels of `shallow_color`/`deep_color` when the no-prepass fallback was
+    // fixed; the slot is kept so the block stays 8 vec4s and is pinned to 0 by
+    // `water::tests::the_reserved_optics_slot_is_zero` so a later edit cannot
+    // quietly give it a second meaning.
     optics: vec4<f32>,
 }
 
@@ -108,9 +117,15 @@ fn fragment(
     // ---- 3. depth-graded colour ------------------------------------------
     //
     // Done before lighting so the graded colour is what actually gets lit.
-    // No prepass => 0.0, i.e. everything reads as the SHALLOW stop. An honest
-    // no-op floor: the effect is absent rather than faked from a proxy.
-    var thickness = 0.0;
+    //
+    // THE FALLBACK IS A TRUE NO-OP, NOT A FAKED ONE. Without a depth prepass
+    // there is no honest thickness to grade by, so this term is skipped whole:
+    // `base_color` keeps the block lane's tuned water colour AND its tuned alpha
+    // (0.62, `voxel.rs`'s WATER arm). An earlier draft ran the grade anyway with
+    // `thickness = 0`, which tinted everything the shallow stop and pinned alpha
+    // at the shore value — the water nearly vanished. That is reachable in
+    // practice: Low tier with `VOXELFORGE_LOOK_SSAO=off` pulls the last
+    // DepthPrepass off the camera, and nothing else puts one back.
 #ifdef DEPTH_PREPASS
     // `prepass_depth` is the opaque scene. Water is alpha-blended and therefore
     // absent from the prepass, so this is the BED behind the surface, never the
@@ -122,16 +137,17 @@ fn fragment(
     // absolute difference — and because it is measured ALONG the view ray it
     // already lengthens at a glancing angle, which is the physically right
     // behaviour: look flat across a river and you see less of its bed.
-    thickness = abs(bed_z - surf_z);
-#endif
+    let thickness = abs(bed_z - surf_z);
     let depth_t = 1.0 - exp(-thickness / max(water.wave.w, 0.001)); // Beer's law
     let body = mix(water.shallow_color.rgb, water.deep_color.rgb, depth_t);
     pbr_input.material.base_color = vec4<f32>(
         pbr_input.material.base_color.rgb * body,
         // Clear at the shoreline, opaque over the channel — the single strongest
-        // cue that this is a body of water and not a blue lid.
-        mix(0.10, water.optics.w, depth_t),
+        // cue that this is a body of water and not a blue lid. Both stops come
+        // from the uniform; neither is a literal in this file.
+        mix(water.shallow_color.a, water.deep_color.a, depth_t),
     );
+#endif
 
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
