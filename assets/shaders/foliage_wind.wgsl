@@ -1,9 +1,10 @@
 // foliage_wind.wgsl — cross-quad vegetation wind vertex shader ("living grass").
 //
-// This is the FIRST custom vertex shader in the client: every other surface in
-// the game wears bevy_pbr's built-in `StandardMaterial`. It is an *extension*
-// vertex shader — the fragment stage is bevy_pbr's own PBR, so alpha-cutout,
-// fog and lighting all come for free and only the vertex position is changed.
+// This is the crate's first custom VERTEX shader. It is an *extension* vertex
+// shader — the fragment stage is bevy_pbr's own PBR, so alpha-cutout, fog and
+// lighting all come for free and only the vertex position is changed. (The
+// water lane's water.wgsl predates this as the crate's first custom *material*,
+// but that one overrides only the fragment stage.)
 //
 // The four requirements from the Director map onto the code below like this:
 //   (1) wind FIELD  = `wind_field()`  — value noise, advected by one whole-scene
@@ -19,14 +20,13 @@
 // WIND CORE (the functions below) is portable, self-contained WGSL — it does
 // not depend on any bevy import and can be re-homed into any shader.
 
-#import bevy_pbr::mesh_functions::mesh_position_local_to_clip
-#import bevy_pbr::mesh_functions::mesh_position_local_to_world
-#import bevy_pbr::mesh_vertex_output::MeshVertexOutput
-#import bevy_pbr::mesh_vertex_output::Vertex
+#import bevy_pbr::mesh_functions
+#import bevy_pbr::forward_io::{Vertex, VertexOutput}
 
 // One uniform block, bound by the Rust `FoliageWindUniform` (ShaderType) via
-// `#[uniform(100)]` on the `MaterialExtension`.
-@group(2) @binding(100) var<uniform> wind: WindParams;
+// `#[uniform(100)]` on the `MaterialExtension`. In Bevy 0.19 the extension
+// uniform shares the material bind group with the base material's bindings.
+@group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> wind: WindParams;
 
 struct WindParams {
     time: f32,          // seconds since plugin start, advanced every frame
@@ -115,10 +115,11 @@ fn sway_metres(world_pos: vec3<f32>) -> vec2<f32> {
 // ---------------------------------------------------------------------------
 
 @vertex
-fn vertex(in: Vertex) -> MeshVertexOutput {
-    var out: MeshVertexOutput;
+fn vertex(in: Vertex) -> VertexOutput {
+    var out: VertexOutput;
 
-    let world = mesh_position_local_to_world(in.instance_index, in.position);
+    let world_from_local = mesh_functions::get_world_from_local(in.instance_index);
+    let world = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(in.position, 1.0));
 
     // (4) Bend ramp: uv.y encodes height along the plant (0 = root, 1 = tip).
     //     `h*h` is zero *and* flat at the root, so the plant is pinned to the
@@ -126,13 +127,19 @@ fn vertex(in: Vertex) -> MeshVertexOutput {
     let h = in.uv.y;
     let bend = h * h;
     let sway = sway_metres(world.xyz) * bend;
-    let displaced = vec3(in.position.x + sway.x, in.position.y, in.position.z + sway.y);
+    let displaced = vec4<f32>(
+        in.position.x + sway.x,
+        in.position.y,
+        in.position.z + sway.y,
+        1.0,
+    );
 
-    out.clip_position = mesh_position_local_to_clip(in.instance_index, displaced);
-    // The normal is left unchanged: a cross-quad is a thin billboard and the
-    // light response of a swaying blade should not fight the wind each frame.
+    out.position = mesh_functions::mesh_position_local_to_clip(world_from_local, displaced);
+    // The normal is transformed to world space but NOT perturbed by the wind: a
+    // cross-quad is a thin billboard and the light response of a swaying blade
+    // should not fight the wind each frame.
     out.world_position = world;
-    out.world_normal = in.normal;
+    out.world_normal = mesh_functions::mesh_normal_local_to_world(in.normal, in.instance_index);
     out.uv = in.uv;
     return out;
 }

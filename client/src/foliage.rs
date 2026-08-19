@@ -6,10 +6,11 @@
 //! `flower_red`, `flower_pink`, `flower_white`, `foliage_bush`, `leaf_birch`,
 //! `leaf_pine`) but, as of the 2026-08-18 PBR pass, deliberately gave them NO
 //! `kinds` entry: "there is no cross-quad render mode yet". Nothing in Rust
-//! references those tiles, and the whole client renders through bevy_pbr's
-//! built-in `StandardMaterial` — this file is therefore the **first custom
-//! vertex shader in the codebase**, and the wind lives in the vertex stage as
-//! the Director asked: one shader, one uniform block, four requirements.
+//! references those tiles. This file is the crate's first custom *vertex*
+//! shader — the water lane's `water.wgsl` predates it as the first custom
+//! *material*, but that one overrides only the fragment stage. The wind lives
+//! in the vertex stage as the Director asked: one shader, one uniform block,
+//! four requirements.
 //!
 //! ## The four requirements (mapped to the WGSL)
 //!
@@ -27,8 +28,9 @@
 //! `FoliageMaterial = ExtendedMaterial<StandardMaterial, FoliageWindExt>`: the
 //! base `StandardMaterial` keeps the whole PBR fragment (alpha-cutout, fog,
 //! lighting) and `FoliageWindExt` swaps in the wind vertex shader. `#[uniform(100)]`
-//! lands in the extension bind group (group 2), which the WGSL reads as
-//! `@group(2) @binding(100)`.
+//! lands in the material bind group (`MATERIAL_BIND_GROUP`, group 3 in Bevy
+//! 0.19) alongside the base material's bindings, which the WGSL reads as
+//! `@group(#{MATERIAL_BIND_GROUP}) @binding(100)`.
 //!
 //! This module is self-contained: it links nothing else, so it can be built
 //! through the isolated `voxelforge_foliage_proof` bin while other lanes own
@@ -38,7 +40,12 @@ use bevy::asset::RenderAssetUsages;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialPlugin};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_resource::{ShaderRef, ShaderType};
+// `ShaderRef` moved out of `bevy_render` into `bevy_shader` (0.17+) and is
+// re-exported as `bevy::shader`; `AsBindGroup` and `ShaderType` stayed in
+// `bevy_render::render_resource`. Importing either from the wrong path is a
+// build error, so each is spelled out (same split as `water.rs`).
+use bevy::render::render_resource::{AsBindGroup, ShaderType};
+use bevy::shader::ShaderRef;
 
 /// Wind state uploaded to the shader, one block per material. Field order and
 /// types mirror `struct WindParams` in `assets/shaders/foliage_wind.wgsl`.
@@ -80,8 +87,9 @@ impl Default for FoliageWindUniform {
     }
 }
 
-/// The vertex-shader extension. The `#[uniform(100)]` slot is the extension
-/// bind group (group 2) — see the WGSL `@group(2) @binding(100)`.
+/// The vertex-shader extension. The `#[uniform(100)]` slot lives in the
+/// material bind group (`MATERIAL_BIND_GROUP` = group 3 in Bevy 0.19) — see the
+/// WGSL `@group(#{MATERIAL_BIND_GROUP}) @binding(100)`.
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
 pub struct FoliageWindExt {
     #[uniform(100)]
