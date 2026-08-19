@@ -104,6 +104,14 @@ REFERENCE_ARTWORK = {
         "table's own calibration source and leave the table unfalsifiable. Not renamed to "
         "*-nohud2.png for exactly the reason EXEMPT['grade_ref.py'] gives - you do not "
         "rename the CEO's artwork to satisfy a capture-provenance suffix.",
+    "assets/textures/sky/sky_gradient_sunset.png":
+        "Monanisa's authored sky ramp - a 64x64 SOURCE TEXTURE the renderer samples, "
+        "not an image the renderer produced. It cannot carry a HUD by construction "
+        "(nothing ever drew a frame onto it), and it is the input side of every "
+        "'what colour is the dome actually painting' question the sky and look lanes "
+        "ask, so a guarded probe has to be able to read it next to the frame it "
+        "explains. Same class as the golden ref two entries up: curated artwork, "
+        "admitted by identity, and it still has to exist on disk.",
 }
 
 _REFERENCE_ABS = {
@@ -214,6 +222,13 @@ GUARDED = (
     # measure() directly and lesions the reference in a temp dir, so it never
     # goes through the CLI where the guard lives.
     "_pixel_artgap_grade.py",
+    # Cool-pixel census behind docs/VERDICT-b-clamp-root-cause-2026-08-20.md. It
+    # prints a B>=R percentage measured off a look-acceptance frame and the VERDICT
+    # quotes that number against the CEO reference, which is a look claim in every
+    # sense that matters - a HUD's own pixels would land in the census like any
+    # other. Its companion (_flamingo_shade_budget.py) reads no frame at all, only
+    # look.rs literals, so it is correctly not listed here.
+    "_flamingo_coolpix_probe.py",
     # per-agent probes that print a frame-measured number (diagnostic graders):
     "_flamingo_halo_probe.py",
     "_flamingo_char_dist_solve.py",

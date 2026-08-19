@@ -12,9 +12,14 @@ Read-only. Prints a table; writes nothing.
 """
 from __future__ import annotations
 
+import os
 import sys
+
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from nohud2_guard import require_nohud2  # noqa: E402  (hard guard, see main())
 
 
 def load(p: str) -> np.ndarray:
@@ -38,9 +43,13 @@ def census(a: np.ndarray, label: str) -> None:
 
 def bands(a: np.ndarray, label: str) -> None:
     h = a.shape[0]
-    for name, sl in (("top third (sky)", slice(0, h // 3)),
+    # Geometric thirds, named geometrically ON PURPOSE. Calling the top band
+    # "sky" is only true for an outdoor plate; on the P0-ENV interior the top
+    # third is ceiling and wall, and a caption that says "sky" there sends the
+    # reader looking for a dome bug that is not in the frame.
+    for name, sl in (("top third", slice(0, h // 3)),
                      ("mid third", slice(h // 3, 2 * h // 3)),
-                     ("bottom third (ground)", slice(2 * h // 3, h))):
+                     ("bottom third", slice(2 * h // 3, h))):
         census(a[sl], f"  {label} / {name}")
 
 
@@ -59,6 +68,9 @@ def plate_rows(p: str) -> None:
 
 
 def main(argv: list[str]) -> int:
+    # First statement after arg collection, before a single number is printed:
+    # a refusal must leave no measurement behind to be quoted out of context.
+    require_nohud2(argv[1:], tool="_flamingo_coolpix_probe.py")
     for p in argv[1:]:
         if p.endswith(("sky_gradient_sunset.png",)):
             plate_rows(p)
