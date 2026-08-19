@@ -1365,7 +1365,15 @@ fn attach_rigs(
             Without<crate::enemies::EnemyBody>,
         ),
     >,
-    npc_q: Query<(Entity, &Transform), (With<crate::quest::Npc>, Without<Enemy>, Without<Rigged>)>,
+    npc_q: Query<
+        (Entity, &Transform),
+        (
+            With<crate::quest::Npc>,
+            Without<Enemy>,
+            Without<Rigged>,
+            Without<crate::scene::Dressed>,
+        ),
+    >,
     child_q: Query<&Children>,
     mut vis_q: Query<&mut Visibility, With<Mesh3d>>,
 ) {

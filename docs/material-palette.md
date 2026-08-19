@@ -27,12 +27,16 @@ across a wide hue range.
 
 ## Full set — 19 materials, 12 warm / 7 cool
 
-All `16×16`, hand-authored per-pixel, deterministic
-(`scripts/_pixel_blocks_gen.py`, seeded per material — re-running the
-script reproduces byte-identical PNGs). Sim-block hex values are quoted
-from `sim/src/block.rs::base_color()` where one exists; texture hue/sat
-matches that hex almost exactly on purpose — the pixel art textures the
-colour already signed off, it does not re-grade it.
+All `64×64` with a full PBR triplet (albedo + tangent-space normal +
+roughness) as of the 2026-08-18 pass, hand-authored per-pixel, deterministic
+(`scripts/_pixel_blocks_gen64.py`, seeded per material — re-running the
+script reproduces byte-identical PNGs; see
+`assets/textures/blocks/PALETTE.md`'s "64x64 PBR upgrade" section for the
+normal/roughness derivation). Sim-block hex values are quoted from
+`sim/src/block.rs::base_color()` where one exists; texture hue/sat matches
+that hex almost exactly on purpose — the pixel art textures the colour
+already signed off, it does not re-grade it. Hex/H/S/V rows below are
+unchanged from the 16×16 pass (same targets, higher resolution).
 
 ### Warm group — hue 10–45°, sun-facing materials
 

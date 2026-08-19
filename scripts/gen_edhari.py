@@ -1357,9 +1357,135 @@ def scatter_ground_cover(density=0.16):
                     add(nx, ty + 1, nz, mat)
 
 
+def _prop_place(x, y, z, block, counter):
+    """Place one prop voxel only if the cell is empty and keeps headroom.
+
+    Props stay at y<=2 so main-street sight-lines stay clear (the documented
+    rule), and we never overwrite an existing block (ground, rubble, A3 nibs).
+    """
+    if not in_bounds(x, z) or y > 2 or (x, y, z) in blocks:
+        return
+    add(x, y, z, block)
+    counter[0] += 1
+
+
+def _bush(px, pz, ty, put):
+    """2-3 tall leaves cluster — the main green vertical-contrast element."""
+    h = rng.choice([2, 2, 3])
+    for dz in range(-1, 2):
+        for dx in range(-1, 2):
+            if abs(dx) + abs(dz) > rng.randint(1, 2):
+                continue
+            put(px + dx, ty + 1, pz + dz, "leaves")
+            if h >= 3 and rng.random() < 0.6:
+                put(px + dx, ty + 2, pz + dz, "leaves")
+
+
+def _grass_clump(px, pz, ty, put):
+    """Tall grass / reeds: 1-2 tall green nibs, denser than the A3 tufts."""
+    for dx, dz in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)]:
+        if rng.random() < 0.7:
+            put(px + dx, ty + 1, pz + dz, rng.choice(["leaves", "moss", "grass"]))
+            if rng.random() < 0.3:
+                put(px + dx, ty + 2, pz + dz, "leaves")
+
+
+def _rock(px, pz, ty, put):
+    """Foot-high stone / cobblestone boulder with a dark obsidian accent —
+    the dark-on-green step is the highest single-voxel contrast in reach."""
+    for dz in range(-1, 2):
+        for dx in range(-1, 2):
+            if rng.random() < 0.55:
+                put(px + dx, ty + 1, pz + dz, rng.choice(["stone", "cobblestone", "obsidian"]))
+                if rng.random() < 0.35:
+                    put(px + dx, ty + 2, pz + dz, rng.choice(["stone", "obsidian"]))
+
+
+def _log(px, pz, ty, put):
+    """Fallen log: a short run of wood — warm-brown contrast against grass."""
+    axis = rng.choice(["x", "z"])
+    length = rng.choice([3, 4])
+    for i in range(length):
+        x, z = (px + i, pz) if axis == "x" else (px, pz + i)
+        put(x, ty + 1, z, "wood")
+        if rng.random() < 0.2:
+            put(x, ty + 2, z, "wood")
+
+
+def _flower(px, pz, ty, put):
+    """Bright flower nibs — snow / red_sand pops, a rare lamp glow.  The
+    highest per-voxel luminance contrast in the palette."""
+    for _ in range(rng.randint(2, 4)):
+        put(px + rng.randint(-1, 1), ty + 1, pz + rng.randint(-1, 1),
+            rng.choice(["snow", "red_sand", "snow", "red_sand", "lamp"]))
+
+
+# "Soft" ground materials a prop can grow out of.  Structural stone/cobble/
+# brick/wood/limestone/lamp are excluded, and GROUND_PROTECTED paths/plazas are
+# filtered separately — so props fill the natural ground without climbing a wall.
+PLANTABLE = {"grass", "moss", "dirt", "gravel", "leaves", "sand", "red_sand", "clay", "snow"}
+
+
+def scatter_foliage_props(grid=5, skip=0.15, props=(2, 3)):
+    """Natural, non-uniform foliage + prop clusters over the soft-ground footprint.
+
+    The A3 pass tints the ground, but tinting does not create edge: the
+    edge-density gap (36.8 vs REF 60.5) closes on *relief* — tall bushes,
+    foot-high rocks (with dark obsidian accents), fallen logs and bright flower
+    nibs read as hard luminance steps against flat ground.  Cluster centres sit
+    on a seeded, jittered grid with skips for open meadow, and each centre drops
+    a short run of one weighted family, so the result is clumps, not a carpet.
+    """
+    top = {}
+    for (x, y, z), b in blocks.items():
+        cur_y, _ = top.get((x, z), (-1, "air"))
+        if y > cur_y:
+            top[(x, z)] = (y, b)
+    plant = {(x, z) for (x, z), (ty, tb) in top.items()
+             if tb in PLANTABLE and not _is_protected_ground(x, z)}
+
+    centres = []
+    for gx in range(2, WIDTH - 2, grid):
+        for gz in range(2, DEPTH - 2, grid):
+            if rng.random() < skip:
+                continue
+            cx = gx + rng.randint(0, grid - 1)
+            cz = gz + rng.randint(0, grid - 1)
+            if (cx, cz) in plant:
+                centres.append((cx, cz))
+
+    added = [0]
+
+    def put(x, y, z, block):
+        _prop_place(x, y, z, block, added)
+
+    families = ["bush", "grass", "rock", "log", "flower", "grass", "bush"]
+    for cx, cz in centres:
+        family = rng.choice(families)
+        for _ in range(rng.randint(props[0], props[1])):
+            px = cx + rng.randint(-2, 2)
+            pz = cz + rng.randint(-2, 2)
+            ty = top.get((px, pz), (-1, "air"))[0]
+            if (px, pz) not in plant or ty < 0:
+                continue
+            if family == "bush":
+                _bush(px, pz, ty, put)
+            elif family == "grass":
+                _grass_clump(px, pz, ty, put)
+            elif family == "rock":
+                _rock(px, pz, ty, put)
+            elif family == "log":
+                _log(px, pz, ty, put)
+            else:
+                _flower(px, pz, ty, put)
+
+    print(f"foliage_props: {len(centres)} clusters, {added[0]} voxels (plantable={len(plant)})")
+
+
 # Run the A3 passes.
 band_stone_walls()
 scatter_ground_cover(density=0.16)
+scatter_foliage_props(grid=3, skip=0.1, props=(2, 4))
 
 # Intentional surface conversions to push grass+stone below the 75% A3 cap.
 # Each patch is chosen to read as authored ground detail (courtyards, paths,

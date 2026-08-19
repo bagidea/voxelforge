@@ -49,8 +49,8 @@ RANKED = [
     ("micro_r3", "G11 local contrast"),
     ("range_p5_p95", "G12 dynamic range p5-p95"),
 ]
-DIRS = {k: d for k, d, _, _ in G.AXES}
-OWNER = {k: o for k, d, _, o in G.AXES}
+DIRS = {k: d for k, d, _, _, _ in G.AXES}
+OWNER = {k: o for k, d, _, o, _ in G.AXES}
 # the bars are coloured by SEVERITY, not by owner - the owner is printed inside
 # each label instead. An owner-keyed legend here would be a caption that does not
 # match its own pixels.
@@ -119,7 +119,13 @@ def main():
         if r is None:
             vals.append(0.0)
             colors.append("#555a6b")
-            notes.append("UNMEASURABLE — sky unlit, edge contrast would be degenerate")
+            # Print the grader's OWN refusal reason rather than a hardcoded one.
+            # Since the guard was split (sky_lit vs horizon_ok) there is more
+            # than one way to refuse, and a caption that names the wrong reason
+            # is a caption that does not match its pixels.
+            why = (ours.get("silhouette_measurable") if key == "far_edge_contrast"
+                   else ours.get("depth_measurable", "refused"))
+            notes.append(f"UNMEASURABLE — {why}")
         else:
             vals.append(min(r, 1.05))
             colors.append("#e2483f" if r < 0.30 else "#e08b2f" if r < G.GATE else "#3fa96b")

@@ -42,12 +42,14 @@
 //! `pub const`s below, and other lanes must `use` them rather than retype them.
 
 use bevy::anti_alias::taa::TemporalAntiAliasing;
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::Exposure;
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::light::{
     atmosphere::ScatteringMedium, Atmosphere, CascadeShadowConfigBuilder,
-    DirectionalLightShadowMap, FogVolume, NotShadowCaster, ShadowFilteringMethod, VolumetricFog,
-    VolumetricLight,
+    DirectionalLightShadowMap, FogVolume, NotShadowCaster, ShadowFilteringMethod, SunDisk,
+    VolumetricFog, VolumetricLight,
 };
 use bevy::pbr::{
     AtmosphereMode, AtmosphereSettings, ContactShadows, DistanceFog, FogFalloff,
@@ -58,6 +60,11 @@ use bevy::post_process::dof::DepthOfField;
 use bevy::prelude::*;
 // `Meshable` brings `.mesh()` onto the `Sphere` shape — used by the sky dome.
 use bevy::mesh::Meshable;
+// The A3 cloud deck builds its shell mesh and bakes its own texture; same import
+// set `voxel.rs` uses for the block atlas, so there is one spelling of these in
+// the crate rather than two.
+use bevy::render::mesh::{Indices, PrimitiveTopology};
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::Msaa;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection};
 use serde::{Deserialize, Serialize};
@@ -1238,6 +1245,34 @@ mod grade {
     /// the same pixels before it — light first, curve second.
     pub const SHADOW_GAIN_V3: f32 = 1.08;
 
+    /// Shadow-section LIFT — the ASC CDL *o* term, `out = (i × s + o)ⁿ`.
+    ///
+    /// WHY A GAIN WAS NOT ENOUGH, AND WHY THIS IS THE ONLY KNOB THAT CAN DO IT.
+    /// [`SHADOW_GAIN_V3`] is a multiply, so it moves the toe up in PROPORTION —
+    /// and a pixel that has already reached zero is zero times anything. The axis
+    /// being fixed is `crush_pct`, and `scripts/_pixel_artgap_grade.py:158`
+    /// defines it as `(L < 8).mean()`: the count of pixels carrying no readable
+    /// information at all. `_matmaps_after` scored **4.84 %** against the CEO
+    /// reference's **0.55 %** — 8.8x. A multiply cannot move that population by
+    /// construction; only an ADD can, and `lift` is the add.
+    ///
+    /// SIZED, NOT TASTED. Post-tonemap the graded value is `0..1` over `0..255`,
+    /// so clearing the grader's own L = 8 threshold needs `o > 8/255 = 0.031`.
+    /// 0.045 lands the deepest black at L ≈ 11.5 — clear of the threshold with
+    /// margin, and still far below the reference's own shadow floor, so this
+    /// buys the axis without washing the frame into a grey haze.
+    ///
+    /// MOST OF THE 4.84 % WAS NEVER SHADOW. `docs/art-gap-vs-ceo-ref-2026-08-18.md`
+    /// also measured 36.4 % of SKY pixels under L = 10, and the sky is ~18 % of
+    /// that frame — about 6.5 % of all pixels, i.e. the entire crush population
+    /// and then some was the dead sky, not dark geometry. The A4 painted sky
+    /// (whose ramp bottoms out at L = 51.9 and therefore CANNOT produce a crushed
+    /// pixel) is expected to do most of this work on its own. This constant is
+    /// here for the tail that is genuinely unlit geometry, which is why it is
+    /// small. `VOXELFORGE_LOOK_LIFT` sweeps it so the split between the two can
+    /// be measured rather than assumed.
+    pub const SHADOW_LIFT_V5: f32 = 0.045;
+
     // THE MEASUREMENT THE NEXT THREE CONSTANTS ARE SIZED OFF.
     //
     // Luminance percentiles, `docs/assets/golden-beauty-shot-ref.png` against
@@ -2178,6 +2213,21 @@ impl Plugin for LookPlugin {
                     // neither touches another lane's entity. See their own docs.
                     sky_dome.run_if(sky_grad_enabled),
                     play_fog_volume,
+                    // A3 (docs/refs/ceo_ref_sunset_valley.jpg): the cloud deck.
+                    // Runs on the same `OrbitCam`-finds-me pattern as the two
+                    // above and, like them, spawns only entities of its own.
+                    // `VOXELFORGE_CLOUDS=off` is the one-binary A/B lever; the
+                    // solar disk it also owns is inserted by `apply_look_to_sun`,
+                    // because that is the system that already owns the key light.
+                    cloud_deck.run_if(clouds_enabled),
+                    // A5: the solar disk as geometry. No `run_if` — the gate is
+                    // inside [`sun_billboard_knobs`], because it has to answer
+                    // "off", "the atmosphere already draws one" and "the sun is
+                    // below the horizon" and only the first two are knowable
+                    // before `hour()` is read. Ordered AFTER the deck so a first
+                    // frame that spawns both has the deck's transparent draw
+                    // already sorted against it.
+                    sun_billboard.after(cloud_deck),
                 )
                     .run_if(look_enabled),
             );
@@ -2388,6 +2438,22 @@ fn grade_gains(highlight_default: f32) -> (f32, f32, f32) {
     }
 }
 
+/// The shadow-section LIFT, sweepable with `VOXELFORGE_LOOK_LIFT=<o>`.
+///
+/// Gated on v3-or-later for the same reason every other generation constant is:
+/// `VOXELFORGE_LOOK_GEN=v2` has to keep shooting the plate it was graded on, and
+/// an additive toe moves every pixel in it.
+fn shadow_lift() -> f32 {
+    match std::env::var("VOXELFORGE_LOOK_LIFT")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+    {
+        Some(v) if v.is_finite() && v >= 0.0 => v,
+        _ if v3() || v4() => grade::SHADOW_LIFT_V5,
+        _ => 0.0,
+    }
+}
+
 /// The v4 exposure trim in stops, or 0.0 on an older generation.
 ///
 /// `VOXELFORGE_LOOK_EVTRIM=<stops>` sweeps it. See [`grade::EV_TRIM_V4`] for why
@@ -2478,6 +2544,9 @@ pub fn base_camera_look() -> impl Bundle {
             shadows: ColorGradingSection {
                 contrast: 1.0,
                 gain: shadow_gain,
+                // The additive toe. See [`grade::SHADOW_LIFT_V5`] for why the
+                // gain above cannot reach the population this is aimed at.
+                lift: shadow_lift(),
                 ..default()
             },
             // v4 puts a GAIN on this section for the first time — see
@@ -2975,6 +3044,18 @@ fn apply_look_to_sun(
             // it is doing.
             e.remove::<VolumetricLight>();
         }
+        // A3's solar disk. It hangs off the KEY LIGHT, not off a camera, because
+        // that is where Bevy reads it from (`bevy_pbr/src/render/light.rs:382`,
+        // `Option<&SunDisk>` on the directional-light query) — the atmosphere
+        // draws the disk in the direction of whichever directional light carries
+        // one. Inserted here rather than in `cloud_deck` for the same reason
+        // `apply_fill_rig` is ordered against this system: the sun entity has one
+        // owner in this file, and it is this loop. `None` (clouds off, atmosphere
+        // off, or `_CLOUDS_SUNDISK=off`) leaves Bevy's stock `SunDisk::EARTH`
+        // behaviour untouched — it does not remove a disk it never added.
+        if let Some(disk) = sun_disk() {
+            e.insert(disk);
+        }
         // ONE LINE OF PROVENANCE PER TIER CHANGE, next to every capture's plate.
         // This lane spent a round measuring a penumbra that was never switched on,
         // because "Ultra" was set on the command line, accepted by the parser, and
@@ -3355,16 +3436,41 @@ struct AtmosphereAnchor;
 /// lane requires of every look change, and the tier switch
 /// `docs/sky-research-2026-08-14.md:95` asks for, in one hook.
 ///
-/// * unset / `lut` — `AtmosphereMode::LookupTexture`, the shipped default and
-///   Bevy's own (`mod.rs:416-422`): "high-performance … tailored to scenes that are
-///   mostly inside of the atmosphere", which is every frame this game renders.
+/// * unset / `off` — no atmosphere, which is what lets the painted [`SkyDome`]
+///   own the sky (see [`sky_grad_enabled`]). THIS IS NOW THE DEFAULT; the
+///   paragraph below is why.
+/// * `lut` / `on` — `AtmosphereMode::LookupTexture`, Bevy's own
+///   (`mod.rs:416-422`): "high-performance … tailored to scenes that are mostly
+///   inside of the atmosphere". This was the default until 2026-08-18.
 /// * `raymarched` — `AtmosphereMode::Raymarched`, the Ultra/cinematic toggle.
 ///   Not tiered off [`LookQuality`] yet ON PURPOSE: the research asks for it
 ///   "only if Poppy's profiling shows it is affordable", and wiring it to a tier
 ///   before that profile exists would ship an unmeasured cost.
-/// * `off` — no atmosphere at all, which is also what re-enables the [`SkyDome`]
-///   (see [`sky_grad_enabled`]). That is the before/after pair out of ONE
-///   binary, same as `_SKYGRAD`, `_HAZE` and `_FOG` before it.
+///
+/// WHY THE DEFAULT FLIPPED, 2026-08-18. The atmosphere and the dome cannot both
+/// draw: the dome is opaque geometry at [`SKY_DOME_RADIUS`] and Bevy's
+/// `render_sky` pass only writes where the depth buffer is still at the far
+/// plane, so whichever is on hides the other completely — the note on
+/// [`sky_grad_enabled`] has always said so. Until today the atmosphere won that
+/// exclusion by default, and `docs/art-gap-vs-ceo-ref-2026-08-18.md` measured
+/// what it actually produced on the `beach_dusk` hour:
+///
+///     sky median L 12.5 against ground 80.4  =>  ratio 0.16  (REF 1.80)
+///     sky mean RGB (24.8, 13.9, 7.1), hue span 20 deg
+///     36.4% of sky pixels under L = 10       (REF 0.00%)
+///
+/// A warm brown at R > G > B across 20 degrees of hue is the signature of the
+/// haze term, not of an atmosphere LUT — at this hour's sun elevation the LUT
+/// returns near-nothing and the frame falls through to it. The physical model is
+/// not wrong; it is being asked for a sky at an angle where it has none to give,
+/// while the directional key still lights the ground as golden hour. That is the
+/// document's hypothesis (a), and the two are simply not coming from the same
+/// sun.
+///
+/// So the sky is PAINTED now (see the A4 section) and the physical atmosphere
+/// becomes the opt-in. Nothing was deleted: `=lut` restores the previous default
+/// byte for byte, which is what keeps the before plate one env-swap away instead
+/// of one build away.
 fn atmos_mode() -> Option<AtmosphereMode> {
     static MODE: std::sync::OnceLock<Option<AtmosphereMode>> = std::sync::OnceLock::new();
     *MODE.get_or_init(|| {
@@ -3374,10 +3480,13 @@ fn atmos_mode() -> Option<AtmosphereMode> {
             .to_ascii_lowercase()
             .as_str()
         {
-            "off" | "0" => None,
+            "lut" | "on" | "1" => Some(AtmosphereMode::LookupTexture),
             "raymarched" | "ray" => Some(AtmosphereMode::Raymarched),
-            // Unset and anything unrecognised => the shipped LUT mode.
-            _ => Some(AtmosphereMode::LookupTexture),
+            // Unset, `off`, and anything unrecognised => the painted dome owns
+            // the sky. Unrecognised falls to the DEFAULT rather than to the old
+            // behaviour on purpose: a typo in a capture recipe should shoot the
+            // shipped look, not silently shoot the deprecated one.
+            _ => None,
         }
     })
 }
@@ -3443,6 +3552,300 @@ fn atmosphere_sky(
 }
 
 // ===========================================================================
+// A4 · the PAINTED SKY — Monanisa's authored plates, loaded synchronously
+// ===========================================================================
+//
+// WHY THIS SECTION EXISTS AT ALL. `docs/art-gap-vs-ceo-ref-2026-08-18.md` graded
+// `_matmaps_after.png` against the CEO reference and the sky lost on every axis
+// that describes a sky:
+//
+//     sky brighter than ground     0.16   vs REF 1.80    (9%)
+//     sky tonal gradient p95-p5    17.8   vs REF 172.6   (10%)
+//     sky sitting at black L<10    36.4%  vs REF 0.00%
+//     sky hue range                20 deg vs REF 60 deg
+//
+// and the doc's own pixel read of that frame — sky mean RGB (24.8, 13.9, 7.1),
+// R > G > B, hue span 20 deg — says what was actually on screen was HAZE at a
+// very low gain, not a sky. Under the shipped default the [`SkyDome`] is off by
+// construction ([`sky_grad_enabled`]) and Bevy's physical atmosphere owns those
+// pixels; at `beach_dusk`'s sun elevation it returns near-nothing, so the frame
+// falls through to the haze/`ClearColor` end of the pipe. Six of the twelve gaps
+// in that document are downstream of this one number.
+//
+// THE FIX IS PAINT, NOT PHYSICS. Monanisa authored three plates in
+// `assets/textures/sky/`, and measured they already carry the numbers the
+// renderer could not produce:
+//
+//     sky_gradient_sunset.png   64x64 vertical ramp, violet (58,47,82) at the
+//                               top through red (212,111,112) to cream
+//                               (255,240,194). L span 187.8 (REF 172.6), L min
+//                               51.9 (so NO pixel of it can land under L=10),
+//                               hue arc 147 deg (REF 60).
+//     sky_clouds.png            64x64, density in ALPHA (mean 87.8/255 = 34%
+//                               cover), and tileable: |left-right| 2.1/255,
+//                               |top-bottom| 2.3/255.
+//     sun_disk.png              64x64, glow in ALPHA (mean 35.9/255), warm RGB.
+//
+// Three of the four failing axes are properties of that ramp, so painting it on
+// the dome hits them by construction rather than by tuning.
+//
+// WHY SYNCHRONOUS `image::open` AND NOT `AssetServer::load`. Two reasons, and
+// the second one is fatal to the async path:
+//
+//  1. The dome mesh is BAKED once at spawn (see [`build_sky_dome_mesh`]), and
+//     the cloud deck's texture is baked from the density field on the CPU. Both
+//     need pixels in the same system call that builds the mesh. `block_atlas.rs`
+//     (:345) and `voxel.rs` (:713) already reach for `image::open` for exactly
+//     this reason, and `image` is a direct dependency of this crate.
+//  2. `main.rs:544` sets `ImagePlugin::default_nearest()` — correct for 64 px
+//     block art, ruinous for a 64-row sky ramp, which would land on screen as
+//     64 hard bands. Owning the `Image` is what lets this lane attach a LINEAR
+//     sampler to it and nothing else.
+//
+// NOTHING HERE IS A HARD FAILURE. Every loader returns `Option`, and every call
+// site keeps the procedural path it had before as the fallback. A missing or
+// unreadable plate costs the authored look, never the frame — a renderer that
+// panics because an artist renamed a file is a renderer that stops the team.
+
+/// Directory the three plates are read from. `VOXELFORGE_SKY_DIR` repoints it so
+/// a candidate set can be shot against the shipped one from ONE binary — the same
+/// discipline `VOXELFORGE_ATLAS_DIR` gives the block art.
+fn sky_asset_dir() -> std::path::PathBuf {
+    std::env::var("VOXELFORGE_SKY_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("assets/textures/sky"))
+}
+
+/// One authored plate, decoded to straight RGBA8 in memory.
+///
+/// Loaded at most once per name per process: these are read on a spawn system
+/// that Bevy will re-enter every frame until the entity exists, and re-decoding a
+/// PNG per frame in that window is a stall nobody would ever look for.
+struct SkyPlate {
+    w: usize,
+    h: usize,
+    /// Row-major RGBA8, `w * h * 4` bytes.
+    px: Vec<u8>,
+}
+
+impl SkyPlate {
+    /// Nearest-texel fetch with WRAPPING coordinates — the addressing the cloud
+    /// density field wants, and safe for any `i32` because of the double rem.
+    fn wrap(&self, x: i32, y: i32) -> [f32; 4] {
+        let xi = (x.rem_euclid(self.w as i32)) as usize;
+        let yi = (y.rem_euclid(self.h as i32)) as usize;
+        let i = (yi * self.w + xi) * 4;
+        [
+            self.px[i] as f32 / 255.0,
+            self.px[i + 1] as f32 / 255.0,
+            self.px[i + 2] as f32 / 255.0,
+            self.px[i + 3] as f32 / 255.0,
+        ]
+    }
+
+    /// Bilinear sample in TEXEL units, wrapping. Used by the cloud density field,
+    /// where `sky_clouds.png`'s measured seam (2.1/255 across u, 2.3/255 across
+    /// v) is small enough that wrapping is genuinely seamless.
+    fn sample_wrap(&self, x: f32, y: f32) -> [f32; 4] {
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let (ix, iy) = (x0 as i32, y0 as i32);
+        let a = self.wrap(ix, iy);
+        let b = self.wrap(ix + 1, iy);
+        let c = self.wrap(ix, iy + 1);
+        let d = self.wrap(ix + 1, iy + 1);
+        let mut out = [0.0f32; 4];
+        for k in 0..4 {
+            let top = a[k] + (b[k] - a[k]) * fx;
+            let bot = c[k] + (d[k] - c[k]) * fx;
+            out[k] = top + (bot - top) * fy;
+        }
+        out
+    }
+
+    /// The plate collapsed to ONE column: every row averaged across its width.
+    ///
+    /// `sky_gradient_sunset.png` is authored as a vertical ramp, so its rows are
+    /// meant to be constant and the small horizontal variation in them is dither,
+    /// not signal. Averaging it out is what makes the LUT built from this a clean
+    /// monotone ramp instead of one carrying a 64-px-wide noise pattern across
+    /// the entire sky.
+    fn column_mean(&self) -> Vec<[f32; 4]> {
+        (0..self.h)
+            .map(|y| {
+                let mut acc = [0.0f64; 4];
+                for x in 0..self.w {
+                    let i = (y * self.w + x) * 4;
+                    for k in 0..4 {
+                        acc[k] += self.px[i + k] as f64;
+                    }
+                }
+                let n = self.w as f64 * 255.0;
+                [
+                    (acc[0] / n) as f32,
+                    (acc[1] / n) as f32,
+                    (acc[2] / n) as f32,
+                    (acc[3] / n) as f32,
+                ]
+            })
+            .collect()
+    }
+}
+
+/// Decode one plate, or `None` with a printed reason.
+///
+/// The print is deliberate and unconditional: a sky that silently falls back to
+/// the procedural gradient renders a perfectly plausible frame, and a plausible
+/// frame shot from the wrong path is exactly the class of evidence this lane has
+/// been burned by before. The run log always says which path drew the sky.
+fn load_sky_plate(name: &str) -> Option<SkyPlate> {
+    let path = sky_asset_dir().join(name);
+    match image::open(&path) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+            println!("LOOK sky-plate loaded {} {}x{}", path.display(), w, h);
+            Some(SkyPlate {
+                w,
+                h,
+                px: rgba.into_raw(),
+            })
+        }
+        Err(e) => {
+            println!(
+                "LOOK sky-plate MISSING {} ({e}) — falling back to the procedural path",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+/// Rows in the 1-D gradient LUT handed to the GPU.
+///
+/// The source ramp is 64 rows. Resampling it up to 512 and attaching a LINEAR
+/// sampler is what turns a 64-step staircase into a continuous gradient, and the
+/// gradient is the whole point: the axis being fixed is `p95 - p5` ACROSS the
+/// sky, which a banded ramp still passes while looking obviously wrong.
+const SKY_LUT_ROWS: usize = 512;
+
+/// Build the 1 x [`SKY_LUT_ROWS`] gradient texture from the authored ramp.
+///
+/// Stored `Rgba8UnormSrgb` — the plate is authored in sRGB and the GPU decodes it
+/// back to linear on sample, so the artist's bytes survive the round trip
+/// unaltered. The HDR headroom does NOT live in these texels; it lives in the
+/// material's `base_color`, which is a full `LinearRgba` and is not clamped to 1
+/// (the same trick the A3 cloud deck documents at its own material).
+fn build_sky_ramp_lut(plate: &SkyPlate) -> Image {
+    let col = plate.column_mean();
+    // `last` (not `len`) so a degenerate 1-row plate resamples to a flat colour
+    // instead of indexing past the end of its own ramp.
+    let last = col.len().saturating_sub(1);
+    let mut data = vec![0u8; SKY_LUT_ROWS * 4];
+    for y in 0..SKY_LUT_ROWS {
+        // Map the output row onto the source ramp and lerp between neighbours.
+        let t = y as f32 / (SKY_LUT_ROWS - 1) as f32 * last as f32;
+        let i0 = (t.floor() as usize).min(last);
+        let i1 = (i0 + 1).min(last);
+        let f = t - i0 as f32;
+        for k in 0..4 {
+            let v = col[i0][k] + (col[i1][k] - col[i0][k]) * f;
+            data[y * 4 + k] = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        }
+    }
+    let mut img = Image::new(
+        Extent3d {
+            width: 1,
+            height: SKY_LUT_ROWS as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    );
+    // CLAMP on both axes. The LUT is 1 texel wide (u is meaningless) and v has
+    // real ends — horizon at one, zenith at the other. Wrapping v would put the
+    // violet zenith directly against the cream horizon and draw a hard seam
+    // exactly where the sky is brightest.
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        label: Some("sky_ramp_lut".into()),
+        address_mode_u: ImageAddressMode::ClampToEdge,
+        address_mode_v: ImageAddressMode::ClampToEdge,
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        ..default()
+    });
+    img
+}
+
+/// How the ramp is distributed over elevation: `v = 1 - u.powf(SKY_RAMP_CURVE)`,
+/// where `u` is 0 at the horizon and 1 at the zenith.
+///
+/// NOT 1.0, AND THE CAMERA IS WHY. A linear map spends half the ramp above 45
+/// degrees of elevation, which the pinned `beach_dusk` framing (a near-horizontal
+/// orbit cam over a 60-degree vertical FOV) never looks at — the violet end would
+/// be authored into a part of the sky no graded frame contains, and the measured
+/// `p95 - p5` would come back a fraction of the ramp's own 187.8. An exponent
+/// below 1 pulls the whole arc down toward the horizon: at 0.45, half the ramp is
+/// spent by 20 degrees of elevation, so the full violet-to-cream span lands
+/// INSIDE the frame. `VOXELFORGE_SKY_CURVE` sweeps it.
+const SKY_RAMP_CURVE: f32 = 0.45;
+
+fn sky_ramp_curve() -> f32 {
+    std::env::var("VOXELFORGE_SKY_CURVE")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .filter(|c| *c > 0.0)
+        .unwrap_or(SKY_RAMP_CURVE)
+}
+
+/// Scene-referred gain on the painted dome, in the units where 1.0 is the
+/// tonemapper's white.
+///
+/// THIS IS THE `sky brighter than ground` AXIS AND NOTHING ELSE IS. The graded
+/// frame put the sky's median L at 12.5 against the ground's 80.4 — a ratio of
+/// 0.16 where the reference sits at 1.80 — and golden hour in the real world has
+/// the sky as the brightest thing in frame, always. The target is therefore a sky
+/// median near 1.80 * 80.4 = 145 (the reference's own is 149.8).
+///
+/// The dome is UNLIT, so its `base_color` is written into the HDR target verbatim
+/// and then passes `Tonemapping::TonyMcMapface` plus the `ColorGrading` stack —
+/// a 3-D LUT this lane cannot invert on paper. So the value is not derived here;
+/// it is CALIBRATED by sweeping this hook against the real frame
+/// (`scripts/_poppy_skygain_ladder_20260818.ps1`) and reading the sky median off
+/// the grader. 2.6 is the rung that landed, and it is a starting point that the
+/// ladder is expected to move — `VOXELFORGE_SKY_GAIN` exists so moving it never
+/// costs a relink.
+const SKY_PAINT_GAIN: f32 = 2.6;
+
+fn sky_paint_gain() -> f32 {
+    std::env::var("VOXELFORGE_SKY_GAIN")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .filter(|g| *g > 0.0)
+        .unwrap_or(SKY_PAINT_GAIN)
+}
+
+/// `VOXELFORGE_SKY_PAINT=off` reverts the dome to the procedural 3-stop gradient
+/// it carried before this section — the one-binary A/B for the whole painted-sky
+/// change, so the before plate does not need a second build.
+fn sky_paint_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        !matches!(
+            std::env::var("VOXELFORGE_SKY_PAINT")
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "off" | "0"
+        )
+    })
+}
+
+// ===========================================================================
 // A1 · the gradient sky dome  (art-order-2026-08-09-composition §A1)
 // ===========================================================================
 //
@@ -3489,7 +3892,9 @@ struct SkyDome;
 /// `VOXELFORGE_LOOK_ATMOS=off` is what gets the dome back, which is also what
 /// makes the pair a ONE-BINARY A/B rather than two builds.
 ///
-/// Default: atmosphere on, dome off.
+/// Default since 2026-08-18: atmosphere OFF, dome ON — see [`atmos_mode`] for
+/// the measurement that flipped it. `VOXELFORGE_LOOK_ATMOS=lut` restores the
+/// old pair (atmosphere on, dome off) and is what the before plate is shot with.
 fn sky_grad_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // Unset (None) => dome on; only the literal "off" disables it.
@@ -3536,12 +3941,58 @@ fn sky_gradient(u: f32, horizon: LinearRgba, mid: LinearRgba, zenith: LinearRgba
 /// [`sky_gradient`]. Colours are baked once at spawn — every input (sky hue,
 /// `sky_gain`, exposure, haze colour) is launch-fixed, read from env at spawn —
 /// so a baked mesh is exact and stable for the whole session.
-fn build_sky_dome_mesh() -> Mesh {
-    let h = hour();
+fn build_sky_dome_mesh(painted: bool) -> Mesh {
     let r = SKY_DOME_RADIUS;
-    // 64 sectors × 40 stacks: dense enough that the gradient reads continuous
-    // across the upper hemisphere (40 latitude bands from nadir to zenith).
-    let mut mesh = Sphere::new(r).mesh().uv(64, 40);
+    // 64 sectors × 40 stacks in the procedural path, where every vertex carries a
+    // COLOUR and the band count IS the gradient's resolution. The painted path
+    // takes 96 stacks instead: there the colour comes from a 512-row LUT and the
+    // only thing the tessellation has to resolve is [`sky_ramp_curve`], which is
+    // nonlinear — each stack is a linear segment approximating it, and 40 of them
+    // put a visible kink in the warm band where the exponent bends hardest.
+    let stacks = if painted { 96 } else { 40 };
+    let mut mesh = Sphere::new(r).mesh().uv(64, stacks);
+
+    if painted {
+        // PAINTED PATH: no vertex colours at all. `StandardMaterial` multiplies
+        // base_color × vertex_colour × texture, so leaving the procedural
+        // gradient's colours in place would modulate Monanisa's ramp by a second
+        // gradient and neither would be what shipped. Absent is correct, not
+        // white-filled: Bevy's pipeline simply omits the term.
+        //
+        // What the vertices carry instead is the elevation→ramp mapping, written
+        // over the sphere builder's own spherical UVs. u is fixed at the middle of
+        // the 1-texel-wide LUT; v is the whole decision, and it is documented at
+        // [`SKY_RAMP_CURVE`].
+        let curve = sky_ramp_curve();
+        let positions: Vec<[f32; 3]> = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .expect("SphereMeshBuilder always emits POSITION")
+            .as_float3()
+            .expect("POSITION is Float32x3")
+            .to_vec();
+        let uvs: Vec<[f32; 2]> = positions
+            .iter()
+            .map(|p| {
+                // TRUE ELEVATION ANGLE, not `y/r`. `y/r` is sin(elevation), which
+                // spends half its range in the top 30 degrees of sky — it would
+                // undo the curve's whole purpose by compressing the ramp back into
+                // the part of the dome the camera does not frame.
+                let s = (p[1] / r).clamp(-1.0, 1.0);
+                let elev_frac = s.asin() / std::f32::consts::FRAC_PI_2;
+                // Below the horizon the LUT is clamped to its bottom row — the
+                // bright horizon colour — so a glimpse of dome under the skyline
+                // still reads as the same air the haze dissolves geometry into,
+                // exactly as the procedural path's `sky_gradient` does at u <= 0.
+                let v = 1.0 - elev_frac.max(0.0).powf(curve);
+                [0.5, v.clamp(0.0, 1.0)]
+            })
+            .collect();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        return mesh;
+    }
+
+    // ── the procedural 3-stop gradient, unchanged ───────────────────────────
+    let h = hour();
 
     // NO EXPOSURE COMPENSATION — and the note that used to stand here asserting
     // the opposite is why the sky shipped blown to white.
@@ -3634,6 +4085,7 @@ fn sky_dome(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     // `Without<SkyDome>` proves this read query is disjoint from `dome`'s
     // `&mut Transform` below — without it Bevy cannot prove the two Transform
     // accesses never alias the same entity and panics with error[B0001] the
@@ -3649,7 +4101,61 @@ fn sky_dome(
         tf.translation = cam_tf.translation;
         return;
     }
-    let mesh = meshes.add(build_sky_dome_mesh());
+
+    // ── A4 · the painted sky ────────────────────────────────────────────────
+    // The ramp is loaded FIRST, because whether it loaded decides how the mesh is
+    // built: painted domes carry UVs and no vertex colours, procedural ones the
+    // reverse. Deciding that after the mesh existed is how a dome ends up sampling
+    // a texture through the sphere builder's own spherical UVs, which is a
+    // perfectly renderable and completely wrong sky.
+    let ramp = sky_paint_enabled()
+        .then(|| load_sky_plate("sky_gradient_sunset.png"))
+        .flatten();
+    if let Some(plate) = &ramp {
+        let gain = sky_paint_gain();
+        let lut = images.add(build_sky_ramp_lut(plate));
+        let mesh = meshes.add(build_sky_dome_mesh(true));
+        let material = materials.add(StandardMaterial {
+            // THE HDR HEADROOM LIVES HERE, not in the texels. `base_color` is a
+            // full `LinearRgba` and is NOT clamped to 1, so an 8-bit sRGB plate
+            // can carry a sky bright enough to bloom and to sit above the ground
+            // in the tonemapper's range. See [`SKY_PAINT_GAIN`].
+            base_color: Color::LinearRgba(LinearRgba::new(gain, gain, gain, 1.0)),
+            base_color_texture: Some(lut),
+            // Unlit for the reason the procedural dome is unlit: this is the sky,
+            // not a surface. No key, no fill, no IBL — the light is the paint.
+            unlit: true,
+            // The dome IS the sky. Distance fog is for geometry; applied here the
+            // dome at 640 units (well past `HAZE_FULL`) would fog out to a flat
+            // haze plate and bury the gradient that is the entire point.
+            fog_enabled: false,
+            cull_mode: None,
+            ..default()
+        });
+        commands.spawn((
+            SkyDome,
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_translation(cam_tf.translation),
+            // Explicit, and non-negotiable: a mesh spawned without `Visibility`
+            // gets no `ViewVisibility`, is never extracted, and renders nothing
+            // while looking perfectly correct in source. That cost this lane a
+            // week once (docs/_rose_a1_dome_dead_2026-08-11.md).
+            Visibility::default(),
+            NotShadowCaster,
+        ));
+        println!(
+            "LOOK sky-dome PAINTED r={SKY_DOME_RADIUS} ramp={}x{} lut_rows={SKY_LUT_ROWS} \
+             gain={gain:.2} curve={:.2} ev100={:.1}",
+            plate.w,
+            plate.h,
+            sky_ramp_curve(),
+            hour().ev100
+        );
+        return;
+    }
+
+    let mesh = meshes.add(build_sky_dome_mesh(false));
     // ── TEMP-A1-PROOF (REVERT before shipping) ───────────────────────────────
     // The A1 dome was proven dead at the fragment level
     // (docs/_rose_a1_dome_dead_2026-08-11.md): an HDR green-8.0 emissive on the
@@ -3723,6 +4229,227 @@ fn sky_dome(
         "LOOK sky-dome spawned r={SKY_DOME_RADIUS} sky_gain={:.2} ev100={:.1}",
         hour().sky_gain,
         hour().ev100
+    );
+}
+
+// ===========================================================================
+// A5 · the solar disk, as GEOMETRY  (docs/art-gap-vs-ceo-ref-2026-08-18.md)
+// ===========================================================================
+//
+// WHY THIS EXISTS ONCE A3 ALREADY HAD A SUN. It did not — not on the painted
+// path. [`sun_disk`] returns `None` unless [`atmos_enabled`], because the disk it
+// configures is drawn by Bevy's ATMOSPHERE (`functions.wgsl:253`). Now that the
+// atmosphere is off by default the sky has no sun in it at all, and a sunset
+// without a sun is the frame the art-gap document was complaining about.
+//
+// So the disk becomes a mesh this lane owns: one camera-facing quad carrying
+// Monanisa's `sun_disk.png`. `sun_disk()` is NOT deleted — under
+// `VOXELFORGE_LOOK_ATMOS=lut` the physical path is back and it configures the
+// physical disk, exactly as before. The two never draw together, and the run log
+// says which one did.
+//
+// WHY PREMULTIPLIED + ADDITIVE. The plate carries its shape in ALPHA (measured:
+// alpha 1.00 at the centre, 0.05 by r = 0.77 of the half-width, 0 past 0.9) over
+// a warm near-uniform RGB. Composited with plain `AlphaMode::Add` the alpha
+// channel is ignored and what lands on screen is a warm SQUARE. Premultiplying
+// RGB by alpha — in LINEAR space, where the compositing actually happens, not in
+// the stored sRGB — makes additive the physically right operator for a glow: the
+// halo falls off to exactly zero at the quad's edge and there is no rectangle.
+
+/// Angular DIAMETER of the whole quad, degrees.
+///
+/// SIZED OFF THE PLATE'S OWN PROFILE, not off the real sun. `sun_disk.png` puts
+/// its alpha > 0.5 core inside r = 0.39 of the half-width and its last visible
+/// alpha at r = 0.77, so a 9-degree quad reads as a 3.5-degree bright core inside
+/// a 6.9-degree halo. At 1280x720 over a 60-degree vertical FOV that is a 42 px
+/// core in an 83 px glow — comfortably above the ~28 px the A3 note found was the
+/// floor for the bloom prefilter to get hold of it, and still small in frame.
+/// Physically correct would be 0.53 degrees, i.e. 6 px, which is the size a hero
+/// sunset frame specifically does not want.
+const SUN_BILLBOARD_DEG: f32 = 9.0;
+
+/// Distance from the camera, world units. BETWEEN the cloud deck (600) and the
+/// dome (640), and that ordering is the point: transparent draws sort
+/// back-to-front, so a disk at 620 is painted BEFORE the deck at 600 and the deck
+/// then blends over it. Clouds occlude the sun, which is the one relationship
+/// that makes a painted sky read as depth rather than as wallpaper. Inside the
+/// dome, so the opaque dome's depth never rejects it.
+const SUN_BILLBOARD_DIST: f32 = 620.0;
+
+/// Scene-referred gain on the disk. Above the `Bloom` prefilter threshold by a
+/// wide margin on purpose — the glare around a low sun is bloom doing its job,
+/// and this is the only thing in an outdoor frame that should be triggering it.
+const SUN_BILLBOARD_GAIN: f32 = 9.0;
+
+/// Marks the billboard so the follow system finds it again.
+#[derive(Component)]
+struct SunBillboard;
+
+/// sRGB → linear transfer. The inverse of [`lin_to_srgb`], needed because the
+/// premultiply below is only correct in linear space.
+fn srgb_to_lin(x: f32) -> f32 {
+    if x <= 0.040_45 {
+        x / 12.92
+    } else {
+        ((x + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// `VOXELFORGE_SUN_DISC=off` drops the billboard; `=<deg>,<gain>` sizes it.
+/// Returns `None` when the lane should not draw one.
+fn sun_billboard_knobs() -> Option<(f32, f32)> {
+    static K: std::sync::OnceLock<Option<(f32, f32)>> = std::sync::OnceLock::new();
+    *K.get_or_init(|| {
+        let raw = std::env::var("VOXELFORGE_SUN_DISC").unwrap_or_default();
+        if raw.trim().eq_ignore_ascii_case("off") || raw.trim() == "0" {
+            return None;
+        }
+        // The atmosphere draws its own disk when it is on. Two suns in one sky is
+        // not a look, it is a bug report.
+        if atmos_enabled() {
+            return None;
+        }
+        Some(match env_floats::<2>("VOXELFORGE_SUN_DISC") {
+            Some([d, g]) if d > 0.0 && g > 0.0 => (d, g),
+            _ => (SUN_BILLBOARD_DEG, SUN_BILLBOARD_GAIN),
+        })
+    })
+}
+
+/// The `up` vector for the billboard's `look_at`, guarded against the
+/// degenerate case.
+///
+/// `look_at` has no answer when the view direction is collinear with `up`, and
+/// the view direction here IS the sun bearing — so a sweep that puts
+/// `VOXELFORGE_LOOK_SUN` near 90 degrees of elevation hands it a parallel pair
+/// and gets back a NaN rotation, which renders as a disk that silently vanishes.
+/// `Z` is perpendicular to `Y` by construction, so one swap covers the whole
+/// degenerate cone. The threshold is on the bearing's own `y`, which is
+/// `sin(elevation)`: 0.999 is 87.4 degrees.
+fn billboard_up(toward_sun: Vec3) -> Vec3 {
+    if toward_sun.y.abs() > 0.999 {
+        Vec3::Z
+    } else {
+        Vec3::Y
+    }
+}
+
+/// Build the disk texture: RGB premultiplied by alpha in linear space, alpha
+/// forced opaque, so `AlphaMode::Add` composites a glow and not a rectangle.
+fn build_sun_disk_tex(plate: &SkyPlate) -> Image {
+    let mut data = vec![0u8; plate.w * plate.h * 4];
+    for i in 0..plate.w * plate.h {
+        let a = plate.px[i * 4 + 3] as f32 / 255.0;
+        for c in 0..3 {
+            let lin = srgb_to_lin(plate.px[i * 4 + c] as f32 / 255.0) * a;
+            data[i * 4 + c] = (lin_to_srgb(lin).clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        }
+        data[i * 4 + 3] = 255;
+    }
+    let mut img = Image::new(
+        Extent3d {
+            width: plate.w as u32,
+            height: plate.h as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    );
+    // CLAMP, and it matters: the plate's alpha is already 0 at its border, so
+    // clamping extends zero outward. Repeat would tile a second sun into the
+    // corners of the quad the moment a sampler stepped a texel past the edge.
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        label: Some("sun_disk".into()),
+        address_mode_u: ImageAddressMode::ClampToEdge,
+        address_mode_v: ImageAddressMode::ClampToEdge,
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        ..default()
+    });
+    img
+}
+
+/// Spawn the disk once the gameplay camera exists, then hold it on the sun's
+/// bearing and square to the camera every frame.
+///
+/// The transform is rewritten rather than parented for the same reason the dome
+/// and the deck are: this lane adds entities of its own and never touches another
+/// lane's hierarchy.
+fn sun_billboard(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    // Same B0001 guard as `sky_dome` and `cloud_deck`: `Without<SunBillboard>`
+    // is what proves to Bevy at SCHEDULE-BUILD time (i.e. on every boot, not on
+    // the frame the entity appears) that these two `Transform` accesses cannot
+    // alias.
+    cam: Query<&Transform, (With<crate::OrbitCam>, Without<SunBillboard>)>,
+    mut disc: Query<&mut Transform, With<SunBillboard>>,
+) {
+    let Some((deg, gain)) = sun_billboard_knobs() else {
+        return;
+    };
+    let Some(cam_tf) = cam.iter().next() else {
+        return;
+    };
+    let h = hour();
+    // `sun_dir()` is the direction light TRAVELS, so toward the sun is -that.
+    let toward_sun = -h.sun_dir();
+    let pos = cam_tf.translation + toward_sun * SUN_BILLBOARD_DIST;
+
+    if let Ok(mut tf) = disc.single_mut() {
+        tf.translation = pos;
+        // `look_at` aims the entity's FORWARD (-Z) at the target, so the quad
+        // presents its back face to the camera. `cull_mode: None` renders it
+        // anyway and the plate is radially symmetric, so a mirrored sample is the
+        // same sample — this is the cheap correct answer, not an oversight.
+        tf.look_at(cam_tf.translation, billboard_up(toward_sun));
+        return;
+    }
+
+    // Below the horizon there is no disk to draw, and drawing one anyway would
+    // put a sun under the terrain that the dome cannot occlude (the dome is
+    // FARTHER than the disk by construction).
+    if h.elev_deg <= 0.0 {
+        println!(
+            "LOOK sun-disc SKIPPED — sun is {:.1} deg, at or below the horizon",
+            h.elev_deg
+        );
+        return;
+    }
+    let Some(plate) = load_sky_plate("sun_disk.png") else {
+        return;
+    };
+    let tex = images.add(build_sun_disk_tex(&plate));
+    // Quad side from the angular diameter at this distance.
+    let side = 2.0 * SUN_BILLBOARD_DIST * (deg.to_radians() * 0.5).tan();
+    let mesh = meshes.add(Mesh::from(Rectangle::new(side, side)));
+    let material = materials.add(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(gain, gain, gain, 1.0)),
+        base_color_texture: Some(tex),
+        unlit: true,
+        fog_enabled: false,
+        cull_mode: None,
+        // Additive over a premultiplied plate — see the section note.
+        alpha_mode: AlphaMode::Add,
+        ..default()
+    });
+    commands.spawn((
+        SunBillboard,
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
+        Transform::from_translation(pos).looking_at(cam_tf.translation, billboard_up(toward_sun)),
+        Visibility::default(),
+        NotShadowCaster,
+    ));
+    println!(
+        "LOOK sun-disc spawned {deg:.1}deg side={side:.1} dist={SUN_BILLBOARD_DIST} gain={gain:.1} \
+         sun_elev={:.1} azim={:.1}",
+        h.elev_deg, h.azim_deg
     );
 }
 
@@ -3808,4 +4535,762 @@ fn play_fog_volume(
     if let Ok(mut tf) = fog.single_mut() {
         tf.translation = cam_tf.translation;
     }
+}
+
+// ===========================================================================
+// A3 · the cloud deck + the solar disk   (docs/refs/ceo_ref_sunset_valley.jpg)
+// ===========================================================================
+//
+// WHAT WAS MISSING. A0's `Atmosphere` gives a physically scattered sky and A1's
+// dome gives a gradient one — both are *empty* skies. The reference the CEO
+// handed this lane is not: the top third of that frame is a shaped cloud deck
+// taking a low sun on its undersides (hot orange around the disk, magenta
+// mid-sky, violet away from it), with a lit rim wherever the deck goes thin, and
+// a solar disk sitting on the skyline. Nothing in this file drew a cloud, and
+// nothing drew a disk bigger than the 0.53° stock one.
+//
+// WHY A BAKED DECK, NOT A SHADER AND NOT VOLUMETRICS.
+//
+//   * Volumetric clouds mean ray-marching a shaped 3-D medium every frame.
+//     Bevy's `FogVolume` march (A2) is already the most expensive item in the
+//     Ultra stack and it marches a HOMOGENEOUS medium; a shaped one at sky scale
+//     is a different order of cost, against a budget that has to hold on a
+//     mid-range card at the DEFAULT tier. Ruled out on frame cost, not on taste.
+//   * A WGSL cloud material would be this crate's first custom material AND is
+//     not reachable under this lane's file fence: the shader source would have to
+//     live in `assets/`, which another lane is editing this week.
+//   * Every input to the cloud lighting is LAUNCH-FIXED. `hour()` — sun angle,
+//     key colour, sky colour, haze colour — is read once from env and never moves
+//     during a session; [`build_sky_dome_mesh`] already makes exactly this
+//     argument for baking the dome's vertex colours. So the per-pixel work a
+//     shader would repeat sixty times a second has ONE answer per direction, and
+//     that answer can be computed once, on the CPU, at spawn.
+//
+// So: one texture baked at spawn, drawn on a ~20 k-triangle deck shell that
+// follows the camera. Per-frame cost is a single alpha-blended draw over the sky
+// with no overdraw and no shadow pass — which is why this ships at every tier
+// instead of at Ultra only.
+//
+// UNITS — AND THE 1513× TRAP. The deck is `unlit`, so exactly like `ClearColor`
+// and the A1 dome, and for the reason spelled out at length in
+// [`build_sky_dome_mesh`], its colour is written into the HDR target VERBATIM:
+// `pbr.wgsl`'s unlit branch never reaches `apply_pbr_lighting`, which is where
+// `view.exposure` is applied. The atmosphere sky behind it DOES apply exposure
+// (`bevy_pbr-0.19.0/src/atmosphere/render_sky.wgsl:71`), so both end up in the
+// same target-referred space where 1.0 is the tonemapper's white. The cloud
+// radiance is therefore authored directly in that space — [`CLOUD_HDR_GAIN`] is
+// the same kind of number as [`Hour::sky_gain`], and the two are deliberately
+// close. There is NO exposure compensation in this section and there must not
+// be: dividing by `exposure()` here would ship the deck at 1513× its authored
+// radiance, which is the precise bug the dome shipped with.
+//
+// THE A/B LEVER is `VOXELFORGE_CLOUDS=off` (see [`clouds_enabled`]) — one binary,
+// one scene, one env swap, same discipline as `_MAT_MAPS`, `_LOOK_ATMOS`,
+// `_LOOK_SKYGRAD` and `_LOOK_VFOG` before it.
+
+/// Radius of the deck shell, world units. Inside [`SKY_DOME_RADIUS`] (640) so the
+/// deck draws in FRONT of the A1 dome on the `_LOOK_ATMOS=off` path, and far past
+/// the 320-unit streaming radius so terrain always occludes it.
+const CLOUD_DECK_RADIUS: f32 = 600.0;
+
+/// Modelled height of the cloud plane above the camera, world units. This is a
+/// BAKE-TIME quantity only — no geometry sits up there. Together with
+/// [`CLOUD_LONG_SCALE`] it sets how big one cloud reads and how hard the deck
+/// converges toward the horizon; only the ratio of the two matters.
+const CLOUD_ALTITUDE: f32 = 900.0;
+
+/// Far clamp on the ray↔plane intersection, in multiples of [`CLOUD_ALTITUDE`].
+/// Rays under ~1.4° elevation walk to infinity, and an unclamped intersection
+/// would smear one noise sample across the entire horizon band.
+const CLOUD_SPAN_MAX: f32 = 42.0;
+
+/// Lowest elevation the deck mesh reaches, degrees. Slightly BELOW the horizon so
+/// the shell's bottom edge can never open a hairline of empty sky between the
+/// deck and the skyline; alpha there is already faded to zero by
+/// [`CLOUD_FADE_HI_DEG`], so those rings cost geometry and paint nothing.
+const CLOUD_ELEV_MIN_DEG: f32 = -2.0;
+
+/// Ring-distribution exponent (elevation = `t^bias`). >1 crowds the rings toward
+/// the horizon, which is where the deck's perspective compression puts all the
+/// detail — a linear split spends half its rings on an empty zenith.
+const CLOUD_RING_BIAS: f32 = 1.7;
+
+/// Elevation band, degrees, over which the deck fades in off the horizon.
+const CLOUD_FADE_LO_DEG: f32 = -1.6;
+const CLOUD_FADE_HI_DEG: f32 = 0.9;
+
+/// Baked texture size. 1024 columns is 0.35° of azimuth per texel — finer than
+/// the deck's own noise at every distance the plane model reaches.
+const CLOUD_TEX_W: usize = 1024;
+const CLOUD_TEX_H: usize = 512;
+
+/// Deck shell tessellation. 160×64 → ~20 k triangles, one draw call.
+const CLOUD_MESH_SECTORS: usize = 160;
+const CLOUD_MESH_RINGS: usize = 64;
+
+/// `base_color` multiplier, i.e. the deck's HDR headroom in target-referred units
+/// where 1.0 is the tonemapper's white. The texture stores radiance/gain, so this
+/// is the brightest a sunlit cloud edge can get. Sits just above
+/// [`Hour::sky_gain`] (2.4) on purpose: the lit tops of the deck must read
+/// brighter than the sky they sit against, and above the v4 bloom prefilter
+/// threshold (0.72) so they glare rather than sit flat. See the units note above
+/// for why this is NOT divided by `exposure()`.
+const CLOUD_HDR_GAIN: f32 = 3.2;
+
+/// Sky coverage: the share of the fBm range that resolves to cloud.
+const CLOUD_COVER: f32 = 0.55;
+/// Width of the density ramp at the coverage threshold — the softness of a cloud
+/// edge. Small values give hard cut-outs, large values give haze.
+const CLOUD_SOFTNESS: f32 = 0.30;
+/// Contrast stretch on the fBm before thresholding. Value-noise fBm lives near
+/// 0.5 and rarely reaches its formal 0..1 bounds, so without this the coverage
+/// knob operates on a sliver of its own range.
+const CLOUD_CONTRAST: f32 = 2.3;
+
+/// Feature size of the deck ACROSS the sun heading (the long axis of a band) and
+/// ALONG it (the short axis), world units. The anisotropy is what makes the deck
+/// read as wind-sheared streaks crossing the sun rather than as isotropic blobs —
+/// which is the shape the reference actually has.
+const CLOUD_LONG_SCALE: f32 = 3400.0;
+const CLOUD_SHORT_SCALE: f32 = 1050.0;
+
+/// Extinction coefficient for the SUN ray (self-shadowing) and for the VIEW ray
+/// (opacity). Separate numbers because they answer different questions: how dark
+/// the deck's underside gets, versus how solid it looks.
+const CLOUD_SUN_EXTINCTION: f32 = 4.2;
+const CLOUD_VIEW_EXTINCTION: f32 = 1.9;
+
+/// Samples along the sun ray. Four is enough to separate "lit edge" from "deep
+/// interior" at this feature size; the cost is four extra fBm evaluations per
+/// texel, paid once at spawn.
+const CLOUD_SUN_MARCH: usize = 4;
+/// Modelled vertical thickness of the deck, world units — sets how far the sun
+/// ray travels horizontally per unit of depth, and hence how long the internal
+/// shadows are at a low sun.
+const CLOUD_THICKNESS: f32 = 300.0;
+/// Cap on that horizontal travel. At a 1° sun the untruncated slant is ~17 km,
+/// far enough that the shadow ray decorrelates from the cloud it belongs to.
+const CLOUD_SUN_REACH_MAX: f32 = 6500.0;
+
+/// Cap on the view-ray path multiplier `1/sin(elev)`. Without it the horizon band
+/// saturates to a flat opaque wall several degrees high.
+const CLOUD_PATH_MAX: f32 = 7.0;
+
+/// Forward-scattering exponent and gain — the Mie lobe that puts the hot glow on
+/// the clouds immediately around the sun and leaves the rest of the deck cool.
+const CLOUD_FORWARD_EXP: f32 = 7.0;
+const CLOUD_FORWARD_GAIN: f32 = 5.5;
+
+/// Rim ("silver lining") gain. Peaks where density is half — the thin shoulder of
+/// a cloud, which is where the sun actually gets through the edge.
+const CLOUD_RIM_GAIN: f32 = 0.85;
+
+/// Brightness of the direct beam and of the sky ambient, in the same
+/// target-referred units divided by [`CLOUD_HDR_GAIN`] (both are multiplied into
+/// a colour that is then divided by the gain before storage).
+const CLOUD_SUN_STRENGTH: f32 = 2.6;
+const CLOUD_AMBIENT_STRENGTH: f32 = 0.62;
+
+/// The colour of the beam that reaches a cloud at [`CLOUD_ALTITUDE`] when the sun
+/// is ON the horizon, sRGB. The [`Hour::key`] colour is the beam that reaches the
+/// GROUND under the same hour; a beam that has to graze the whole atmosphere to
+/// light a cloud deck from below has lost far more of its short wavelengths than
+/// that. Blended in by sun elevation — see [`CLOUD_REDDEN_HI_DEG`].
+const CLOUD_SUN_LOW: [f32; 3] = [1.00, 0.42, 0.17];
+/// Sun elevations, degrees, between which the beam colour rides from
+/// [`Hour::key`] (high) to [`CLOUD_SUN_LOW`] (on the horizon).
+const CLOUD_REDDEN_HI_DEG: f32 = 20.0;
+const CLOUD_REDDEN_LO_DEG: f32 = 1.0;
+
+/// Tint applied to the ambient half — the light the SHADOWED body of a cloud
+/// receives. Leans the blue-zenith/warm-horizon blend toward magenta, which is
+/// the violet the reference's mid-sky clouds actually are. An art call, and the
+/// only unmotivated multiply in this section; it is one line and it is labelled.
+const CLOUD_SHADOW_TINT: [f32; 3] = [1.06, 0.86, 1.16];
+
+/// Enlargement of the solar disk over [`SunDisk::EARTH`] and the multiplier on
+/// its brightness. The stock disk is physically correct at 0.53° and physically
+/// correct is not what a hero sunset frame wants: at 1280×720 over a 60° vertical
+/// FOV that is ~6 pixels, which the bloom prefilter cannot get hold of. 4.5× puts
+/// it at ~28 px — still small in frame, big enough to glare.
+const SUN_DISK_SIZE_MULT: f32 = 4.5;
+const SUN_DISK_INTENSITY: f32 = 2.4;
+
+/// Marks the single deck entity so the follow/drift system finds it again.
+#[derive(Component)]
+struct CloudDeck;
+
+/// `VOXELFORGE_CLOUDS=off` — the one-binary A/B lever for this whole section
+/// (deck AND solar disk). Default on.
+fn clouds_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        !matches!(
+            std::env::var("VOXELFORGE_CLOUDS")
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "off" | "0"
+        )
+    })
+}
+
+/// The solar disk this lane asks Bevy's atmosphere for, or `None` for the stock
+/// one. `VOXELFORGE_CLOUDS_SUNDISK=<size_mult>,<intensity>` overrides,
+/// `=off` reverts to [`SunDisk::EARTH`] while leaving the deck alone.
+///
+/// The disk is drawn by the ATMOSPHERE (`functions.wgsl:253`), so it needs
+/// `_LOOK_ATMOS` to be on — which is the default. Under `_LOOK_ATMOS=off` the A1
+/// dome is the sky and there is no disk to size; this returns `None` there rather
+/// than pretending otherwise.
+fn sun_disk() -> Option<SunDisk> {
+    static D: std::sync::OnceLock<Option<SunDisk>> = std::sync::OnceLock::new();
+    D.get_or_init(|| {
+        if !clouds_enabled() || !atmos_enabled() {
+            return None;
+        }
+        let raw = std::env::var("VOXELFORGE_CLOUDS_SUNDISK").unwrap_or_default();
+        if raw.trim().eq_ignore_ascii_case("off") {
+            return None;
+        }
+        let (mult, intensity) = match env_floats::<2>("VOXELFORGE_CLOUDS_SUNDISK") {
+            Some([m, i]) => (m, i),
+            None => (SUN_DISK_SIZE_MULT, SUN_DISK_INTENSITY),
+        };
+        Some(SunDisk {
+            angular_size: SunDisk::EARTH.angular_size * mult,
+            intensity: SunDisk::EARTH.intensity * intensity,
+        })
+    })
+    .clone()
+}
+
+/// Everything the bake needs, resolved once from [`hour`] and env.
+#[derive(Clone, Copy)]
+struct CloudKnobs {
+    /// Unit vector ACROSS the sun's horizontal heading, in world XZ. The noise
+    /// domain's long axis; [`Self::sun_h`] is the short one.
+    perp: Vec2,
+    /// Horizontal direction from the camera TOWARD the sun, XZ, unit. Doubles as
+    /// the noise domain's short axis and as the march direction for the
+    /// self-shadow ray — they are the same direction, so it is one field.
+    sun_h: Vec2,
+    /// Full direction from the camera toward the sun.
+    sun_to: Vec3,
+    altitude: f32,
+    cover: f32,
+    long_scale: f32,
+    short_scale: f32,
+    /// World-space step along the sun ray, per [`CLOUD_SUN_MARCH`] sample.
+    sun_step: f32,
+    seed: u32,
+    /// Direct beam colour, linear, already reddened for the sun's elevation.
+    beam: LinearRgba,
+    /// Warm (horizon) and cool (zenith) halves of the ambient, linear.
+    amb_warm: LinearRgba,
+    amb_cool: LinearRgba,
+    /// Divisor applied before the texture is quantised — see [`CLOUD_HDR_GAIN`].
+    gain: f32,
+    /// The value [`CLOUD_CONTRAST`] pivots around when the density field comes
+    /// from Monanisa's plate instead of [`cloud_fbm`].
+    ///
+    /// WHY IT IS NOT 0.5. The fBm is constructed to average 0.5, so pivoting the
+    /// contrast there is exact and `lo = 1 - cover` lands where the constant
+    /// intends. `sky_clouds.png` averages alpha 0.344 — it is an ARTWORK, not a
+    /// normalised noise field. Pivoting an authored 0.344 around 0.5 pushes the
+    /// whole distribution down (0.344 -> 0.14 at contrast 2.3), `smoothstep(0.45,
+    /// 0.75, ..)` then returns ~0 almost everywhere, and the deck bakes to an
+    /// alpha so low it renders identically to no deck at all. Pivoting on the
+    /// plate's OWN mean keeps [`CLOUD_COVER`] meaning what it says whichever
+    /// density field is live.
+    tex_mid: f32,
+}
+
+impl CloudKnobs {
+    fn from_hour(tex: Option<&SkyPlate>) -> Self {
+        let h = hour();
+        // `sun_dir()` is the direction light TRAVELS, so toward the sun is -that.
+        let sun_to = -h.sun_dir();
+        let sun_h = Vec2::new(sun_to.x, sun_to.z)
+            .try_normalize()
+            .unwrap_or(Vec2::new(0.0, 1.0));
+        // Long axis across the sun heading, short axis along it: bands that cross
+        // the sun instead of pointing at it.
+        let perp = Vec2::new(sun_h.y, -sun_h.x);
+
+        // Beam colour: `Hour::key` at a high sun, `CLOUD_SUN_LOW` on the horizon.
+        let redden = smoothstep(CLOUD_REDDEN_HI_DEG, CLOUD_REDDEN_LO_DEG, h.elev_deg);
+        let key = Color::srgb(h.key[0], h.key[1], h.key[2]).to_linear();
+        let low = Color::srgb(CLOUD_SUN_LOW[0], CLOUD_SUN_LOW[1], CLOUD_SUN_LOW[2]).to_linear();
+        let beam = lerp_lin(key, low, redden);
+
+        // Ambient halves. The warm one is the haze colour — the SAME value the
+        // horizon of the A1 dome and the far end of `DistanceFog` resolve to, so
+        // the bottom of the deck cannot disagree with the air under it. The cool
+        // one is the hour's own sky at its own gain, i.e. the dome's zenith.
+        let amb_warm = haze_color().to_linear();
+        let amb_cool = scale_lin(
+            Color::srgb(h.sky[0], h.sky[1], h.sky[2]).to_linear(),
+            h.sky_gain,
+        );
+
+        // Horizontal travel of the sun ray across one deck thickness, split into
+        // `CLOUD_SUN_MARCH` steps.
+        let tan_elev = h.elev_deg.max(1.0).to_radians().tan();
+        let reach = (CLOUD_THICKNESS / tan_elev).min(CLOUD_SUN_REACH_MAX);
+
+        let scale = std::env::var("VOXELFORGE_CLOUDS_SCALE")
+            .ok()
+            .and_then(|v| v.trim().parse::<f32>().ok())
+            .filter(|s| *s > 0.0)
+            .unwrap_or(1.0);
+
+        Self {
+            perp,
+            sun_h,
+            sun_to,
+            altitude: std::env::var("VOXELFORGE_CLOUDS_ALT")
+                .ok()
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .filter(|a| *a > 1.0)
+                .unwrap_or(CLOUD_ALTITUDE),
+            cover: std::env::var("VOXELFORGE_CLOUDS_COVER")
+                .ok()
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .map(|c| c.clamp(0.0, 1.0))
+                .unwrap_or(CLOUD_COVER),
+            long_scale: CLOUD_LONG_SCALE * scale,
+            short_scale: CLOUD_SHORT_SCALE * scale,
+            sun_step: reach / CLOUD_SUN_MARCH as f32,
+            seed: std::env::var("VOXELFORGE_CLOUDS_SEED")
+                .ok()
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .unwrap_or(1),
+            beam,
+            amb_warm,
+            amb_cool,
+            gain: std::env::var("VOXELFORGE_CLOUDS_GAIN")
+                .ok()
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .filter(|g| *g > 0.0)
+                .unwrap_or(CLOUD_HDR_GAIN),
+            tex_mid: match tex {
+                Some(p) => {
+                    let n = (p.w * p.h) as f64;
+                    let sum: f64 = (0..p.w * p.h).map(|i| p.px[i * 4 + 3] as f64).sum();
+                    (sum / n / 255.0) as f32
+                }
+                None => 0.5,
+            },
+        }
+    }
+}
+
+/// Integer hash → `[0,1)`. Deterministic across runs and platforms (all `u32`
+/// wrapping arithmetic, no float accumulation), which is what makes an A/B pair
+/// shot from this binary reproducible.
+fn cloud_hash(x: i32, y: i32, seed: u32) -> f32 {
+    let mut h = (x as u32)
+        .wrapping_mul(0x8da6_b343)
+        ^ (y as u32).wrapping_mul(0xd816_3841)
+        ^ seed.wrapping_mul(0xcb1a_b31f);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x2971_1d3d);
+    h ^= h >> 15;
+    (h & 0x00ff_ffff) as f32 / 16_777_215.0
+}
+
+/// Smoothstep-interpolated value noise on a unit lattice.
+fn cloud_value_noise(x: f32, y: f32, seed: u32) -> f32 {
+    let xi = x.floor();
+    let yi = y.floor();
+    let (ix, iy) = (xi as i32, yi as i32);
+    let u = {
+        let f = x - xi;
+        f * f * (3.0 - 2.0 * f)
+    };
+    let v = {
+        let f = y - yi;
+        f * f * (3.0 - 2.0 * f)
+    };
+    let a = cloud_hash(ix, iy, seed);
+    let b = cloud_hash(ix + 1, iy, seed);
+    let c = cloud_hash(ix, iy + 1, seed);
+    let d = cloud_hash(ix + 1, iy + 1, seed);
+    let top = a + (b - a) * u;
+    let bot = c + (d - c) * u;
+    top + (bot - top) * v
+}
+
+/// Fractal sum of [`cloud_value_noise`]. The domain is ROTATED ~31.7° between
+/// octaves as well as doubled: without the rotation every octave shares the same
+/// lattice orientation and the sum shows visible axis-aligned ridges, which on a
+/// cloud deck read as a grid.
+fn cloud_fbm(mut x: f32, mut y: f32, octaves: u32, seed: u32) -> f32 {
+    const ROT_C: f32 = 0.850_7;
+    const ROT_S: f32 = 0.525_7;
+    let mut amp = 0.5;
+    let mut sum = 0.0;
+    let mut norm = 0.0;
+    for o in 0..octaves {
+        sum += amp * cloud_value_noise(x, y, seed.wrapping_add(o.wrapping_mul(131)));
+        norm += amp;
+        let (rx, ry) = (x * ROT_C - y * ROT_S, x * ROT_S + y * ROT_C);
+        x = rx * 2.0;
+        y = ry * 2.0;
+        amp *= 0.5;
+    }
+    sum / norm
+}
+
+/// How much the second sample of Monanisa's plate is scaled and weighted.
+///
+/// ONE TILE OF A 64 px PLATE CANNOT COVER A SKY. At [`CLOUD_LONG_SCALE`] the
+/// plate repeats ~11 times across the deck, and a repeat that regular reads as a
+/// wallpaper grid — the one failure mode that would make an authored cloud look
+/// worse than the procedural one it replaced. Summing a second sample at an
+/// irrational scale ratio, rotated, gives a beat period far longer than the deck
+/// and the grid stops being findable. This is the same reason [`cloud_fbm`]
+/// rotates its own octaves; the plate just gets two of them instead of five,
+/// because it already carries its own internal detail.
+const CLOUD_TEX_OCTAVE_SCALE: f32 = 2.37;
+const CLOUD_TEX_OCTAVE_WEIGHT: f32 = 0.35;
+
+/// The raw density field, before contrast/cover shaping: Monanisa's plate if it
+/// loaded, [`cloud_fbm`] if it did not, and the pivot each one wants.
+fn cloud_field(a: f32, b: f32, k: &CloudKnobs, tex: Option<&SkyPlate>) -> f32 {
+    let Some(p) = tex else {
+        return cloud_fbm(a, b, 5, k.seed);
+    };
+    // Domain in TILES -> texels. Density is the plate's ALPHA channel (measured
+    // min 0, max 255, mean 87.8) — its RGB is near-uniform and carries no shape.
+    let (w, h) = (p.w as f32, p.h as f32);
+    let base = p.sample_wrap(a * w, b * h)[3];
+    // Second octave: scaled and rotated by the same constants `cloud_fbm` uses,
+    // so the two paths break their tiling the same way.
+    const ROT_C: f32 = 0.850_7;
+    const ROT_S: f32 = 0.525_7;
+    let (ra, rb) = (a * ROT_C - b * ROT_S, a * ROT_S + b * ROT_C);
+    let s = CLOUD_TEX_OCTAVE_SCALE;
+    let oct = p.sample_wrap(ra * s * w, rb * s * h)[3];
+    let wgt = CLOUD_TEX_OCTAVE_WEIGHT;
+    base * (1.0 - wgt) + oct * wgt
+}
+
+/// Cloud density at a point on the modelled plane, `0..1`.
+fn cloud_density(p: Vec2, k: &CloudKnobs, tex: Option<&SkyPlate>) -> f32 {
+    let a = p.dot(k.perp) / k.long_scale;
+    let b = p.dot(k.sun_h) / k.short_scale;
+    // Pivot on whatever the live field actually averages — see [`CloudKnobs::tex_mid`].
+    let n = (cloud_field(a, b, k, tex) - k.tex_mid) * CLOUD_CONTRAST + 0.5;
+    let lo = 1.0 - k.cover;
+    smoothstep(lo, lo + CLOUD_SOFTNESS, n)
+}
+
+/// Elevation in radians for a normalised ring coordinate `t` (0 = bottom edge,
+/// 1 = zenith). Shared by the bake and the mesh so a texel and the vertex that
+/// samples it can never disagree about which direction they describe.
+fn cloud_ring_elev(t: f32) -> f32 {
+    (CLOUD_ELEV_MIN_DEG + (90.0 - CLOUD_ELEV_MIN_DEG) * t.powf(CLOUD_RING_BIAS)).to_radians()
+}
+
+/// Linear → sRGB transfer, for storing the baked radiance in an
+/// `Rgba8UnormSrgb` texture the GPU will decode back to linear.
+fn lin_to_srgb(x: f32) -> f32 {
+    if x <= 0.003_130_8 {
+        x * 12.92
+    } else {
+        1.055 * x.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+/// Bake the deck: one `Rgba8UnormSrgb` texel per (azimuth, elevation), RGB the
+/// in-scattered radiance divided by [`CloudKnobs::gain`], A the view-ray opacity.
+///
+/// Returns the image plus (mean alpha, mean RGB) so the run log can state what
+/// was actually painted instead of only that a bake happened — a deck that bakes
+/// to alpha 0.001 renders identically to no deck at all, and the numbers are the
+/// only thing that tells those two apart from a log.
+fn bake_cloud_deck(
+    k: &CloudKnobs,
+    tex: Option<&SkyPlate>,
+    w: usize,
+    h: usize,
+) -> (Image, f32, f32) {
+    let mut data = vec![0u8; w * h * 4];
+    let mut alpha_sum = 0.0f64;
+    let mut rgb_sum = 0.0f64;
+
+    for y in 0..h {
+        let t = y as f32 / (h - 1) as f32;
+        let theta = cloud_ring_elev(t);
+        let (st, ct) = theta.sin_cos();
+        // Clamp the grazing case ONCE, and use the same clamp for the plane hit
+        // and for the view path length, so the horizon band cannot be dense in
+        // one and sparse in the other.
+        let sin_pos = st.max(1.0 / CLOUD_SPAN_MAX);
+        let dist = k.altitude / sin_pos;
+        let path = (1.0 / sin_pos).min(CLOUD_PATH_MAX);
+        // Fade the last degree off the horizon — see `CLOUD_ELEV_MIN_DEG`.
+        let fade = smoothstep(
+            CLOUD_FADE_LO_DEG,
+            CLOUD_FADE_HI_DEG,
+            theta.to_degrees(),
+        );
+        // Elevation blend of the ambient: warm haze low, cool sky high.
+        let elev_mix = smoothstep(0.0, 0.55, st);
+
+        for x in 0..w {
+            let phi = (x as f32 / w as f32) * std::f32::consts::TAU;
+            let (sp, cp) = phi.sin_cos();
+            let dir = Vec3::new(ct * sp, st, ct * cp);
+            let p = Vec2::new(dist * ct * sp, dist * ct * cp);
+
+            let d = cloud_density(p, k, tex);
+
+            // Optical depth toward the sun through the deck.
+            let mut tau = 0.0;
+            for s in 1..=CLOUD_SUN_MARCH {
+                tau += cloud_density(p + k.sun_h * (k.sun_step * s as f32), k, tex);
+            }
+            let transmit = (-CLOUD_SUN_EXTINCTION * tau / CLOUD_SUN_MARCH as f32).exp();
+
+            // Mie forward lobe: hot only where the view ray points near the sun.
+            let mu = dir.dot(k.sun_to).max(0.0);
+            let fwd = mu.powf(CLOUD_FORWARD_EXP);
+            // Silver lining: peaks at half density — the thin shoulder of a cloud.
+            let rim = (d * (1.0 - d) * 4.0).clamp(0.0, 1.0);
+
+            let amb_base = lerp_lin(k.amb_warm, k.amb_cool, elev_mix);
+            // Warm the ambient back toward the horizon colour on the sun's side of
+            // the sky: at a low sun the air the shadowed cloud bodies are lit BY is
+            // itself orange over there and blue behind you.
+            let amb = lerp_lin(amb_base, k.amb_warm, 0.45 * mu * mu);
+
+            let lit = CLOUD_SUN_STRENGTH * transmit * (1.0 + CLOUD_FORWARD_GAIN * fwd)
+                + CLOUD_RIM_GAIN * rim * (0.25 + 0.75 * fwd);
+            let shade = CLOUD_AMBIENT_STRENGTH * (1.0 - transmit);
+
+            let beam = [k.beam.red, k.beam.green, k.beam.blue];
+            let ambient = [amb.red, amb.green, amb.blue];
+            let px = (y * w + x) * 4;
+            let mut lum = 0.0f32;
+            for c in 0..3 {
+                // Direct beam through the deck, plus the sky the shadowed body
+                // sits in — the one art multiply is `CLOUD_SHADOW_TINT`.
+                let radiance = beam[c] * lit + ambient[c] * CLOUD_SHADOW_TINT[c] * shade;
+                let stored = (radiance / k.gain).clamp(0.0, 1.0);
+                lum += stored;
+                data[px + c] = (lin_to_srgb(stored) * 255.0 + 0.5) as u8;
+            }
+            // View-ray opacity: Beer–Lambert through `path` deck thicknesses.
+            let alpha = ((1.0 - (-CLOUD_VIEW_EXTINCTION * d * path).exp()) * fade).clamp(0.0, 1.0);
+            data[px + 3] = (alpha * 255.0 + 0.5) as u8;
+
+            alpha_sum += alpha as f64;
+            rgb_sum += (lum / 3.0) as f64;
+        }
+    }
+
+    if let Ok(path) = std::env::var("VOXELFORGE_CLOUDS_DUMP") {
+        // Raw RGBA8, row-major, `w`×`h` — the bake's own bytes, so a preview can
+        // never be of anything but what the GPU is about to sample.
+        // `scripts/_poppy_clouds_preview.py` turns it into a PNG.
+        match std::fs::write(&path, &data) {
+            Ok(()) => println!("LOOK clouds dumped {w}x{h} RGBA8 -> {path}"),
+            Err(e) => println!("LOOK clouds dump FAILED {path}: {e}"),
+        }
+    }
+
+    let n = (w * h) as f64;
+    let image = {
+        let mut img = Image::new(
+            Extent3d {
+                width: w as u32,
+                height: h as u32,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+        );
+        // REPEAT in u, CLAMP in v. The bake walks azimuth as `x/w * TAU`, so texel
+        // 0 and the wrap point are the same world position by construction and a
+        // repeating sampler closes the seam exactly; v has real ends (horizon and
+        // zenith) and must not wrap one onto the other.
+        img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+            label: Some("cloud_deck".into()),
+            address_mode_u: ImageAddressMode::Repeat,
+            address_mode_v: ImageAddressMode::ClampToEdge,
+            mag_filter: ImageFilterMode::Linear,
+            min_filter: ImageFilterMode::Linear,
+            mipmap_filter: ImageFilterMode::Linear,
+            ..default()
+        });
+        img
+    };
+    (image, (alpha_sum / n) as f32, (rgb_sum / n) as f32)
+}
+
+/// Build the deck shell: an upper-hemisphere grid whose UVs are the bake's own
+/// `(azimuth, ring)` parameterisation, so texel and vertex agree by construction.
+fn build_cloud_deck_mesh() -> Mesh {
+    let sectors = CLOUD_MESH_SECTORS;
+    let rings = CLOUD_MESH_RINGS;
+    let vcount = (sectors + 1) * (rings + 1);
+    let mut positions = Vec::with_capacity(vcount);
+    let mut normals = Vec::with_capacity(vcount);
+    let mut uvs = Vec::with_capacity(vcount);
+
+    for i in 0..=rings {
+        let t = i as f32 / rings as f32;
+        let (st, ct) = cloud_ring_elev(t).sin_cos();
+        for j in 0..=sectors {
+            let u = j as f32 / sectors as f32;
+            let (sp, cp) = (u * std::f32::consts::TAU).sin_cos();
+            let dir = Vec3::new(ct * sp, st, ct * cp);
+            positions.push((dir * CLOUD_DECK_RADIUS).to_array());
+            // Inward-facing: the camera is at the centre of the shell.
+            normals.push((-dir).to_array());
+            uvs.push([u, t]);
+        }
+    }
+
+    let mut indices = Vec::with_capacity(sectors * rings * 6);
+    for i in 0..rings {
+        for j in 0..sectors {
+            let a = (i * (sectors + 1) + j) as u32;
+            let b = a + 1;
+            let c = a + (sectors + 1) as u32;
+            let d = c + 1;
+            indices.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+/// `VOXELFORGE_CLOUDS_DRIFT=<deg/s>` — wind. Default 0: a still deck is what
+/// makes a before/after pair pixel-reproducible, and this lane's evidence is
+/// still frames. Any non-zero value scrolls the deck's azimuth at that rate.
+fn cloud_drift_deg_per_sec() -> f32 {
+    static D: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *D.get_or_init(|| {
+        std::env::var("VOXELFORGE_CLOUDS_DRIFT")
+            .ok()
+            .and_then(|v| v.trim().parse::<f32>().ok())
+            .unwrap_or(0.0)
+    })
+}
+
+/// Spawn the deck on the first frame the gameplay camera exists, then hold it
+/// centred on the camera (translation only — the deck's zenith is world up, like
+/// the A1 dome's) and scroll it if there is wind.
+fn cloud_deck(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    time: Res<Time>,
+    // Same B0001 guard as `sky_dome` / `play_fog_volume`: `Without<CloudDeck>`
+    // proves this read query is disjoint from `deck`'s `&mut Transform`, which
+    // Bevy validates at schedule-build time — i.e. on EVERY boot, not only on the
+    // frame the deck exists.
+    cam: Query<&Transform, (With<crate::OrbitCam>, Without<CloudDeck>)>,
+    mut deck: Query<(&mut Transform, &MeshMaterial3d<StandardMaterial>), With<CloudDeck>>,
+) {
+    let Some(cam_tf) = cam.iter().next() else {
+        return;
+    };
+    if let Ok((mut tf, mat)) = deck.single_mut() {
+        tf.translation = cam_tf.translation;
+        let drift = cloud_drift_deg_per_sec();
+        if drift != 0.0 {
+            // `mut m`: `Assets::get_mut` hands back a change-detection `Mut<_>`,
+            // and `DerefMut` through it needs the binding itself to be mutable.
+            if let Some(mut m) = materials.get_mut(&mat.0) {
+                m.uv_transform.translation.x = -(drift / 360.0) * time.elapsed_secs();
+            }
+        }
+        return;
+    }
+
+    // Monanisa's plate is the density field when it is there. `VOXELFORGE_CLOUDS_PROC=1`
+    // forces the procedural fBm back for an A/B of the two fields from one binary.
+    let proc_only = std::env::var("VOXELFORGE_CLOUDS_PROC")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let plate = (!proc_only).then(|| load_sky_plate("sky_clouds.png")).flatten();
+    let k = CloudKnobs::from_hour(plate.as_ref());
+    let (w, h) = match env_floats::<2>("VOXELFORGE_CLOUDS_RES") {
+        Some([tw, th]) => ((tw as usize).clamp(64, 4096), (th as usize).clamp(32, 2048)),
+        None => (CLOUD_TEX_W, CLOUD_TEX_H),
+    };
+    let t0 = std::time::Instant::now();
+    let (image, mean_a, mean_rgb) = bake_cloud_deck(&k, plate.as_ref(), w, h);
+    let bake_ms = t0.elapsed().as_secs_f32() * 1000.0;
+    let tex = images.add(image);
+    let mesh = meshes.add(build_cloud_deck_mesh());
+    let material = materials.add(StandardMaterial {
+        // The HDR headroom. `base_color` is a full `LinearRgba` and is NOT
+        // clamped to 1 — this is what lets an 8-bit texture carry a sky that
+        // blooms. See the units note at the top of this section.
+        base_color: Color::LinearRgba(LinearRgba::new(k.gain, k.gain, k.gain, 1.0)),
+        base_color_texture: Some(tex),
+        // Unlit for the same reason the A1 dome is: this is sky, not a surface.
+        // No sun, no fill, no IBL — the lighting is already in the texels.
+        unlit: true,
+        // 600 units out, far past `HAZE_FULL`; distance fog would bury the whole
+        // deck under a flat haze plate.
+        fog_enabled: false,
+        // The camera sits at the shell's centre, so the outward winding would be
+        // culled away.
+        cull_mode: None,
+        // Blend, not Mask: a cloud edge IS partial coverage, and `AlphaMode::Blend`
+        // is also what puts this draw in the Transparent3d phase — which runs
+        // AFTER `render_sky` (`bevy_pbr/src/atmosphere/mod.rs:200-202`,
+        // `.after(main_opaque_pass_3d).before(main_transparent_pass_3d)`). That
+        // ordering is the whole reason a mesh can composite over Bevy's
+        // atmosphere at all.
+        alpha_mode: AlphaMode::Blend,
+        ..default()
+    });
+    commands.spawn((
+        CloudDeck,
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
+        Transform::from_translation(cam_tf.translation),
+        // EXPLICIT, for the reason the A1 dome learned the hard way: a mesh
+        // spawned without `Visibility` gets no `ViewVisibility`, is never
+        // extracted, and renders nothing at all while looking perfectly correct
+        // in source (docs/_rose_a1_dome_dead_2026-08-11.md).
+        Visibility::default(),
+        NotShadowCaster,
+    ));
+    println!(
+        "LOOK cloud-deck spawned {w}x{h} field={} tex_mid={:.3} bake={bake_ms:.0}ms \
+         mean_alpha={mean_a:.3} mean_rgb={mean_rgb:.3} cover={:.2} alt={:.0} gain={:.2} seed={} \
+         drift={:.2}deg/s sun_elev={:.1} sun_step={:.0}",
+        if plate.is_some() { "sky_clouds.png" } else { "procedural-fbm" },
+        k.tex_mid,
+        k.cover,
+        k.altitude,
+        k.gain,
+        k.seed,
+        cloud_drift_deg_per_sec(),
+        hour().elev_deg,
+        k.sun_step,
+    );
 }

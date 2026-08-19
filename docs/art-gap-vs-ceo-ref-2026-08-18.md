@@ -44,6 +44,7 @@ python scripts/_pixel_artgap_plate.py                          # เพลตใ
 3. **แกน silhouette v1 ให้เฟรมเราได้ "ดีกว่า REF 2.20 เท่า"** (49.04 vs 22.33) — เพราะฟ้าดับสนิท
    ⇒ `|L_sky − L_terrain|` พุ่งสูงสุดด้วยเหตุผลที่แย่ที่สุดที่เป็นไปได้. **contrast เทียบกับความว่างเปล่า
    ไม่ใช่ silhouette.** ใส่ degeneracy guard → ตอนนี้คืน **UNMEASURABLE** ไม่ใช่ PASS.
+   *(ภายหลังพบว่า guard นี้เองก็หยาบเกินไปและถูกผ่าเป็น 2 ตัว — ดู §UPDATE ท้ายตารางผล)*
 
 **สถานะ control ปัจจุบัน: `_pixel_artgap_controls.py` exit 0**
 - **positive:** REF เกรดตัวเอง **21/21 แกน** ผ่านเกต 60% ⇒ เส้นตัดเอื้อมถึงจริง ไม่ใช่ phantom target
@@ -68,14 +69,36 @@ python scripts/_pixel_artgap_plate.py                          # เพลตใ
 | crushed blacks % | renderer | 0.55 | **4.84** | **20%** ❌ | 0.16 | 159% ✅ |
 | sky hue range (deg) | renderer | **60.0** | **20.0** | **33%** ❌ | 10.0 | 17% ❌ |
 | distant silhouette | renderer | 22.33 | **UNMEASURABLE** | — | 28.76 | 129% ✅ |
-| detail surviving at distance | art | 14.06 | UNMEASURABLE | — | 7.48 | 53% ❌ |
+| detail surviving at distance | art | ~~14.06~~ → **15.61** | ~~UNMEASURABLE~~ → **8.07** | **52%** ❌ | 6.34 | 41% ❌ |
 | local contrast (hi-pass r3) | art | 18.74 | 11.59 | 62% ✅ | 11.44 | 61% ✅ |
 | dynamic range p5−p95 | renderer | 187.7 | 129.3 | 69% ✅ | 106.1 | 57% ❌ |
 | hue diversity (entropy, bits) | art | 3.90 | 2.16 | 55% ❌ | 2.14 | 55% ❌ |
 | saturation (mean S%) | renderer | 57.6 | 77.0 | 134% ✅ | 71.1 | 124% ✅ |
-| aerial perspective (sat) | renderer | 1.28 | UNMEASURABLE | — | 1.47 | 114% ✅ |
+| aerial perspective (sat) | renderer | ~~1.28~~ → **1.13** | ~~UNMEASURABLE~~ → **1.02** | **91%** ✅ | 1.46 | 129% ✅ |
+| aerial perspective (detail) 📎 | renderer | ~~0.90~~ → **0.81** | ~~UNMEASURABLE~~ → **1.08** | 📎 advisory | 1.23 | 📎 advisory |
+| sky blown to white (L>245) % 🆕 | renderer | 5.09 | **0.00** | 0% ✅ | 0.00 | 0% ✅ |
 
-**สรุปหยาบ: 20 axis-GAP · 4 unmeasurable บน 2 เฟรม**
+**สรุปหยาบ (นับเป็นช่อง = แกน × เฟรม, 2 เฟรม): ~~20 axis-GAP · 4 unmeasurable~~ → 21 axis-GAP · 1 unmeasurable**
+· และ 1 แกน (`depth_micro_ratio`) ถูกปลดเป็น **advisory** ไม่นับตัดสินอีกต่อไป
+
+> ### 🔄 UPDATE (2026-08-18 บ่าย) — แถวที่ขีดฆ่าข้างบนคือเลขที่ *เอกสารใบนี้เคยพิมพ์ผิด*
+>
+> **หน้าที่เป็นแหล่งความจริงตอนนี้คือ [`docs/aaa-scoreboard-live.md`](aaa-scoreboard-live.md)**
+> ซึ่งเครื่องสร้างใหม่ทุกครั้งที่รัน grader — ใบนี้เป็นสแนปช็อตของวันที่เขียน ไม่ใช่สถานะปัจจุบัน.
+>
+> เกิดอะไรขึ้น: guard ที่ทำให้ 4 แกนขึ้น `UNMEASURABLE` **หยาบเกินไป**. มันใช้ธง `sky_ok` ตัวเดียว
+> คุมทั้ง 4 แกน ทั้งที่มีแค่ `far_edge_contrast` ตัวเดียวที่อ่านพิกเซลฟ้าจริง ๆ — อีก 3 แกนอ่าน
+> **แถบพื้นดินล้วน**. ผ่า guard เป็น `sky_lit` (คุม silhouette) กับ `horizon_ok` (คุมอีก 3 แกน) แล้ว
+> **3 แกนกลับมาวัดได้ทันทีโดยไม่ต้องรอใครแก้ฟ้า**. รายละเอียด + control ที่รองรับอยู่ใน
+> rubric §P0-ENV.
+>
+> **และการวัดได้มากขึ้นไม่ได้แปลว่าคะแนนดีขึ้น** — `detail surviving at distance` ที่เคยซ่อนอยู่
+> หลังคำว่า UNMEASURABLE โผล่ออกมาเป็น **GAP ที่ 52% ของ REF** ⇒ ยอดรวมขยับจาก 20 GAP เป็น 21.
+>
+> เลข REF ของ 3 แกนนี้ก็ขยับด้วย (`far_micro` 14.06→15.61 ฯลฯ) เพราะแถบวัดถูกบังคับให้
+> **เว้นระยะ 10 px จากฟ้า** หลัง control C3 จับได้ว่า kernel ของ hi-pass σ=3 ยื่นข้ามเส้นขอบฟ้า
+> ไปดูดความสว่างของฟ้าเข้ามา (21.4% ของแถบ far ในภาพอ้างอิงอยู่ในระยะนั้น). เลขชุดใหม่จึงเป็น
+> **เลขที่พิสูจน์แล้วว่าไม่ขึ้นกับฟ้า** ส่วนชุดเดิมไม่ใช่.
 
 ### เลขที่ตัดสินทุกอย่าง — วัดที่ความละเอียดต้นฉบับ ไม่ผ่าน resample เลย
 

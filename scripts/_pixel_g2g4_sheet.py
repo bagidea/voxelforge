@@ -58,12 +58,20 @@ def diff_px(a, b):
 
 
 def grade_num(plate, pattern, cast=float):
-    """Pull one measured number out of that plate's grade_look.py log."""
+    """Pull one measured number out of that plate's grade_look.py log.
+
+    Returns (value, why) so a caption can say WHICH kind of nothing it got:
+    a missing log and a log that found no shadow edge at all are different
+    facts, and "no log" printed over a plate that was graded is a caption
+    lying about its own evidence.
+    """
     p = os.path.join(DIR, f"{plate}.grade.log")
     if not os.path.exists(p):
-        return None
+        return None, "no grade log"
     m = re.search(pattern, open(p, encoding="utf-8", errors="replace").read())
-    return cast(m.group(1)) if m else None
+    if m:
+        return cast(m.group(1)), ""
+    return None, "not measurable (grade_look found no qualifying edge)"
 
 
 def crop(im):
@@ -89,12 +97,67 @@ floor_pct, floor_mean = diff_px(before, before_r2)
 floor2_pct, floor2_mean = diff_px(after, after_r2)
 sig_pct, sig_mean = diff_px(before, after)
 
-pen_b = grade_num("before", r"penumbra median=(\d+)px", int)
-pen_a = grade_num("after", r"penumbra median=(\d+)px", int)
-edges_b = grade_num("before", r"edges found=(\d+)", int)
-edges_a = grade_num("after", r"edges found=(\d+)", int)
+pen_b, pen_b_why = grade_num("before", r"penumbra median=(\d+)px", int)
+pen_a, pen_a_why = grade_num("after", r"penumbra median=(\d+)px", int)
+edges_b, _ = grade_num("before", r"edges found=(\d+)", int)
+edges_a, _ = grade_num("after", r"edges found=(\d+)", int)
 
-# The sheet is 2 rows: full frame, then the graded floor band at native pixels.
+# The >=5px line is PLATE-BOUND: grade_look.py calibrated it at 1280w with a 0.6px
+# pre-blur (golden ref 8px, old hard-PCF frame 3px). A plate of another width would
+# make the same number mean something else, so the sheet PRINTS the size it graded
+# instead of leaving the reader to assume it.
+PLATE_W, PLATE_H = before.size
+PLATE_NOTE = f"{PLATE_W}x{PLATE_H}" + ("" if PLATE_W == 1280 else "  !! threshold calibrated at 1280w")
+
+# ATTRIBUTION. `after` flips both fixes at once, so on its own it cannot say which one
+# earned the penumbra. The two single-lever plates can:
+#   g2-only = pane passes light, shadow map still 4096, no contact shadows
+#   g4-only = pane still blocks, shadow map 2048, contact shadows on
+pen_g2, _ = grade_num("g2-only", r"penumbra median=(\d+)px", int)
+pen_g4, _ = grade_num("g4-only", r"penumbra median=(\d+)px", int)
+edges_g2, _ = grade_num("g2-only", r"edges found=(\d+)", int)
+edges_g4, _ = grade_num("g4-only", r"edges found=(\d+)", int)
+
+# Which number decides "the change is visible"? NOT the share of differing pixels: this
+# renderer's TAA/SSAO dither flips ~10% of pixels by +-1 between two runs of the SAME
+# command, so a pixel COUNT is mostly noise on both sides. mean|d| weights each pixel by
+# how far it moved, and the floor rows show what idling costs there. Both are printed;
+# the verdict colour follows the mean, and 5x the worse floor is the bar.
+floor_mean_max = max(floor_mean, floor2_mean)
+mean_ratio = sig_mean / floor_mean_max if floor_mean_max > 0 else float("inf")
+VISIBLE = mean_ratio >= 5.0
+
+def brightening_box(a_before, a_after, win=(360, 200)):
+    """Where did the sun actually land? Derived from the two frames, never typed in.
+
+    Sum the POSITIVE luminance delta (after - before) into a coarse cell grid, take the
+    hottest cell, and return a native-pixel window centred on it. Positive-only on
+    purpose: G2's claim is "light arrives somewhere it did not before", so a region that
+    merely got darker must not win the crop. Hard-coding a box here would be the
+    next-person trap this repo keeps stepping in -- a plate reshot at another framing
+    would silently zoom on the wrong wall while the caption still said "the light".
+    """
+    lb = arr(a_before).mean(axis=2)
+    la = arr(a_after).mean(axis=2)
+    gain = np.clip(la - lb, 0, None)
+    h, w = gain.shape
+    cw, ch = 40, 40
+    ny, nx = h // ch, w // cw
+    cells = gain[: ny * ch, : nx * cw].reshape(ny, ch, nx, cw).sum(axis=(1, 3))
+    iy, ix = np.unravel_index(int(cells.argmax()), cells.shape)
+    cx, cy = ix * cw + cw // 2, iy * ch + ch // 2
+    ww, wh = win
+    x0 = max(0, min(w - ww, cx - ww // 2))
+    y0 = max(0, min(h - wh, cy - wh // 2))
+    # Plain ints: numpy scalars stringify as "np.int64(800)" and that would land in a
+    # printed caption.
+    box = (int(x0), int(y0), int(x0 + ww), int(y0 + wh))
+    return box, float(gain.max()), float(cells.max() / (cw * ch))
+
+
+BOX, gain_max, gain_cell = brightening_box(before, after)
+
+# The sheet is 3 rows: full frame, the graded floor band, then the measured hot-spot.
 CELL_W = 760
 pad, gutter, cap_h, hdr_h = 18, 16, 108, 92
 
@@ -109,8 +172,19 @@ sc2 = CELL_W / cr_b.width
 cr_b = cr_b.resize((CELL_W, int(cr_b.height * sc2)), Image.LANCZOS)
 cr_a = cr_a.resize((CELL_W, int(cr_a.height * sc2)), Image.LANCZOS)
 
+hot_b, hot_a = before.crop(BOX), after.crop(BOX)
+sc3 = CELL_W / hot_b.width
+hot_b = hot_b.resize((CELL_W, int(hot_b.height * sc3)), Image.NEAREST)
+hot_a = hot_a.resize((CELL_W, int(hot_a.height * sc3)), Image.NEAREST)
+
 W = pad * 2 + CELL_W * 2 + gutter
-H = hdr_h + full_b.height + cap_h + gutter + cr_b.height + cap_h + pad
+H = (
+    hdr_h
+    + full_b.height + cap_h
+    + gutter + cr_b.height + cap_h
+    + gutter + hot_b.height + cap_h
+    + pad
+)
 sheet = Image.new("RGB", (W, H), (18, 18, 20))
 d = ImageDraw.Draw(sheet)
 f_hdr, f_ttl, f_cap = font(24), font(20), font(15)
@@ -122,11 +196,20 @@ d.text(
     fill=(240, 236, 228),
 )
 d.text(
-    (pad, 50),
-    f"ONE binary, {os.path.basename(bpath)} vs {os.path.basename(apath)} - only env differs.   "
-    f"noise floor {floor_pct:.3f}% / {floor2_pct:.3f}% of px   |   before-vs-after signal {sig_pct:.3f}% of px",
+    (pad, 46),
+    f"ONE binary, {os.path.basename(bpath)} vs {os.path.basename(apath)} - only env differs.   plate {PLATE_NOTE}   "
+    f"noise floor mean|d| {floor_mean:.4f} / {floor2_mean:.4f} ({floor_pct:.1f}% / {floor2_pct:.1f}% of px)   |   "
+    f"signal mean|d| {sig_mean:.4f} ({sig_pct:.1f}% of px) = {mean_ratio:.1f}x floor",
     font=f_cap,
-    fill=(150, 200, 170) if sig_pct > max(floor_pct, floor2_pct) * 5 else (220, 160, 120),
+    fill=(150, 200, 170) if VISIBLE else (220, 160, 120),
+)
+d.text(
+    (pad, 66),
+    "ATTRIBUTION (single-lever plates): "
+    + f"g2-only penumbra {pen_g2}px / {edges_g2} edges   -   g4-only penumbra {pen_g4}px / {edges_g4} edges   -   "
+    + f"both {pen_a}px / {edges_a} edges   vs before {pen_b}px / {edges_b} edges",
+    font=f_cap,
+    fill=(178, 176, 172),
 )
 
 y = hdr_h
@@ -138,13 +221,13 @@ for i, (im, ttl) in enumerate(((full_b, "BEFORE"), (full_a, "AFTER"))):
 cap_b = [
     "pane OCCLUDES the sun (VOXELFORGE_G2_PANE=block)",
     "shadow map 4096  |  ContactShadows OFF",
-    f"grade_look G4a penumbra median = {pen_b}px  (line >=5, ref 8)" if pen_b is not None else "grade_look: no log",
+    f"grade_look G4a penumbra median = {pen_b}px  (line >=5, ref 8)" if pen_b is not None else f"grade_look G4a penumbra: {pen_b_why}",
     f"shadow edges found = {edges_b}" if edges_b is not None else "",
 ]
 cap_a = [
     "pane spawned NotShadowCaster - sun reaches the mullions",
     "shadow map 2048  |  ContactShadows on (0.85 blocks)",
-    f"grade_look G4a penumbra median = {pen_a}px  (line >=5, ref 8)" if pen_a is not None else "grade_look: no log",
+    f"grade_look G4a penumbra median = {pen_a}px  (line >=5, ref 8)" if pen_a is not None else f"grade_look G4a penumbra: {pen_a_why}",
     f"shadow edges found = {edges_a}" if edges_a is not None else "",
 ]
 for i, lines in enumerate((cap_b, cap_a)):
@@ -164,10 +247,34 @@ for i, (im, ttl) in enumerate(((cr_b, "BEFORE - graded floor band"), (cr_a, "AFT
         fill=(178, 176, 172),
     )
 
+y3 = y2 + cr_b.height + cap_h + gutter
+for i, (im, ttl) in enumerate(
+    ((hot_b, "BEFORE - where the sun now lands"), (hot_a, "AFTER - where the sun now lands"))
+):
+    x = pad + i * (CELL_W + gutter)
+    sheet.paste(im, (x, y3))
+    d.text((x, y3 + im.height + 6), ttl, font=f_ttl, fill=(235, 230, 220))
+    # Two lines: one long line runs past the cell and prints over its neighbour, which
+    # is how a caption ends up sitting on a plate it is not describing.
+    d.text(
+        (x, y3 + im.height + 32),
+        f"box {BOX} FOUND by max (after-before) luminance gain - not chosen by hand",
+        font=f_cap,
+        fill=(178, 176, 172),
+    )
+    d.text(
+        (x, y3 + im.height + 50),
+        f"peak gain +{gain_max:.0f} L   hottest 40x40 cell +{gain_cell:.1f} L/px   (native px, nearest-neighbour zoom)",
+        font=f_cap,
+        fill=(178, 176, 172),
+    )
+
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 sheet.save(OUT)
 print(f"floor(before)  {floor_pct:7.3f}% px  mean|d| {floor_mean:.4f}")
 print(f"floor(after)   {floor2_pct:7.3f}% px  mean|d| {floor2_mean:.4f}")
-print(f"signal(b->a)   {sig_pct:7.3f}% px  mean|d| {sig_mean:.4f}")
-print(f"penumbra       before={pen_b}px  after={pen_a}px   (line >=5, ref 8)")
+print(f"signal(b->a)   {sig_pct:7.3f}% px  mean|d| {sig_mean:.4f}   = {mean_ratio:.1f}x the worse floor -> {'VISIBLE' if VISIBLE else 'NOT CLEAR OF NOISE'}")
+print(f"attribution    g2-only={pen_g2}px/{edges_g2}e   g4-only={pen_g4}px/{edges_g4}e   both={pen_a}px/{edges_a}e")
+print(f"penumbra       before={pen_b}px  after={pen_a}px   (line >=5, ref 8)  plate {PLATE_NOTE}")
+print(f"hotspot        box={BOX}  peak gain +{gain_max:.0f} L  hottest cell +{gain_cell:.1f} L/px")
 print(f"WROTE {OUT} ({sheet.width}x{sheet.height})")

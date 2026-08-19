@@ -1,5 +1,5 @@
 {
-  "graphics": "High",
+  "graphics": "Ultra",
   "display": {
     "mode": "Windowed",
     "resolution": [
@@ -11,26 +11,27 @@
     "master": 0.8,
     "sfx": 1.0,
     "ambient": 0.6,
-    "ui": 1.0
+    "ui": 1.0,
+    "music": 0.55
   },
   "keybindings": {
     "map": {
-      "SelectBlock3": "Digit3",
-      "CamOrbit": "MouseLeft",
-      "SelectBlock2": "Digit2",
-      "Undo": "KeyZ",
-      "Place": "MouseRight",
-      "PlayStop": "Tab",
-      "SelectBlock4": "Digit4",
-      "Break": "MouseLeft",
       "Save": "F5",
-      "SelectBlock1": "Digit1",
-      "ToggleFly": "KeyF",
-      "Redo": "KeyY",
+      "CamOrbit": "MouseLeft",
       "Load": "F9",
+      "BoxFill": "KeyG",
+      "SelectBlock3": "Digit3",
+      "SelectBlock1": "Digit1",
+      "PlayStop": "Tab",
+      "Break": "MouseLeft",
+      "SelectBlock4": "Digit4",
+      "Undo": "KeyZ",
       "ToggleGrid": "KeyG",
+      "Redo": "KeyY",
+      "SelectBlock2": "Digit2",
+      "Place": "MouseRight",
       "ReleaseCursor": "Escape",
-      "BoxFill": "KeyG"
+      "ToggleFly": "KeyF"
     }
   }
 }

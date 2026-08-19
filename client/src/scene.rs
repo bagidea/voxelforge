@@ -760,7 +760,7 @@ fn flicker_flame(
 /// Set on an NPC once its designed body is standing, so the dressing pass is
 /// edge-triggered instead of re-spawning a Maren every frame.
 #[derive(Component)]
-struct Dressed;
+pub struct Dressed;
 
 /// Where Toma hides: the `west_house` region of `assets/story/act1.json`
 /// (`x 14..19, z 22..27`), which is what q1's optional `o2_find_survivor`
