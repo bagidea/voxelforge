@@ -116,10 +116,24 @@ impl Plugin for FoliagePlugin {
     }
 }
 
+/// Seconds added to the wind clock, overridable via `VOXELFORGE_FOLIAGE_WIND_T0`.
+/// The sway harness shoots two frames at different wind phases from ONE binary:
+/// run the same static camera twice with two `T0`s. Plant positions are then
+/// identical, so any pixel difference between the frames is pure wind.
+fn wind_t0() -> f32 {
+    static T0: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *T0.get_or_init(|| {
+        std::env::var("VOXELFORGE_FOLIAGE_WIND_T0")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0)
+    })
+}
+
 /// Advance the wind clock every frame and push it into every live material.
 fn advance_wind(time: Res<Time>, mut mats: ResMut<Assets<FoliageMaterial>>) {
-    let t = time.elapsed_secs();
-    for mat in mats.iter_mut() {
+    let t = wind_t0() + time.elapsed_secs();
+    for (_id, mat) in mats.iter_mut() {
         mat.extension.wind.time = t;
     }
 }

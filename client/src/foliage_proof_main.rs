@@ -129,6 +129,9 @@ fn setup_stage(
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<FoliageMaterial>>,
+    // The ground plane is plain PBR, so it needs the OTHER material store —
+    // `mats` only holds `ExtendedMaterial<StandardMaterial, FoliageWindExt>`.
+    mut ground_mats: ResMut<Assets<StandardMaterial>>,
 ) {
     let tex = asset_server.load("textures/blocks/vegetation/grass_tall.png");
     let mesh = meshes.add(cross_quad_mesh());
@@ -160,7 +163,7 @@ fn setup_stage(
     // Ground plane the field sits on.
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(40.0, 1.0, 40.0))),
-        MeshMaterial3d(mats.add(StandardMaterial {
+        MeshMaterial3d(ground_mats.add(StandardMaterial {
             base_color: Color::srgb(0.314, 0.513, 0.229),
             perceptual_roughness: 1.0,
             ..default()

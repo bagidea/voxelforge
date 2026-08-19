@@ -24,6 +24,7 @@ mod editor_config;
 mod editor_ui;
 mod enemies;
 mod equipment;
+mod foliage;
 mod gizmo;
 mod hero;
 mod hud;
@@ -646,6 +647,12 @@ fn main() -> AppExit {
             // else; `VOXELFORGE_WATER=off` renders the old StandardMaterial water
             // out of this same binary, which is the A/B baseline.
             .add_plugins(water::WaterPlugin)
+            // Foliage wind shader (foliage.rs + assets/shaders/foliage_wind.wgsl): the
+            // seven vegetation sprites render as cross-quad billboards whose vertices
+            // sway in a wind field + gust + per-plant phase. Registers the
+            // FoliageMaterial pipeline + wind clock; the scatter lives in scene.rs.
+            // `VOXELFORGE_FOLIAGE=off` skips the scatter out of this same binary.
+            .add_plugins(foliage::FoliagePlugin)
             // The game entrance (main menu + real save/load). MainMenuPlugin is the
             // AppState::MainMenu overlay + action routing; SaveGamePlugin is the F6
             // quick-save. Both gate on their own run conditions so the editor / bench
