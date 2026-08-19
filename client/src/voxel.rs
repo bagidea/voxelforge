@@ -156,6 +156,16 @@ fn tile_set() -> Option<&'static TileSet> {
     .as_ref()
 }
 
+/// The manifest's cross-quad vegetation kinds, `(kind, albedo file)` — the
+/// foliage scatter's source of truth for which sprites to place and where their
+/// art lives (relative to `assets/textures/blocks`). Empty when no atlas loaded
+/// or the manifest predates the `"mode": "cross"` render mode.
+pub fn cross_vegetation() -> Vec<(String, String)> {
+    tile_set()
+        .map(|s| s.cross_kinds().map(|(k, f)| (k.to_string(), f.to_string())).collect())
+        .unwrap_or_default()
+}
+
 /// The manifest `kinds` entry a block type wears — its own sim name.
 ///
 /// Deliberately not a translation table. `atlas.json` maps kind → tiles, so a

@@ -30,10 +30,12 @@ use crate::audio::SfxEvent;
 use crate::characters::{self, Who};
 use crate::combat;
 use crate::editor::AppState;
+use crate::foliage;
 use crate::hud;
+use crate::voxel;
 use crate::{
-    box_fill, find_spawn, highest_solid, Cfg, FlyCam, OrbitCam, World, BOOM_DIST, EYE_HEIGHT,
-    PIVOT_UP, PLAYER_HALF_W,
+    box_fill, find_spawn, get_world_voxel, highest_solid, Cfg, FlyCam, OrbitCam, World, BOOM_DIST,
+    EYE_HEIGHT, PIVOT_UP, PLAYER_HALF_W,
 };
 
 /// The hand-built Village of Edhari (`docs/first-playable-loop.md` Act 0). Shiba owns
@@ -183,6 +185,9 @@ impl Plugin for ScenePlugin {
             // `Commands`, and those are only applied once the Startup schedule ends.
             // By PostStartup the `World` resource and the avatar entity really exist.
             .add_systems(PostStartup, boot_scene.run_if(playing))
+            // Foliage scatter (foliage.rs + atlas "mode": "cross" kinds): place the
+            // seven vegetation cross-quads on grass surface after the world boots.
+            .add_systems(PostStartup, scatter_foliage.run_if(playing).after(boot_scene))
             .add_systems(
                 Update,
                 (
@@ -529,6 +534,119 @@ fn boot_scene(
         camp.fire.y,
         camp.fire.z
     );
+}
+
+/// Scatter the manifest's cross-quad vegetation (grass, flowers, bushes) over
+/// the loaded world's grass surface, each wearing `foliage::FoliageMaterial` so
+/// the wind vertex shader has real plants to sway. `VOXELFORGE_FOLIAGE=off`
+/// skips it — the A/B lever, same discipline as `VOXELFORGE_WATER=off`.
+fn scatter_foliage(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut foliage_mats: ResMut<Assets<foliage::FoliageMaterial>>,
+    asset_server: Res<AssetServer>,
+    world: Res<World>,
+) {
+    if foliage_disabled() {
+        return;
+    }
+    let kinds = voxel::cross_vegetation();
+    if kinds.is_empty() {
+        return;
+    }
+
+    // One shared cross-quad mesh, and ONE FoliageMaterial per kind (bounded at
+    // seven) — per-plant variety comes from the shader's world-cell hash, not a
+    // material per plant. Matches the proof bin's stage, minus the ground plane.
+    let mesh = meshes.add(foliage::cross_quad_mesh());
+    // `VOXELFORGE_FOLIAGE_WIND_OFF` zeroes `sway_amp` so the plants stand at
+    // rest — the "before" half of the wind A/B. Same plants, same camera, zero
+    // motion: any pixel movement in the AFTER frame is pure wind.
+    let wind_off = foliage_wind_off();
+    let mats: Vec<Handle<foliage::FoliageMaterial>> = kinds
+        .iter()
+        .map(|(_, file)| {
+            let tex = asset_server.load(format!("textures/blocks/{file}"));
+            let mut wind = foliage::FoliageWindUniform::default();
+            if wind_off {
+                wind.sway_amp = 0.0;
+            }
+            foliage_mats.add(foliage::foliage_material(tex, wind))
+        })
+        .collect();
+
+    let mut plants = 0usize;
+    for &(cx, cz) in world.chunks.keys() {
+        for lx in 0..CHUNK {
+            for lz in 0..CHUNK {
+                let wx = cx * CHUNK + lx;
+                let wz = cz * CHUNK + lz;
+                // ~1 in 6 columns, deterministic per column.
+                if !foliage_here(wx, wz) {
+                    continue;
+                }
+                let Some(top) = highest_solid(&world, wx, wz) else {
+                    continue;
+                };
+                if get_world_voxel(&world, IVec3::new(wx, top, wz)) != BlockId::GRASS {
+                    continue;
+                }
+                let pick = (foliage_jitter(wx, wz) * kinds.len() as f32) as usize;
+                let scale = 0.6 + 0.7 * foliage_jitter(wx + 17, wz - 9);
+                commands.spawn((
+                    Mesh3d(mesh.clone()),
+                    MeshMaterial3d(mats[pick].clone()),
+                    Transform::from_xyz(wx as f32 + 0.5, top as f32 + 1.0, wz as f32 + 0.5)
+                        .with_scale(Vec3::splat(scale)),
+                    // A mesh spawned without `Visibility` carries no `ViewVisibility`
+                    // and is silently never extracted — the A1 sky-dome failure
+                    // (look.rs). The proof bin omitted this too, so its plants never
+                    // actually rendered; the real game must not repeat that.
+                    Visibility::default(),
+                ));
+                plants += 1;
+            }
+        }
+    }
+    println!("FOLIAGE plants={plants} kinds={}", kinds.len());
+}
+
+/// `VOXELFORGE_FOLIAGE=off` disables the scatter. Cached — env cannot change
+/// after launch.
+fn foliage_disabled() -> bool {
+    static D: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *D.get_or_init(|| {
+        matches!(
+            std::env::var("VOXELFORGE_FOLIAGE").ok().as_deref(),
+            Some("off")
+        )
+    })
+}
+
+/// `VOXELFORGE_FOLIAGE_WIND_OFF=1` freezes the sway: the plants still scatter,
+/// but `sway_amp` is zeroed so `sway_metres()` in the WGSL returns zero and the
+/// blades stand at rest. This is the "before" lever for the wind A/B — the
+/// "after" frame is the same binary with the lever unset, so any pixel movement
+/// between the two is pure wind. Cached — env cannot change after launch.
+fn foliage_wind_off() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| {
+        matches!(
+            std::env::var("VOXELFORGE_FOLIAGE_WIND_OFF").ok().as_deref(),
+            Some("1" | "on" | "true" | "yes")
+        )
+    })
+}
+
+/// Deterministic [0,1) per world column — stable placement, not random.
+fn foliage_jitter(x: i32, z: i32) -> f32 {
+    let h = (x.wrapping_mul(374_761_393) ^ z.wrapping_mul(668_265_263)) as u32;
+    (h % 1000) as f32 / 1000.0
+}
+
+/// ~1 in 6 grass columns gets a plant, deterministic per column.
+fn foliage_here(x: i32, z: i32) -> bool {
+    foliage_jitter(x, z) < 1.0 / 6.0
 }
 
 /// The world's extent in chunks, as `setup` actually spawned it.

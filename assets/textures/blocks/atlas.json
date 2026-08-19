@@ -90,7 +90,10 @@
     "scripts/_pixel_blocks_gen64_v3_palette.py (imports _pixel_blocks_gen64.py",
     "for the base layer). Full rationale + before/after table per material:",
     "PALETTE.md; before/after contact sheet:",
-    "assets/textures/blocks/contact_sheet_v3_palette.png."
+    "assets/textures/blocks/contact_sheet_v3_palette.png.",
+    "2026-08-20 (Kevin): the 7 vegetation sprites now DO have a `kinds` entry,",
+    "each with \"mode\": \"cross\" - the cross-quad render mode wired by foliage.rs",
+    "(FoliageMaterial). scene.rs's scatter reads these; a naive cube wrap no longer applies."
   ],
   "tile_px": 64,
   "tiles": [
@@ -141,6 +144,13 @@
     "red_sand": { "all": "red_sand" },
     "snow": { "all": "snow" },
     "water": { "all": "water" },
-    "metal": { "all": "metal" }
+    "metal": { "all": "metal" },
+    "flower_red": { "all": "flower_red", "mode": "cross" },
+    "flower_pink": { "all": "flower_pink", "mode": "cross" },
+    "flower_white": { "all": "flower_white", "mode": "cross" },
+    "foliage_bush": { "all": "foliage_bush", "mode": "cross" },
+    "grass_tall": { "all": "grass_tall", "mode": "cross" },
+    "leaf_birch": { "all": "leaf_birch", "mode": "cross" },
+    "leaf_pine": { "all": "leaf_pine", "mode": "cross" }
   }
 }

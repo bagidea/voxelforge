@@ -131,6 +131,11 @@ struct KindEntry {
     side: Option<String>,
     #[serde(default)]
     bottom: Option<String>,
+    /// `"cross"` marks a cross-quad billboard kind (the seven vegetation
+    /// sprites); absent (or anything else) means a cube kind. Read only by
+    /// [`TileSet::cross`] / the foliage scatter.
+    #[serde(default)]
+    mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +221,11 @@ pub struct TileSet {
     /// downstream keeps `atlas.json` parsed in exactly one place.
     pub files: Vec<String>,
     pub kinds: BTreeMap<String, FaceTiles>,
+    /// Cross-quad billboard kinds, `kind` → albedo file (relative to the atlas
+    /// dir), from manifest entries declaring `"mode": "cross"`. The seven
+    /// vegetation sprites live here; the foliage scatter reads them so the art
+    /// stays editable in `atlas.json` with no Rust change.
+    pub cross: BTreeMap<String, String>,
     pub mode: AtlasMode,
     pub dir: PathBuf,
 }
@@ -239,6 +249,13 @@ impl TileSet {
             Face::Side => f.side,
             Face::Bottom => f.bottom,
         })
+    }
+
+    /// The `(kind, albedo file)` pairs whose manifest entry declares
+    /// `"mode": "cross"` — the cross-quad billboard vegetation. Empty when the
+    /// manifest has none (or predates the render mode).
+    pub fn cross_kinds(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.cross.iter().map(|(k, f)| (k.as_str(), f.as_str()))
     }
 }
 
@@ -380,11 +397,26 @@ pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
         );
     }
 
+    // ---- resolve cross-quad billboard kinds ---------------------------------
+    let mut cross = BTreeMap::new();
+    for (kind, spec) in &manifest.kinds {
+        if spec.mode.as_deref() != Some("cross") {
+            continue;
+        }
+        let Some(&i) = spec.all.as_deref().and_then(|n| index_of.get(n)) else {
+            return Err(format!(
+                "kind {kind:?} declares \"mode\": \"cross\" but has no `all` tile"
+            ));
+        };
+        cross.insert(kind.clone(), files[i].clone());
+    }
+
     Ok(Some(TileSet {
         tile_px,
         tiles,
         files,
         kinds,
+        cross,
         mode,
         dir,
     }))
@@ -407,6 +439,7 @@ pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
         // The packed-atlas consumer addresses tiles by index; only the per-face
         // material path in `voxel.rs` cares what they were called.
         files: _,
+        cross: _,
     } = set;
 
     // `Detail` normalises a *copy*: `load_tiles` hands back the artist's albedo
