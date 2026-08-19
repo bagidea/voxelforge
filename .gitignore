@@ -34,6 +34,10 @@ logs_*.txt
 # stray build-output notes dropped inside the client crate
 client/build_*.txt
 
+# ── Procedural-art generator scratch output (never the live set) ─
+scripts/_out/
+scripts/__pycache__/
+
 # ── Render outputs / experimental beauty-shot iterations ─────
 # The look passes produced ~220 throwaway PNGs at the repo root.
 # Ignore every top-level PNG, then re-include only the golden refs

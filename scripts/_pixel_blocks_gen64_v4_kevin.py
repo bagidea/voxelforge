@@ -56,7 +56,23 @@ import _pixel_blocks_gen64 as base  # noqa: E402
 import _pixel_blocks_gen64_v3_palette as v3  # noqa: E402
 
 SIZE = base.SIZE
-OUT_DIR = base.OUT_DIR
+
+# v4 writes to a SCRATCH dir, never straight into the live asset folder.
+# The star-splat incident (2026-08-19/20) happened because this script
+# reused base.OUT_DIR (assets/textures/blocks/) directly -- re-running it
+# silently overwrote shipped textures with a still-unreviewed repaint.
+# Review scratch output, then promote files by hand once they pass QA.
+OUT_DIR = Path(__file__).resolve().parent / "_out" / "kevin_v4"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+_LIVE_DIR = (base.ROOT / "assets" / "textures" / "blocks").resolve()
+_out_resolved = OUT_DIR.resolve()
+if _out_resolved == _LIVE_DIR or _LIVE_DIR in _out_resolved.parents:
+    sys.exit(
+        f"refusing to run: OUT_DIR ({_out_resolved}) resolves inside the "
+        f"live asset folder ({_LIVE_DIR}) -- point it at a scratch dir instead"
+    )
+
 scatter_blobs = v3.scatter_blobs
 paint_blobs = v3.paint_blobs
 paint_accent = v3.paint_accent
