@@ -42,6 +42,7 @@ mod streaming;
 mod vfx;
 mod vfx_bridge;
 mod voxel;
+mod water;
 // NOTE: no top-level `mod input_map;` — input_map.rs is already pulled in as a
 // submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
 // Declaring it here too would compile the file twice into two distinct type sets.
@@ -639,6 +640,12 @@ fn main() -> AppExit {
                 dodge_parry::DodgeParryPlugin,
             ))
             .add_plugins(look::LookPlugin)
+            // Water surface shader (water.rs + assets/shaders/water.wgsl): moving
+            // wave normals, Fresnel sky reflection, depth-graded colour. Swaps
+            // only the `BlockId::WATER` child mesh's material and touches nothing
+            // else; `VOXELFORGE_WATER=off` renders the old StandardMaterial water
+            // out of this same binary, which is the A/B baseline.
+            .add_plugins(water::WaterPlugin)
             // The game entrance (main menu + real save/load). MainMenuPlugin is the
             // AppState::MainMenu overlay + action routing; SaveGamePlugin is the F6
             // quick-save. Both gate on their own run conditions so the editor / bench
@@ -1242,6 +1249,14 @@ pub(crate) fn remesh_chunk_entity(
         // `bevy::pbr` — the lighting components moved out of the PBR crate.
         if !voxel::casts_shadow(key.block) {
             commands.entity(child).insert(bevy::light::NotShadowCaster);
+        }
+        // Tag the liquid so `water::swap_water_material` can trade this child's
+        // StandardMaterial for the wave/Fresnel/depth shader. Marked here rather
+        // than matched on a material handle downstream: this is the only place
+        // that still knows which BlockId the child was built from, and chunk
+        // streaming respawns these children constantly.
+        if key.block == BlockId::WATER {
+            commands.entity(child).insert(water::WaterSurface);
         }
     }
     quads
