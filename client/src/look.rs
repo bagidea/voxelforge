@@ -868,6 +868,54 @@ pub const BLOOM_INTENSITY_V4: f32 = 0.26;
 /// picks up everything past it, softer, which is where softer belongs.
 pub const FIRST_CASCADE_FAR_BOUND_V4: f32 = 8.0;
 
+/// Shadow-map depth bias for the sun, world units (Bevy's own default:
+/// `DirectionalLight::DEFAULT_SHADOW_DEPTH_BIAS` = 0.02).
+///
+/// NEVER SET BEFORE THIS COMMIT. `main.rs` spawns the key with `..default()`
+/// and [`apply_look_to_sun`] — the one system that owns every other shadow
+/// knob on this light (map size, cascades, PCSS width) — never touched
+/// `shadow_depth_bias` either, so every frame this lane has ever shipped ran
+/// on the engine's own number, unexamined.
+///
+/// `bevy_pbr/src/render/shadows.wgsl:192` applies it as a flat WORLD-SPACE
+/// offset along `direction_to_light` before the shadow-map compare — i.e. it
+/// pushes the compared point toward the sun by exactly this many blocks,
+/// regardless of the cascade it lands in. Projected onto the ground under a
+/// raking key ([`Hour`]'s sun sits 17–22° up, see [`apply_look_to_sun`]'s own
+/// note on that angle), a bias `b` shows up as a horizontal peter-pan of
+/// `b / sin(elev)` — at 0.02 and 17° that is **0.068 blocks**, almost 7% of a
+/// block, sitting right at the base of every wall and trunk the brief calls
+/// out. Halving it to 0.01 halves that gap to ~0.034 blocks without inviting
+/// acne back in: acne needs bias LOWER than the shadow map can resolve, and
+/// the near cascade this lands in ([`FIRST_CASCADE_FAR_BOUND_V4`] 8.0 blocks
+/// over a 4096 map, [`DirectionalLightShadowMap`]) is dense enough — ~512
+/// texels per block — to carry the smaller number.
+///
+/// Sweep with `VOXELFORGE_LOOK_SHADOW_BIAS=<depth>,<normal>` (see
+/// [`shadow_bias`]) before moving it again; this pairing is reasoned from
+/// Bevy's own bias math, not yet re-shot against a plate.
+pub const SHADOW_DEPTH_BIAS: f32 = 0.01;
+
+/// Shadow-map normal bias for the sun, texels of the light's own shadow map
+/// (Bevy's own default: `DirectionalLight::DEFAULT_SHADOW_NORMAL_BIAS` = 1.8).
+///
+/// `shadows.wgsl:191` scales this by `cascade.texel_size` and offsets the
+/// compared point along the FRAGMENT'S SURFACE NORMAL — a term that exists to
+/// stop shadow acne on smoothly curved, per-vertex-normal-interpolated meshes,
+/// where a flat face's normal disagrees slightly with its true curvature and
+/// self-shadows. Every face this game casts a shadow from is a greedy-meshed
+/// axis-aligned voxel quad: the normal is exactly constant across the whole
+/// face, so there is no curvature for this term to correct and 1.8 texels of
+/// it is pure peter-panning with nothing bought for it — the mechanism this
+/// bias exists to serve isn't present in the geometry it's being applied to.
+/// 0.3 keeps enough to survive floating-point noise at the cascade seam
+/// without pushing the sampled point measurably off a flat block face.
+///
+/// Sweep with `VOXELFORGE_LOOK_SHADOW_BIAS=<depth>,<normal>` (see
+/// [`shadow_bias`]) before moving it again; this pairing is reasoned from
+/// Bevy's own bias math, not yet re-shot against a plate.
+pub const SHADOW_NORMAL_BIAS: f32 = 0.3;
+
 // ===========================================================================
 // LOOK GENERATION — the v1/v2/v3 A/B switch
 // ===========================================================================
@@ -2695,6 +2743,22 @@ fn contact_shadows() -> Option<ContactShadows> {
     })
 }
 
+/// Shadow-map depth/normal bias for the sun — see [`SHADOW_DEPTH_BIAS`] and
+/// [`SHADOW_NORMAL_BIAS`] for what each one buys and costs.
+///
+/// `VOXELFORGE_LOOK_SHADOW_BIAS=<depth>,<normal>` sweeps both; unset ⇒ the
+/// constants, byte-for-byte, which is what every gate run gets — same
+/// malformed-input fallback as [`contact_shadows`], for the same reason: a
+/// sweep hook, not a config file that should be able to panic mid-frame.
+fn shadow_bias() -> (f32, f32) {
+    let raw = std::env::var("VOXELFORGE_LOOK_SHADOW_BIAS").unwrap_or_default();
+    let v: Vec<f32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    match v[..] {
+        [d, n] => (d, n),
+        _ => (SHADOW_DEPTH_BIAS, SHADOW_NORMAL_BIAS),
+    }
+}
+
 /// PCSS penumbra width for the sun, or `None` for a fixed-width filter.
 ///
 /// `VOXELFORGE_LOOK_PCSS=off|<width>`; unset ⇒ the tier's own call.
@@ -2966,6 +3030,16 @@ fn apply_look_to_sun(
         // camera's own layer so `VOXELFORGE_LOOK_CONTACT=off` really is off rather
         // than half-off.
         dl.contact_shadows_enabled = contact_shadows().is_some();
+        // Depth/normal bias: see [`SHADOW_DEPTH_BIAS`] and [`SHADOW_NORMAL_BIAS`]
+        // for the acne/peter-panning trade this pair makes and why the engine's
+        // own defaults (tuned for curved, metre-scale meshes) fit this raking
+        // key over flat voxel faces badly. Set on every tier, not gated by
+        // `look_gen()` — every generation this lane has shipped inherited the
+        // same untouched engine defaults, so there is no "v3 bias" to preserve
+        // behind a switch the way [`PCSS_WIDTH_V3`] preserves a measured frame.
+        let (shadow_depth_bias, shadow_normal_bias) = shadow_bias();
+        dl.shadow_depth_bias = shadow_depth_bias;
+        dl.shadow_normal_bias = shadow_normal_bias;
         // PCSS penumbra: Ultra-only under v1, High-and-up under v2.
         //
         // The cut used to be justified as a cost call (spec §1). The cost is real,
@@ -3067,7 +3141,8 @@ fn apply_look_to_sun(
         #[cfg(not(feature = "experimental_pbr_pcss"))]
         let pcss_applied = String::from("n/a (built without experimental_pbr_pcss)");
         println!(
-            "LOOK tier={:?} pcss={} shadow_map={} sun={:.0}deg/{:.0}deg illum={:.0} contact={}",
+            "LOOK tier={:?} pcss={} shadow_map={} sun={:.0}deg/{:.0}deg illum={:.0} contact={} \
+             bias={:.4}/{:.2}",
             *quality,
             pcss_applied,
             shadow_map.size,
@@ -3075,6 +3150,8 @@ fn apply_look_to_sun(
             h.azim_deg,
             dl.illuminance,
             dl.contact_shadows_enabled,
+            dl.shadow_depth_bias,
+            dl.shadow_normal_bias,
         );
         e.insert(LookLightApplied(*quality));
     }
