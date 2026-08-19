@@ -99,7 +99,22 @@ def paint_blobs(rng, albedo, height, rough, blobs, h, s_range, v, target_height,
                     ang = 0.0
                 else:
                     ang = math.atan2(ddy, ddx)
-                r = base_r * (1 + wobble * math.sin(freq * ang + phase))
+                # A single sin(freq*ang) is a clean n-petal rose curve -- at
+                # this module's wobble/max_blend it reads as a pointed star,
+                # not an organic blob (2026-08-19/20 star-splat bug). Summing
+                # 4 octaves at incommensurate frequencies (no small-integer
+                # ratio between them) breaks the rotational symmetry into an
+                # irregular silhouette instead of N evenly-spaced points, all
+                # derived from the same (freq, phase) so no new RNG state is
+                # needed -- seeded output stays reproducible and the
+                # hand-authored 6-tuple blobs elsewhere keep working.
+                wobble_n = (
+                    0.36 * math.sin(freq * ang + phase)
+                    + 0.34 * math.sin((freq * 1.37 + 0.5) * ang + phase * 1.9 + 0.8)
+                    + 0.20 * math.sin((freq * 2.1 + 1.1) * ang + phase * 0.6 + 2.1)
+                    + 0.10 * math.sin((freq * 3.3 + 0.2) * ang + phase * 2.7 + 1.4)
+                )
+                r = base_r * (1 + 0.8 * wobble * wobble_n)
                 if d > r:
                     continue
                 edge = clamp01((r - d) / max(r * 0.35, 0.001)) * max_blend
