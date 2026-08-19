@@ -265,6 +265,28 @@ def measure(path: str, dump_mask: str | None = None, scene: str = "outdoor") -> 
     # within tolerance of the untouched reference.
     far_edge_contrast, far_band, near_band, horizon_cols_pct = silhouette(L, hz, sky)
 
+    # sky_near_horizon_void_pct: diagnostic only, NEVER gates or scores anything.
+    # sky_void_pct above is a whole-sky average; 2026-08-19 investigation of the
+    # beach_dusk frame found the strip actually used by far_edge_contrast (right
+    # at the skyline) is voider than the sky-wide average (52.7% vs 36.6%), which
+    # rules out "the gate is measuring the wrong region" as the refusal's cause.
+    sky_near_horizon_void_pct = None
+    if scene == "outdoor" and sky.sum() >= 200:
+        H_, W_ = L.shape
+        valid_hz = (hz > 4) & (hz < H_ - 12)
+        nh_vals = []
+        for x in range(W_):
+            if not valid_hz[x]:
+                continue
+            y = hz[x]
+            col = L[max(0, y - 20):y, x]
+            m = sky[max(0, y - 20):y, x]
+            nh_vals.append(col[m])
+        if nh_vals:
+            nh = np.concatenate([v for v in nh_vals if v.size])
+            if nh.size >= 200:
+                sky_near_horizon_void_pct = float((nh < 10).mean() * 100)
+
     sky_present = scene == "outdoor" and sky_frac is not None and sky_frac >= 3.0
     horizon_ok = scene == "outdoor" and horizon_cols_pct >= 20.0
     sky_lit = (sky_present
@@ -291,6 +313,14 @@ def measure(path: str, dump_mask: str | None = None, scene: str = "outdoor") -> 
     else:
         sil_reason = "ok"
 
+    # Keep the raw number even when we refuse to score it. Director's audit
+    # 2026-08-19: "measure the real range of the input before touching the
+    # threshold" - this is that measurement, published for transparency so
+    # nobody has to re-derive it from pixels to see WHAT was refused, not
+    # just WHY. It is never read by ratio()/AXES, so it cannot leak into a
+    # pass/fail - it exists only so the scoreboard can quote a number next
+    # to the refusal instead of asserting one blind.
+    far_edge_contrast_raw = far_edge_contrast
     if not (sky_lit and horizon_ok):
         far_edge_contrast = None
 
@@ -359,6 +389,7 @@ def measure(path: str, dump_mask: str | None = None, scene: str = "outdoor") -> 
         "depth_measurable": depth_reason,
         "sky_measurable": sky_reason,
         "far_edge_contrast": rnd(far_edge_contrast),
+        "far_edge_contrast_raw": rnd(far_edge_contrast_raw),
         "far_sat": rnd(far_sat),
         "near_sat": rnd(near_sat),
         "far_micro": rnd(far_micro, 3),
@@ -759,6 +790,12 @@ def write_scoreboard(out, ref_path, ref, rows, prev_by_file, ctl_rc, ctl_tail,
                 A(f"`distant silhouette` ต้องการฟ้าที่ *มีโทน*: ตอนนี้ `sky_void_pct` = "
                   f"**{fmt(primary['sky_void_pct'])}%** (ต้อง ≤ 20) และ `sky_blown_pct` = "
                   f"**{fmt(primary['sky_blown_pct'])}%** (ต้อง ≤ 20)")
+            if primary.get("far_edge_contrast_raw") is not None:
+                A("")
+                A(f"ค่าดิบที่วัดได้จริง (ไม่ถูกใช้ให้คะแนน เพราะฟ้าเป็นโพรงดำ): "
+                  f"`far_edge_contrast_raw` = **{fmt(primary['far_edge_contrast_raw'])}** "
+                  f"vs REF **{fmt(ref['far_edge_contrast_raw'])}** — เลขนี้คือ contrast ชนความว่างเปล่า "
+                  f"ไม่ใช่ contrast ชนขอบฟ้าจริง จึงยังไม่นับเป็นแกนที่วัดได้")
     A("")
 
     # --- instrument health --------------------------------------------------

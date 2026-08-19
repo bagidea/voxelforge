@@ -3,7 +3,7 @@
 > **ไฟล์นี้ถูกเครื่องสร้างขึ้นใหม่ทุกครั้งที่รัน grader — ห้ามแก้ด้วยมือ.**  
 > สร้างโดย `scripts/_pixel_artgap_grade.py --oneshot` · เกณฑ์ทั้งหมดอยู่ใน [`docs/look-acceptance-rubric.md` §P0-ENV](look-acceptance-rubric.md#-p0-env--ท้องฟ้า--น้ำ--environment-scripts_pixel_artgap_gradepy--เพิ่ม-2026-08-18)
 
-**รอบล่าสุด:** 2026-08-19 16:05 +0700 · **world lane: water+lanterns in beach_dusk (pixel)**
+**รอบล่าสุด:** 2026-08-19 19:27 +0700 · **grader(distant-silhouette): publish raw contrast for transparency, no threshold moved**
 
 ## 10 / 20 แกนผ่าน = **50% ของภาพอ้างอิง CEO**  ·  10 GAP  ·  1 ยังวัดไม่ได้  ·  1 advisory
 
@@ -12,32 +12,34 @@
 
 > **ตัวหาร 20 = แกนที่วัดได้จริงรอบนี้** จากด่านทั้งหมด 21 แกน — อีก 1 แกนเครื่อง**ปฏิเสธที่จะวัด** จึงไม่ถูกนับเป็นทั้งผ่านและตก (นับเป็นตก = ให้คะแนนการปฏิเสธเป็นความผิดของเฟรม) · advisory อีก 1 แกนวัดแล้วแต่ไม่ตัดสิน
 
+> ⚠️ **เฟรมนี้ไบต์เดิมกับรอบก่อน** (sha256 ตรงกัน) — นี่ไม่ใช่ build ใหม่ คอลัมน์ Δ จึงเป็น 0 ทั้งแถวโดยธรรมชาติ ไม่ใช่ "แก้แล้วไม่ขยับ"
+
 ## แกนทั้งหมด — เทียบภาพอ้างอิงของ CEO เป็น %
 
 | แกน | เจ้าของเลน | REF | เฟรมเรา | % ของ REF | สถานะ | Δ จากรอบก่อน |
 |---|---|---:|---:|---:|---|---:|
 | cool/water chroma | world | 2.96 | 0.00 | 0% | ❌ GAP | 0 |
-| sky sitting at black (L<10) ↓ | renderer | 0.00 | 36.58 | – | ❌ GAP | ▲ -0.03 |
+| sky sitting at black (L<10) ↓ | renderer | 0.00 | 36.58 | – | ❌ GAP | 0 |
 | emissive light points | world | 159 | 6 | 4% | ❌ GAP | 0 |
 | sky brighter than ground | renderer | 1.80 | 0.16 | 9% | ❌ GAP | 0 |
 | sky tonal gradient | renderer | 172.58 | 17.55 | 10% | ❌ GAP | 0 |
-| crushed blacks ↓ | renderer | 0.55 | 4.81 | 875% | ❌ GAP | ▲ -0.03 |
+| crushed blacks ↓ | renderer | 0.55 | 4.81 | 875% | ❌ GAP | 0 |
 | sky hue range | renderer | 60.00 | 20.00 | 33% | ❌ GAP | 0 |
 | palette breadth | art | 15 | 6 | 40% | ❌ GAP | 0 |
-| detail surviving at distance | art | 15.61 | 8.70 | 56% | ❌ GAP | ▼ -0.00 |
-| hue diversity | art | 3.90 | 2.18 | 56% | ❌ GAP | ▼ -0.00 |
+| detail surviving at distance | art | 15.61 | 8.70 | 56% | ❌ GAP | 0 |
+| hue diversity | art | 3.90 | 2.18 | 56% | ❌ GAP | 0 |
 | distant silhouette | renderer | 22.33 | - | – | ⏸ ยังวัดไม่ได้ | – |
-| atmospheric perspective (detail) | renderer | 0.81 | 1.20 | 147% | 📎 advisory | ▼ -0.01 |
-| detail per area | art | 58.63 | 37.30 | 64% | ✅ ok | ▼ -0.28 |
-| flat/featureless area ↓ | art | 15.82 | 24.71 | 156% | ✅ ok | ▲ -0.34 |
-| tonal spread | renderer | 32 | 21 | 66% | ✅ ok | ▼ -1.00 |
-| dynamic range | renderer | 187.71 | 127.66 | 68% | ✅ ok | ▼ -0.90 |
-| local contrast r3 | art | 18.74 | 12.85 | 69% | ✅ ok | ▼ -0.16 |
-| sky presence | world | 21.85 | 18.16 | 83% | ✅ ok | ▼ -0.03 |
-| atmospheric perspective (sat) | renderer | 1.13 | 1.00 | 89% | ✅ ok | ▼ -0.01 |
-| saturation | renderer | 57.56 | 75.20 | 131% | ✅ ok | ▼ -0.10 |
+| atmospheric perspective (detail) | renderer | 0.81 | 1.20 | 147% | 📎 advisory | 0 |
+| detail per area | art | 58.63 | 37.30 | 64% | ✅ ok | 0 |
+| flat/featureless area ↓ | art | 15.82 | 24.71 | 156% | ✅ ok | 0 |
+| tonal spread | renderer | 32 | 21 | 66% | ✅ ok | 0 |
+| dynamic range | renderer | 187.71 | 127.66 | 68% | ✅ ok | 0 |
+| local contrast r3 | art | 18.74 | 12.85 | 69% | ✅ ok | 0 |
+| sky presence | world | 21.85 | 18.16 | 83% | ✅ ok | 0 |
+| atmospheric perspective (sat) | renderer | 1.13 | 1.00 | 89% | ✅ ok | 0 |
+| saturation | renderer | 57.56 | 75.20 | 131% | ✅ ok | 0 |
 | sky blown to white (L>245) ↓ | renderer | 5.09 | 0.00 | 0% | ✅ ok | 0 |
-| clipped highlights ↓ | renderer | 10.30 | 0.20 | 2% | ✅ ok | ▲ -0.57 |
+| clipped highlights ↓ | renderer | 10.30 | 0.20 | 2% | ✅ ok | 0 |
 
 **`↓` ต่อท้ายชื่อแกน = แกนที่ "น้อยกว่าดีกว่า"** — คอลัมน์ `% ของ REF` เป็น *ค่าดิบเทียบค่าดิบ* ไม่ใช่คะแนน ⇒ แกน ↓ ที่ได้ 2% คือ **ดี** (เราเหลือ 2% ของสิ่งที่ REF มี)  
 คอลัมน์ Δ: **▲ = ขยับเข้าหาภาพอ้างอิง · ▼ = ถอยห่าง** (ตัวเลขคือส่วนต่างดิบ จึงเป็น `▲ -36.44` ได้ ถ้าแกนนั้นน้อยกว่าดีกว่า) · `–` = รอบก่อนไม่มีตัวเลขให้เทียบ
@@ -62,6 +64,8 @@
 
 `distant silhouette` ต้องการฟ้าที่ *มีโทน*: ตอนนี้ `sky_void_pct` = **36.58%** (ต้อง ≤ 20) และ `sky_blown_pct` = **0.00%** (ต้อง ≤ 20)
 
+ค่าดิบที่วัดได้จริง (ไม่ถูกใช้ให้คะแนน เพราะฟ้าเป็นโพรงดำ): `far_edge_contrast_raw` = **46.94** vs REF **22.33** — เลขนี้คือ contrast ชนความว่างเปล่า ไม่ใช่ contrast ชนขอบฟ้าจริง จึงยังไม่นับเป็นแกนที่วัดได้
+
 ## สุขภาพเครื่องวัด (ต้องดูก่อนเถียงเรื่องเลข)
 
 | | REF | เฟรมเรา |
@@ -77,13 +81,13 @@ mask overlay เขียนออกมาทุกครั้ง (ฟ้า=�
 
 | เฟรม | ผ่าน | GAP | ยังวัดไม่ได้ |
 |---|---:|---:|---:|
-| `_pixel_world_BEFORE.png` | 10 | 10 | 1 |
+| `_river_sunset_after.png` | 9 | 12 | 0 |
 
 ## รันซ้ำ (คำสั่งเดียว ต่อ build ใหม่ 1 ตัว)
 
 ```bash
 python scripts/_pixel_artgap_grade.py _pixel_world_AFTER.png \
-       _pixel_world_BEFORE.png \
+       _river_sunset_after.png \
        --oneshot --label "<ใครส่ง build / commit>"
 ```
 
@@ -94,4 +98,4 @@ exit: `0` ผ่านหมด · `1` มี GAP · `2` วัดครบแ�
 |---|---|
 | `docs/refs/ceo_ref_sunset_valley.jpg` (REF) | `d4491a12e14e` |
 | `_pixel_world_AFTER.png` | `7251e646ee27` |
-| `_pixel_world_BEFORE.png` | `a3d9b250952a` |
+| `_river_sunset_after.png` | `bf52016afcf5` |
