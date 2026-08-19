@@ -3,7 +3,7 @@
 > **ไฟล์นี้ถูกเครื่องสร้างขึ้นใหม่ทุกครั้งที่รัน grader — ห้ามแก้ด้วยมือ.**  
 > สร้างโดย `scripts/_pixel_artgap_grade.py --oneshot` · เกณฑ์ทั้งหมดอยู่ใน [`docs/look-acceptance-rubric.md` §P0-ENV](look-acceptance-rubric.md#-p0-env--ท้องฟ้า--น้ำ--environment-scripts_pixel_artgap_gradepy--เพิ่ม-2026-08-18)
 
-**รอบล่าสุด:** 2026-08-18 16:28 +0700 · **baseline 2026-08-18 · _matmaps_after (beach_dusk)**
+**รอบล่าสุด:** 2026-08-19 15:51 +0700 · **VERIFY baseline 2026-08-19**
 
 ## 9 / 20 แกนผ่าน = **45% ของภาพอ้างอิง CEO**  ·  11 GAP  ·  1 ยังวัดไม่ได้  ·  1 advisory
 
@@ -12,32 +12,30 @@
 
 > **ตัวหาร 20 = แกนที่วัดได้จริงรอบนี้** จากด่านทั้งหมด 21 แกน — อีก 1 แกนเครื่อง**ปฏิเสธที่จะวัด** จึงไม่ถูกนับเป็นทั้งผ่านและตก (นับเป็นตก = ให้คะแนนการปฏิเสธเป็นความผิดของเฟรม) · advisory อีก 1 แกนวัดแล้วแต่ไม่ตัดสิน
 
-> ⚠️ **เฟรมนี้ไบต์เดิมกับรอบก่อน** (sha256 ตรงกัน) — นี่ไม่ใช่ build ใหม่ คอลัมน์ Δ จึงเป็น 0 ทั้งแถวโดยธรรมชาติ ไม่ใช่ "แก้แล้วไม่ขยับ"
-
 ## แกนทั้งหมด — เทียบภาพอ้างอิงของ CEO เป็น %
 
 | แกน | เจ้าของเลน | REF | เฟรมเรา | % ของ REF | สถานะ | Δ จากรอบก่อน |
 |---|---|---:|---:|---:|---|---:|
 | cool/water chroma | world | 2.96 | 0.00 | 0% | ❌ GAP | 0 |
-| sky sitting at black (L<10) ↓ | renderer | 0.00 | 36.44 | – | ❌ GAP | 0 |
-| emissive light points | world | 159 | 3 | 2% | ❌ GAP | 0 |
+| emissive light points | world | 159 | 2 | 1% | ❌ GAP | ▼ -1.00 |
+| sky sitting at black (L<10) ↓ | renderer | 0.00 | 36.38 | – | ❌ GAP | ▲ -0.06 |
 | sky brighter than ground | renderer | 1.80 | 0.16 | 9% | ❌ GAP | 0 |
 | sky tonal gradient | renderer | 172.58 | 17.76 | 10% | ❌ GAP | 0 |
-| crushed blacks ↓ | renderer | 0.55 | 4.84 | 880% | ❌ GAP | 0 |
+| crushed blacks ↓ | renderer | 0.55 | 4.80 | 873% | ❌ GAP | ▲ -0.04 |
 | sky hue range | renderer | 60.00 | 20.00 | 33% | ❌ GAP | 0 |
 | palette breadth | art | 15 | 6 | 40% | ❌ GAP | 0 |
-| detail surviving at distance | art | 15.61 | 8.07 | 52% | ❌ GAP | 0 |
-| detail per area | art | 58.63 | 30.79 | 53% | ❌ GAP | 0 |
-| hue diversity | art | 3.90 | 2.16 | 55% | ❌ GAP | 0 |
+| detail surviving at distance | art | 15.61 | 8.05 | 52% | ❌ GAP | ▼ -0.01 |
+| detail per area | art | 58.63 | 31.03 | 53% | ❌ GAP | ▲ +0.24 |
+| hue diversity | art | 3.90 | 2.15 | 55% | ❌ GAP | ▼ -0.01 |
 | distant silhouette | renderer | 22.33 | - | – | ⏸ ยังวัดไม่ได้ | – |
-| atmospheric perspective (detail) | renderer | 0.81 | 1.08 | 133% | 📎 advisory | 0 |
-| local contrast r3 | art | 18.74 | 11.59 | 62% | ✅ ok | 0 |
-| flat/featureless area ↓ | art | 15.82 | 25.52 | 161% | ✅ ok | 0 |
+| atmospheric perspective (detail) | renderer | 0.81 | 1.09 | 135% | 📎 advisory | ▲ +0.01 |
+| local contrast r3 | art | 18.74 | 11.61 | 62% | ✅ ok | ▲ +0.02 |
+| flat/featureless area ↓ | art | 15.82 | 25.37 | 160% | ✅ ok | ▲ -0.15 |
 | tonal spread | renderer | 32 | 21 | 66% | ✅ ok | 0 |
-| dynamic range | renderer | 187.71 | 129.28 | 69% | ✅ ok | 0 |
-| sky presence | world | 21.85 | 18.25 | 84% | ✅ ok | 0 |
-| atmospheric perspective (sat) | renderer | 1.13 | 1.02 | 91% | ✅ ok | 0 |
-| saturation | renderer | 57.56 | 77.01 | 134% | ✅ ok | 0 |
+| dynamic range | renderer | 187.71 | 129.05 | 69% | ✅ ok | ▼ -0.23 |
+| sky presence | world | 21.85 | 18.24 | 83% | ✅ ok | ▼ -0.01 |
+| atmospheric perspective (sat) | renderer | 1.13 | 1.02 | 91% | ✅ ok | ▼ -0.00 |
+| saturation | renderer | 57.56 | 76.61 | 133% | ✅ ok | ▼ -0.40 |
 | sky blown to white (L>245) ↓ | renderer | 5.09 | 0.00 | 0% | ✅ ok | 0 |
 | clipped highlights ↓ | renderer | 10.30 | 0.16 | 2% | ✅ ok | 0 |
 
@@ -60,15 +58,17 @@
 |---|---|
 | distant silhouette (renderer) | `sky unlit (36% below L=10) - contrast against a black void is degenerate` |
 
-**ปลดล็อกยังไง:** แกนพวกนี้จะกลับมาวัดได้ **เอง** ทันทีที่เงื่อนไขข้างบนหาย — ไม่มีใครต้องแก้เครื่องวัด. `distant silhouette` ต้องการฟ้าที่ *มีโทน* (ตอนนี้ `sky_void_pct` = 36.44% ต้อง ≤ 20 และ `sky_blown_pct` = 0.00% ต้อง ≤ 20)
+**ปลดล็อกยังไง:** แกนพวกนี้จะกลับมาวัดได้ **เอง** ทันทีที่เงื่อนไขข้างบนหาย — ไม่มีใครต้องแก้เครื่องวัด (พิสูจน์แล้ว: เฟรมที่ฟ้ามีโทนวัด `distant silhouette` ได้ตามปกติ)
+
+`distant silhouette` ต้องการฟ้าที่ *มีโทน*: ตอนนี้ `sky_void_pct` = **36.38%** (ต้อง ≤ 20) และ `sky_blown_pct` = **0.00%** (ต้อง ≤ 20)
 
 ## สุขภาพเครื่องวัด (ต้องดูก่อนเถียงเรื่องเลข)
 
 | | REF | เฟรมเรา |
 |---|---:|---:|
-| sky mask กินพื้นที่ | 21.85% | 18.25% |
+| sky mask กินพื้นที่ | 21.85% | 18.24% |
 | คอลัมน์ที่มีเส้นขอบฟ้า | 100.00% | 97.30% |
-| ฟ้าดำสนิท (L<10) | 0.00% | 36.44% |
+| ฟ้าดำสนิท (L<10) | 0.00% | 36.38% |
 | ฟ้าไหม้ขาว (L>245) | 5.09% | 0.00% |
 
 mask overlay เขียนออกมาทุกครั้ง (ฟ้า=น้ำเงิน · far=ชมพู · near=เขียว · เส้นขอบฟ้า=เหลือง) — **ดู mask ก่อนเถียงเรื่องตัวเลข**
@@ -93,5 +93,5 @@ exit: `0` ผ่านหมด · `1` มี GAP · `2` วัดครบแ�
 | ไฟล์ | sha256 (12 ตัวแรก) |
 |---|---|
 | `docs/refs/ceo_ref_sunset_valley.jpg` (REF) | `d4491a12e14e` |
-| `_matmaps_after.png` | `00e29783d438` |
+| `_matmaps_after.png` | `eca2d49358aa` |
 | `docs/assets/look/outdoor-noon_after.png` | `41c0190c4564` |
