@@ -1,0 +1,93 @@
+[
+  {
+    "before_path": "scripts/_out/sheet_stage/clay_plaster_before.png", "before_label": "clay_plaster",
+    "before_hash": "ae81561", "before_caption": "star-splat: red/green rosette clearly visible",
+    "after_path": "scripts/_out/sheet_stage/clay_plaster_after.png", "after_label": "clay_plaster",
+    "after_file": "assets/textures/blocks/clay_plaster.png", "after_caption": "fixed: irregular organic blobs"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/dirt_before.png", "before_label": "dirt",
+    "before_hash": "ae81561", "before_caption": "star-splat visible",
+    "after_path": "scripts/_out/sheet_stage/dirt_after.png", "after_label": "dirt",
+    "after_file": "assets/textures/blocks/dirt.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/floorboards_before.png", "before_label": "floorboards",
+    "before_hash": "ae81561", "before_caption": "star-splat visible",
+    "after_path": "scripts/_out/sheet_stage/floorboards_after.png", "after_label": "floorboards",
+    "after_file": "assets/textures/blocks/floorboards.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/glass_before.png", "before_label": "glass",
+    "before_hash": "ae81561", "before_caption": "star-splat visible on frame rust",
+    "after_path": "scripts/_out/sheet_stage/glass_after.png", "after_label": "glass",
+    "after_file": "assets/textures/blocks/glass.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/lamp_before.png", "before_label": "lamp",
+    "before_hash": "ae81561", "before_caption": "star-splat visible",
+    "after_path": "scripts/_out/sheet_stage/lamp_after.png", "after_label": "lamp",
+    "after_file": "assets/textures/blocks/lamp.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/metal_before.png", "before_label": "metal",
+    "before_hash": "ae81561", "before_caption": "star-splat visible",
+    "after_path": "scripts/_out/sheet_stage/metal_after.png", "after_label": "metal",
+    "after_file": "assets/textures/blocks/metal.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/oak_log_side_before.png", "before_label": "oak_log_side",
+    "before_hash": "ae81561", "before_caption": "star-splat visible",
+    "after_path": "scripts/_out/sheet_stage/oak_log_side_after.png", "after_label": "oak_log_side",
+    "after_file": "assets/textures/blocks/oak_log_side.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/oak_log_top_before.png", "before_label": "oak_log_top",
+    "before_hash": "ae81561", "before_caption": "star-splat visible (spalting rings)",
+    "after_path": "scripts/_out/sheet_stage/oak_log_top_after.png", "after_label": "oak_log_top",
+    "after_file": "assets/textures/blocks/oak_log_top.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/oak_planks_before.png", "before_label": "oak_planks",
+    "before_hash": "ae81561", "before_caption": "star-splat: worst offender, full radial rosette",
+    "after_path": "scripts/_out/sheet_stage/oak_planks_after.png", "after_label": "oak_planks",
+    "after_file": "assets/textures/blocks/oak_planks.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/red_sand_before.png", "before_label": "red_sand",
+    "before_hash": "ae81561", "before_caption": "star-splat visible",
+    "after_path": "scripts/_out/sheet_stage/red_sand_after.png", "after_label": "red_sand",
+    "after_file": "assets/textures/blocks/red_sand.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/sand_before.png", "before_label": "sand",
+    "before_hash": "ae81561", "before_caption": "star-splat visible (shell/mineral flecks)",
+    "after_path": "scripts/_out/sheet_stage/sand_after.png", "after_label": "sand",
+    "after_file": "assets/textures/blocks/sand.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/snow_before.png", "before_label": "snow",
+    "before_hash": "ae81561", "before_caption": "star-splat visible in shadow flecks",
+    "after_path": "scripts/_out/sheet_stage/snow_after.png", "after_label": "snow",
+    "after_file": "assets/textures/blocks/snow.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/stone_bricks_before.png", "before_label": "stone_bricks",
+    "before_hash": "ae81561", "before_caption": "star-splat visible in mortar moss",
+    "after_path": "scripts/_out/sheet_stage/stone_bricks_after.png", "after_label": "stone_bricks",
+    "after_file": "assets/textures/blocks/stone_bricks.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/water_before.png", "before_label": "water",
+    "before_hash": "ae81561", "before_caption": "star-splat visible in sun-glint",
+    "after_path": "scripts/_out/sheet_stage/water_after.png", "after_label": "water",
+    "after_file": "assets/textures/blocks/water.png", "after_caption": "fixed"
+  },
+  {
+    "before_path": "scripts/_out/sheet_stage/roof_tile_before.png", "before_label": "roof_tile (SHIPPING TODAY)",
+    "before_hash": "5ebe745",
+    "before_caption": "DIFFERENT BUG, not star-splat: smooth diagonal gradient, no tile groove pattern at all",
+    "after_path": "scripts/_out/sheet_stage/roof_tile_after.png", "after_label": "roof_tile (PROPOSAL - NOT SHIPPED)",
+    "after_caption": "same fixed pipeline restores tile grooves, but moss/gold/red accents are far too dense -- reads as moldy overgrowth, not a roof. Needs an accent-density pass before this ships. Awaiting CEO call on whether to pursue."
+  }
+]
