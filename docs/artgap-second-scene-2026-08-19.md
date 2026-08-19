@@ -24,6 +24,8 @@ beach_dusk "ตก" **3 แกนกลับผ่าน**:
 **ข้อค้นพบหลัก:** การโอเวอร์ฟิตไม่ใช่ "beach_dusk สวยแล้ว river_sunset เละ" — ทั้งคู่ผ่าน 9 แกนเท่ากัน
 แต่**คนละ 9 แกน** เฟรมเดียวมืด ๆ ของ beach_dusk ปกปิดปัญหาฟ้า (วัดไม่ได้) พร้อมกับซ่อนปัญหาความเรียบ
 (น้ำผิวกว้างทำ `flat_pct` พุ่ง 25.4→36.9) การตัดสินจากเฟรมเดียวจึงอ่าน look ผิดทั้งสองทิศทาง
+**ตัว overfit แท้ (dome ไม่ช่วย) = แกน detail/ความเรียบ 🔴 4 แกน ส่วนแกนฟ้า 🟢 ส่วนใหญ่เป็น artifact
+ของ "beach ถูกยิงก่อน painted dome (13419e6) ถูก build" — ดู §9**
 
 ---
 
@@ -140,8 +142,10 @@ C0 identity + C1–C10 lesions ผ่านหมด (lesion แต่ละต�
 | **sky brighter than ground** | 0.16 (0.09×) ❌ | 1.17 (0.65×) ✅ | **ฟ้าสว่างกว่าพื้น**กลับมา 7.5 เท่า — beach ฟ้ามืดเลยวัดได้ 0.09 |
 
 beach_dusk มืดจน `sky_void_pct = 36%` → แกน "ฟ้าสว่างกว่าพื้น" ตกหนักและ "crushed blacks" ตกหนัก
-**ไม่ใช่เพราะ look พัง แต่เพราะฉากมืด** river_sunset พิสูจน์ว่า look ตัวเดียวกันได้ `sky_ground_ratio`
-1.17 (ref 1.80) และ crush 0.04% (ref 0.55)
+**แต่ส่วนใหญ่เป็น artifact ของ "beach ถูกยิงก่อน painted dome (13419e6) ถูก build"** (ดู §9 —
+dome ทำให้ beach ผ่าน `sky_void` 36.4→0, `crush` 4.80→0, silhouette SKIP→ok เอง) ส่วน river_sunset
+ยิงด้วย binary เดียวกัน (15:53, ก่อน dome) กลับได้ฟ้าสว่างเพราะ **บรรยากาศของ map ร่ายแสงฟ้าเอง**
+(`sky_ground_ratio` 1.17, crush 0.04%) — โดยไม่ต้องรอ dome
 
 ## 7. 🟣 แกนที่ beach วัดไม่ได้ → river วัดได้ (สัญญาณที่เราไม่เคยเห็น)
 
@@ -186,6 +190,28 @@ beach_dusk มืดจน `sky_void_pct = 36%` → แกน "ฟ้าสว�
 sky gradient กระโดดจาก 0.10× → 0.55× **ทั้ง ๆ ที่เป็นฉากเดียวกัน** ⇒ ส่วนหนึ่งของ "beach_dusk ฟ้ามืด"
 คือ look เก่า (09:04) ไม่ใช่ตัวฉากล้วน ๆ **ข้อสรุป §5–§7 จึงใช้ `_beach_dusk_samebin.png` (binary
 เดียวกับ river) เป็นหลัก** และทุกแกนในนั้นยังถือหลังตัด confound (ดู control ใน §5)
+
+### ฟ้ามืดของ beach_dusk เป็น artifact ของ "ยังไม่ build dome" (13419e6) — สำคัญต่อการอ่าน §6
+
+commit `13419e6` (checkpoint(look), **2026-08-19 15:37**) ลง painted sky dome + cloud deck +
+sun disc ใน `client/src/look.rs` แต่ **เพิ่ง build ครั้งแรก 2026-08-19 16:01**
+(`target-poppy/release/voxelforge.exe`) — **ช้ากว่า binary ที่ยิงฉากที่สอง (15:53, 18 ส.ค.) ~24 ชม.**
+(หน่วยความจำ `painted-dome-owns-sky-win`) วัดบน beach_dusk ตัวเดียวกันได้:
+
+| แกน | beach ก่อน dome (binary ที่ใช้ใน doc นี้) | beach หลัง dome (13419e6) |
+|---|---:|---:|
+| sky sitting at black | 36.4% (09:04) / 27.7% (15:53) — GAP | **0.00% — PASS** |
+| crushed blacks | 4.80% / 4.11% — GAP | **0.00% — PASS** |
+| distant silhouette | SKIP (black sky) | **ok 18.45 (0.83×)** |
+| sky tonal gradient | 17.76 / 95.33 (0.10×/0.55×) | 17.33 (0.10×) — dome แบน ไม่ช่วย |
+| dynamic range | 0.69× ok | 0.60× — ลดลงมาชนเส้น gate |
+
+**นัยสำคัญ:** แกนกลุ่มฟ้าใน §6 (crushed blacks / sky brighter than ground / hue diversity)
+ที่ "ตก beach แต่ผ่าน river" จริง ๆ ส่วนใหญ่คือ **artifact ของ "beach ถูกยิงก่อน dome ถูก build"**
+— dome (13419e6) ทำให้ beach ผ่านแกนพวกนี้เองโดยไม่ต้องเปลี่ยนฉาก (และ silhouette กลับมาวัดได้เป็น
+ok 0.83× ไม่ใช่ over เหมือน river) ส่วนแกนใน §5 (dynamic range / tonal spread / local contrast /
+flat area) เป็น **overfit แท้ของตัวฉาก** เพราะ dome แบน ๆ ไม่ได้เพิ่มรายละเอียดให้ผิวน้ำ — แกนพวกนี้
+จะยังตกบน river แม้ dome มาถึงแล้ว
 
 ## 10. เหตุผลที่ grader ปฏิเสธจะวัด (คำต่อคำ — ไม่แปลงเป็นศูนย์)
 
