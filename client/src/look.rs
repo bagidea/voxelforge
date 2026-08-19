@@ -3815,10 +3815,26 @@ fn sky_ramp_curve() -> f32 {
 /// a 3-D LUT this lane cannot invert on paper. So the value is not derived here;
 /// it is CALIBRATED by sweeping this hook against the real frame
 /// (`scripts/_poppy_skygain_ladder_20260818.ps1`) and reading the sky median off
-/// the grader. 2.6 is the rung that landed, and it is a starting point that the
-/// ladder is expected to move — `VOXELFORGE_SKY_GAIN` exists so moving it never
-/// costs a relink.
-const SKY_PAINT_GAIN: f32 = 2.6;
+/// the grader. 2.6 was the rung that landed first, and it is a starting point
+/// that the ladder is expected to move — `VOXELFORGE_SKY_GAIN` exists so moving
+/// it never costs a relink.
+///
+/// MOVED 2.6 -> 8.0, 2026-08-19. `scripts/_poppy_skysweep_20260819.ps1` swept
+/// this hook on the 16:01 exe over the pinned `beach_dusk` framing and graded
+/// all four arms in ONE `_pixel_artgap_grade.py` run with `--check-controls`:
+///
+///     gain 2.6 (the shipped default)   sky/ground 0.76   sky gradient 16.40
+///     gain 8.0                         sky/ground 0.91   sky gradient 34.82
+///
+/// 0.91 is the first rung over the 0.9 this lane was asked for, and the gradient
+/// axis comes along at 2.1x for free. IT IS NOT FREE ON EVERY AXIS, and the cost
+/// is recorded here rather than in a commit message nobody re-reads: `distant
+/// silhouette` falls 19.26 -> 13.83 against REF 22.33, i.e. 0.86x -> 0.62x. That
+/// still clears the 0.60 gate, but only just — a brighter sky is less contrast
+/// for the skyline to sit against, which is the same trade
+/// `docs/` records under black-sky-wins-silhouette from the other direction.
+/// Anything above this rung should be shot against that axis before it lands.
+const SKY_PAINT_GAIN: f32 = 8.0;
 
 fn sky_paint_gain() -> f32 {
     std::env::var("VOXELFORGE_SKY_GAIN")
