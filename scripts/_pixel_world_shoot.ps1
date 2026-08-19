@@ -14,14 +14,18 @@
 #   powershell -File scripts/_pixel_world_shoot.ps1 -Out _pixel_world_after.png
 # ===========================================================================
 param(
-  [Parameter(Mandatory = $true)][string]$Out
+  [Parameter(Mandatory = $true)][string]$Out,
+  # Default is the binary that shot the graded plate. Pass -Exe to use a
+  # water-capable build: _matmaps_ab_exe.exe predates commit 2b64299 and SKIPS
+  # every water block (it logs the count, so you cannot miss it).
+  [string]$Exe = "_matmaps_ab_exe.exe"
 )
 
 $ErrorActionPreference = "Continue"
 $root = "E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge"
 Set-Location $root
 
-$exe = Join-Path $root "_matmaps_ab_exe.exe"
+$exe = if ([System.IO.Path]::IsPathRooted($Exe)) { $Exe } else { Join-Path $root $Exe }
 if (-not (Test-Path $exe)) { Write-Output "REFUSED  $exe not found"; exit 2 }
 
 # ---- binary-provenance gate (same gate Poppy's script uses) --------------

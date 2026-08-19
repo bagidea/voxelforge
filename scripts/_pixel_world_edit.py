@@ -294,7 +294,9 @@ def main():
     if bad:
         raise SystemExit(f"REFUSED: {len(bad)} invalid blocks, e.g. {bad[:3]}")
 
-    Path(a.out).write_text(json.dumps(m, indent=1))
+    # indent=2 matches the committed file's own style, so the diff shows the
+    # blocks that changed instead of re-flowing all 5380 of them.
+    Path(a.out).write_text(json.dumps(m, indent=2) + "\n")
     print(f"\nwrote {a.out}")
 
 
