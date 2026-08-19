@@ -78,6 +78,14 @@ path = "src/enemy_shot_main.rs"
 name = "voxelforge_atlasshot"
 path = "src/atlas_shot_main.rs"
 
+# Foliage wind proof — the FIRST custom vertex shader in the client: a field of
+# cross-quad grass swaying in a wind field + gust + per-plant phase (bend ramp
+# 0@root -> 1@tip). Links foliage.rs only, so it cannot be blocked by (or
+# block) main.rs / look.rs mid-edit. See src/foliage_proof_main.rs.
+[[bin]]
+name = "voxelforge_foliage_proof"
+path = "src/foliage_proof_main.rs"
+
 [features]
 # PCSS soft shadows (bible pass #4 / gate G4) are behind an experimental Bevy
 # flag; on by default so the hero shot gets penumbras out of the box.
