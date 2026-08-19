@@ -177,7 +177,8 @@ dome ทำให้ beach ผ่าน `sky_void` 36.4→0, `crush` 4.80→0, s
 ## 9. ⚠️ confound ที่ต้องเปิดเผย — binary ไม่ใช่ตัวเดียว
 
 เฟรมที่ออฟฟิศเชื่อ `_matmaps_after.png` ยิงด้วย `_matmaps_ab_exe.exe` (09:04) ส่วนทั้งสองเฟรมใหม่ยิงด้วย
-`target-rose` (15:53) — ระหว่างนั้น commit `2b64299` (น้ำ) + `13419e6` (checkpoint look) ลงมา
+`target-rose` (15:53) — target-rose บรรจุเลนน้ำ (commit `2b64299`) แล้ว แต่**ยังไม่มี painted dome**:
+commit `13419e6` ลง **2026-08-19 15:37** = **หลังทั้งสอง binary** (หลักฐานในหัวข้อย่อยท้าย §9)
 ผลคือ **แกนฟ้าบางแกนต่างกันเพราะ binary ไม่ใช่เพราะฉาก**:
 
 | แกน | beach_dusk (binary 09:04) | beach_dusk (binary 15:53) | river_sunset (15:53) |
