@@ -108,9 +108,23 @@ def _git(repo_dir, *args):
     )
 
 
+def is_dirty(repo_dir, file_path):
+    """True if the working-tree file differs from the latest commit that touched it --
+    i.e. there are real uncommitted changes. Always compares against the file's own
+    latest commit, never against whatever hash a caption happens to cite, so citing an
+    older commit on purpose doesn't get flagged as dirty."""
+    latest = _git(repo_dir, "log", "-1", "--format=%h", "--", file_path).stdout.strip()
+    if not latest:
+        return False
+    diff = _git(repo_dir, "diff", "--quiet", latest, "--", file_path)
+    return diff.returncode != 0
+
+
 def resolve_commit(repo_dir, commit_file=None, explicit_hash=None):
-    """Return {"hash": short_hash, "author": name} or None. Raises CommitResolutionError
-    on anything that would otherwise put a fake/unverifiable hash on the sheet."""
+    """Return {"hash": short_hash, "author": name, "dirty": bool} or None. Raises
+    CommitResolutionError on anything that would otherwise put a fake/unverifiable
+    hash on the sheet."""
+    dirty = False
     if explicit_hash:
         chk = _git(repo_dir, "cat-file", "-e", f"{explicit_hash}^{{commit}}")
         if chk.returncode != 0:
@@ -120,6 +134,8 @@ def resolve_commit(repo_dir, commit_file=None, explicit_hash=None):
             )
         short = _git(repo_dir, "rev-parse", "--short", explicit_hash)
         hash_to_use = short.stdout.strip() or explicit_hash
+        if commit_file:
+            dirty = is_dirty(repo_dir, commit_file)
     elif commit_file:
         log = _git(repo_dir, "log", "-1", "--format=%h", "--", commit_file)
         hash_to_use = log.stdout.strip()
@@ -128,16 +144,19 @@ def resolve_commit(repo_dir, commit_file=None, explicit_hash=None):
                 f"no commit touches '{commit_file}' in repo '{repo_dir}' "
                 f"(untracked, no history, or wrong path)"
             )
+        dirty = is_dirty(repo_dir, commit_file)
     else:
         return None
 
     author = _git(repo_dir, "log", "-1", "--format=%an", hash_to_use).stdout.strip()
-    return {"hash": hash_to_use, "author": author}
+    return {"hash": hash_to_use, "author": author, "dirty": dirty}
 
 
 def build_caption(resolved, note):
     if resolved:
         tag = f"{resolved['hash']} {resolved['author']}"
+        if resolved.get("dirty"):
+            tag += " [DIRTY: uncommitted changes]"
         return (tag + ("  \u2014 " + note if note else "")), True
     return note, False
 
@@ -191,7 +210,11 @@ def build_sheet(pairs, out_path, title=None, footer=None):
     block_w = THUMB_W * 2 + GAP
 
     title_h = 44 if title else 0
-    footer_h = FOOTER_H if footer else 0
+    # the footer carries a provenance sentence, so it must WRAP rather than run off the
+    # right edge -- a clipped provenance line reads as if it were never written.
+    tmp_draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    footer_lines = wrap_text(tmp_draw, footer, footer_font, block_w) if footer else []
+    footer_h = (len(footer_lines) * (FOOTER_H - 10) + 10) if footer_lines else 0
     total_h = (
         MARGIN * 2 + title_h + footer_h
         + sum(h for _, h in blocks) + ROW_GAP * (len(blocks) - 1)
@@ -213,8 +236,11 @@ def build_sheet(pairs, out_path, title=None, footer=None):
             draw.line([(MARGIN, y + ROW_GAP // 2), (total_w - MARGIN, y + ROW_GAP // 2)], fill=DIVIDER, width=1)
         y += ROW_GAP
 
-    if footer:
-        draw.text((MARGIN, total_h - MARGIN - footer_h + 8), footer, font=footer_font, fill=FOOTER_FG)
+    if footer_lines:
+        fy = total_h - MARGIN - footer_h + 8
+        for line in footer_lines:
+            draw.text((MARGIN, fy), line, font=footer_font, fill=FOOTER_FG)
+            fy += FOOTER_H - 10
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,6 +276,9 @@ def resolve_side(repo_dir, path, label, note, commit_file, explicit_hash, side_n
     if resolved is None and (commit_file is None and explicit_hash is None):
         print(f"warning: {side_name}: no --{side_name}-file/--{side_name}-hash given, "
               f"caption has no verified commit tag", file=sys.stderr)
+    if resolved and resolved.get("dirty"):
+        print(f"warning: {side_name}: '{commit_file}' has uncommitted changes on top of "
+              f"{resolved['hash']} -- caption marked [DIRTY]", file=sys.stderr)
     caption, verified = build_caption(resolved, note)
     return {"path": path, "label": label, "caption": caption, "caption_verified": verified}
 
@@ -295,7 +324,11 @@ def main():
                 sys.exit(2)
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    footer = f"generated {timestamp}  (commits resolved/verified against {repo_dir})"
+    footer = (
+        f"generated {timestamp}  (commits resolved/verified against {repo_dir})  |  "
+        f"every thumbnail is LANCZOS-resampled to {THUMB_W}px wide -- that is display "
+        f"geometry, comparable pane-to-pane, NOT the source asset's resolution"
+    )
     out_path = build_sheet(pairs, args.out, title=args.title, footer=footer)
     print(str(out_path.resolve()))
 
