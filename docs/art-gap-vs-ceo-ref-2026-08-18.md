@@ -12,11 +12,19 @@
 
 ## Inputs — pin ไว้ให้รันซ้ำได้
 
-| label | ไฟล์ | px | หมายเหตุ |
-|---|---|---|---|
-| **REF** | `docs/refs/ceo_ref_sunset_valley.jpg` | 768×1376 | ภาพที่ CEO สั่ง · md5 ตรวจแล้วเป็น **แผงเดียว** (ดู §caveat) |
-| **OURS** | `_matmaps_after.png` | 1280×720 | ฉาก `maps/beach_dusk.json`, ไบนารี sha256 `e7db71ca…` (Director ยืนยันเองแล้ว) |
-| OURS (ตัวเทียบที่ 2) | `docs/assets/look/outdoor-noon_after.png` | 1280×720 | เฟรมกลางแจ้งกลางวัน — ใส่มาเพื่อพิสูจน์ว่า gap ไหน "เป็นของเฟรมนี้" กับ gap ไหน "เป็นของทั้งเกม" |
+| label | ไฟล์ | px (ไฟล์จริงบนดิสก์) | px ที่วัดจริง (หลัง normalise) | หมายเหตุ |
+|---|---|---|---|---|
+| **REF** | `docs/refs/ceo_ref_sunset_valley.jpg` | 768×1376 | **747×1339** | ภาพที่ CEO สั่ง · md5 ตรวจแล้วเป็น **แผงเดียว** (ดู §caveat) |
+| **OURS** | `_matmaps_after.png` | 1280×720 | **1333×750** | ฉาก `maps/beach_dusk.json`, ไบนารี sha256 `e7db71ca…` (Director ยืนยันเองแล้ว) |
+| OURS (ตัวเทียบที่ 2) | `docs/assets/look/outdoor-noon_after.png` | 1280×720 | **1333×750** | เฟรมกลางแจ้งกลางวัน — ใส่มาเพื่อพิสูจน์ว่า gap ไหน "เป็นของเฟรมนี้" กับ gap ไหน "เป็นของทั้งเกม" |
+
+> **อ่านคอลัมน์ `px` ให้ถูก** — `load()` ใน `scripts/_pixel_artgap_grade.py` **resample ทุกเฟรมด้วย
+> LANCZOS ลงพื้นที่ร่วม 1.0 Mpx ก่อนวัดเสมอ** ⇒ ตัวเลขทุกแกนในเอกสารนี้เกิดบนคอลัมน์ **"px ที่วัดจริง"**
+> ไม่ใช่คอลัมน์ซ้าย. ผลคือ **เทียบข้ามเพลตได้ตรง ๆ** (ทุกใบมีจำนวนพิกเซลเท่ากัน แกน "ต่อพื้นที่"
+> จึงไม่ถูกความละเอียดที่ต่างกันบิด) แต่ **ห้ามอ่านเลขนั้นเป็นความละเอียดของ asset หรือของเฟรมที่เรนเดอร์**
+> — เฟรมเรายิงที่ 1280×720 จริง ไม่ใช่ 1333×750. ตรวจซ้ำได้ด้วย
+> `python -c "import importlib.util;s=importlib.util.spec_from_file_location('g','scripts/_pixel_artgap_grade.py');g=importlib.util.module_from_spec(s);s.loader.exec_module(g);print(g.load('_matmaps_after.png').shape)"`
+> → `(750, 1333, 3)` · เพิ่มคำกำกับ 2026-08-20 (Flamingo)
 
 **เครื่องมือ (เขียนใหม่ในงานนี้ ทั้งหมดอยู่ในเลนผม):**
 

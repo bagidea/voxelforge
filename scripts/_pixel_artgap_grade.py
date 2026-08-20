@@ -26,6 +26,11 @@ NORMALISATION
 Both images are resampled to a common AREA (default 1.0 Mpx) keeping aspect.
 That makes "detail per unit of screen" comparable, which is what a viewer sees.
 It does NOT make framing comparable — see FRAMING CAVEAT in the report.
+
+Consequence for every table this tool feeds: the `px` field/column is the size AFTER
+that LANCZOS resample — the geometry the numbers were measured on, safe to compare
+across plates, and NOT the resolution of the file or asset (a 1280x720 plate prints
+1333x750). The size on disk is carried separately as `px_file`.
 """
 
 from __future__ import annotations
@@ -151,6 +156,7 @@ def horizon_from_sky(sky: np.ndarray) -> np.ndarray:
 
 
 def measure(path: str, dump_mask: str | None = None, scene: str = "outdoor") -> dict:
+    file_w, file_h = Image.open(path).size  # header only: the size on disk, pre-normalise
     rgb = load(path)
     L = luma(rgb)
     H, W = L.shape
@@ -362,7 +368,12 @@ def measure(path: str, dump_mask: str | None = None, scene: str = "outdoor") -> 
 
     return {
         "file": path,
+        # px is the NORMALISED geometry (LANCZOS -> NORM_AREA), i.e. the pixels every
+        # axis below was actually measured on. It is NOT the file on disk: a 1280x720
+        # plate reports 1333x750 here. px_file carries the real size so a table built
+        # from this JSON can print both and nobody reads px as an asset resolution.
         "px": f"{W}x{H}",
+        "px_file": f"{file_w}x{file_h}",
         "scene": scene,
         "L_p1": round(p[1], 2), "L_p5": round(p[5], 2), "L_p50": round(p[50], 2),
         "L_p95": round(p[95], 2), "L_p99": round(p[99], 2),
@@ -698,8 +709,13 @@ def write_scoreboard(out, ref_path, ref, rows, prev_by_file, ctl_rc, ctl_tail,
         A(head + f"  ·  {counts['GAP']} GAP  ·  {counts['SKIP']} ยังวัดไม่ได้"
           + (f"  ·  {counts['adv']} advisory" if counts['adv'] else ""))
         A("")
-        A(f"เฟรมที่ตัดสิน: **`{primary['file']}`** ({primary['px']} normalised) "
-          f"เทียบ **`{ref_path}`** ({ref['px']})  ")
+        A(f"เฟรมที่ตัดสิน: **`{primary['file']}`** ({primary['px']} normalised · "
+          f"ไฟล์จริง {primary['px_file']}) "
+          f"เทียบ **`{ref_path}`** ({ref['px']} normalised · ไฟล์จริง {ref['px_file']})  ")
+        A(f"**คอลัมน์/ค่า `px` ทุกที่ในเอกสารนี้ = ขนาด _หลัง_ normalise** — LANCZOS ย่อ/ขยาย "
+          f"ทุกเฟรมลงพื้นที่ร่วม {NORM_AREA/1e6:.1f} Mpx ก่อนวัด (`load()`) ⇒ **เทียบข้ามเพลตได้** "
+          f"เพราะทุกใบมีจำนวนพิกเซลเท่ากัน แต่ **ห้ามอ่านเป็นความละเอียดของ asset/เฟรมจริง** "
+          f"— ขนาดไฟล์จริงคือค่าที่กำกับว่า “ไฟล์จริง” ข้างบน  ")
         A(f"เครื่องวัดผ่าน control แล้ว (`_pixel_artgap_controls.py` **exit 0**) "
           f"⇒ เลขข้างล่างเชื่อได้ตามกติกาข้อ 7")
         A("")
@@ -927,7 +943,9 @@ def main():
         m["sha256"] = sha256(path)
         rows.append(m)
 
-    print(f"REF = {a.ref}  ({ref['px']} normalised)\n")
+    print(f"REF = {a.ref}  ({ref['px']} after LANCZOS normalise to "
+          f"{NORM_AREA/1e6:.1f} Mpx; file on disk is {ref['px_file']})")
+    print("px = measured geometry, comparable across plates; NOT the asset resolution\n")
     hdr = f"{'axis':<38}{'owner':<10}{'REF':>9}" + "".join(
         f"{Path(r['file']).stem[:17]:>19}" for r in rows)
     print(hdr)

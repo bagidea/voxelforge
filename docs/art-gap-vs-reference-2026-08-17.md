@@ -24,6 +24,15 @@ Everything else in the numbers was correct and is reproduced unchanged.
 
 ## Inputs
 
+> **`px` in this table = the file on disk, and also the geometry it was measured on.**
+> `_kevin_art_gap_measure2.py` reads every plate at native size — it does **no** LANCZOS
+> area-normalise, unlike `_pixel_artgap_grade.py`, whose `px` is the *post*-normalise
+> geometry (1.0 Mpx). So numbers here are only comparable across plates for the
+> per-pixel / ratio axes (hue spread, saturation, warm-cool share); absolute
+> edge-magnitude numbers must be re-measured on the same plate before they are compared
+> — the tail of this doc says the same thing in prose. Either way, never read `px` as an
+> asset's authored resolution. · note added 2026-08-20 (Flamingo)
+
 | label | file | px |
 |---|---|---|
 | REF (CEO) | `uploads\1786952280558_…_n.jpg` | 768×1376 — **3-panel vertical stack** of a Minecraft+shader render |

@@ -259,7 +259,8 @@ def main():
     tmp = Path(tempfile.mkdtemp(prefix="artgap_ctl_"))
     bad = 0
 
-    print(f"reference: {REF.name}  ({base['px']} normalised)")
+    print(f"reference: {REF.name}  ({base['px']} after LANCZOS normalise; "
+          f"file on disk is {base['px_file']} — px is measured geometry, not asset resolution)")
     print(f"{'control':<18}{'axis':<22}{'REF':>10}{'lesioned':>12}{'ratio':>8}  expect  verdict")
     print("-" * 88)
 
