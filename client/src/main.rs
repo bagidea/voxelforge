@@ -44,6 +44,7 @@ mod vfx;
 mod vfx_bridge;
 mod voxel;
 mod water;
+mod weather;
 // NOTE: no top-level `mod input_map;` — input_map.rs is already pulled in as a
 // submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
 // Declaring it here too would compile the file twice into two distinct type sets.
@@ -653,6 +654,12 @@ fn main() -> AppExit {
             // FoliageMaterial pipeline + wind clock; the scatter lives in scene.rs.
             // `VOXELFORGE_FOLIAGE=off` skips the scatter out of this same binary.
             .add_plugins(foliage::FoliagePlugin)
+            // Weather & atmosphere (Rose's lane): rain streaks + ripples gated
+            // on the real chunk store, wet-ground materials, god-ray state
+            // composition and morning fog. `VOXELFORGE_WEATHER=off` (the
+            // default) registers nothing at all, so every other lane's plates
+            // are untouched. Composes at runtime; look.rs is never edited.
+            .add_plugins(weather::WeatherPlugin)
             // The game entrance (main menu + real save/load). MainMenuPlugin is the
             // AppState::MainMenu overlay + action routing; SaveGamePlugin is the F6
             // quick-save. Both gate on their own run conditions so the editor / bench
@@ -1757,7 +1764,7 @@ fn block_name(b: BlockId) -> &'static str {
 
 /// Is the world-space voxel (wx,wy,wz) solid? Only the y=0 chunk layer exists in
 /// Phase 0, so anything outside 0..CHUNK vertically is empty air.
-fn solid_at(world: &World, wx: i32, wy: i32, wz: i32) -> bool {
+pub(crate) fn solid_at(world: &World, wx: i32, wy: i32, wz: i32) -> bool {
     solid_at_chunks(&world.chunks, wx, wy, wz)
 }
 

@@ -269,7 +269,10 @@ fn drive_water_from_sun(
     cache: Res<WaterMats>,
     mut mats: ResMut<Assets<WaterMaterial>>,
     sun: Query<(&GlobalTransform, &DirectionalLight)>,
-    ambient: Option<Res<AmbientLight>>,
+    // Bevy 0.19: `AmbientLight` is a per-camera *component* (the old global
+    // resource became `GlobalAmbientLight`). The live view's ambient rides the
+    // `OrbitCam`, same read `main.rs` / `look.rs` use.
+    ambient: Query<&AmbientLight, With<crate::OrbitCam>>,
 ) {
     if cache.0.is_empty() {
         return;
@@ -291,7 +294,7 @@ fn drive_water_from_sun(
     // sane reflectance levels — these are multiplied by Fresnel, not added.
     let warm = 0.35 + 0.65 * (1.0 - to_sun.y.clamp(0.0, 1.0));
     let horizon = Vec4::new(c.red * warm, c.green * warm * 0.82, c.blue * warm * 0.62, 1.0);
-    let zenith = ambient.map(|a| {
+    let zenith = ambient.iter().next().map(|a| {
         let ac = a.color.to_linear();
         let g = (a.brightness / 200.0).clamp(0.05, 1.5);
         Vec4::new(ac.red * g, ac.green * g, ac.blue * g * 1.25, 1.0)
@@ -301,7 +304,7 @@ fn drive_water_from_sun(
     // lit by a stale sun vector would glint in the wrong direction from the top
     // quad it touches. Three writes at most (see [`WaterMats`]).
     for handle in cache.0.values() {
-        let Some(mat) = mats.get_mut(handle) else {
+        let Some(mut mat) = mats.get_mut(handle) else {
             continue;
         };
         mat.extension.sun_dir = sun_dir;
