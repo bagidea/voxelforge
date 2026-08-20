@@ -85,6 +85,20 @@ pub struct CombatConfig {
     pub charge_hold: f32,
     pub combo_reset: f32,
     pub combo_step: f32,
+    /// Combo-chain tuning (§2.4 extended) — the L1→L2→L3→finisher state machine.
+    /// A press is never dropped mid-chain: it is buffered for
+    /// `combo_input_buffer` and fired the frame the current move's cancel window
+    /// opens (`combo_cancel_from` of the way through a light), or the moment the
+    /// player is idle again. A finisher (or a dropped chain) opens `combo_cd`,
+    /// so a combo has a readable end instead of turning into an infinite mash.
+    pub combo_input_buffer: f32,
+    pub combo_cancel_from: f32,
+    pub combo_cd: f32,
+    pub finisher_damage: f32,
+    pub finisher_poise: f32,
+    pub finisher_time: f32,
+    pub finisher_hyper: f32,
+    pub finisher_active: (f32, f32),
     pub melee_range: f32,
     pub melee_cone: f32,
     /// Active-frame windows inside an attack (windup → active → recover).
@@ -240,6 +254,15 @@ pub const COMBAT: CombatConfig = CombatConfig {
     charge_hold: 0.60,
     combo_reset: 0.60,
     combo_step: 0.10,
+    // -- Combo chain (§2.4 extended) --------------------------------------
+    combo_input_buffer: 0.15,
+    combo_cancel_from: 0.5,
+    combo_cd: 0.35,
+    finisher_damage: 60.0,
+    finisher_poise: 55.0,
+    finisher_time: 0.95,
+    finisher_hyper: 0.40,
+    finisher_active: (0.55, 0.75),
     melee_range: 2.0,
     melee_cone: 60.0,
     light_active: (0.12, 0.22),
@@ -398,6 +421,14 @@ pub const CHARGED_TIME: f32 = COMBAT.charged_time;
 pub const CHARGE_HOLD: f32 = COMBAT.charge_hold;
 pub const COMBO_RESET: f32 = COMBAT.combo_reset;
 pub const COMBO_STEP: f32 = COMBAT.combo_step;
+pub const COMBO_INPUT_BUFFER: f32 = COMBAT.combo_input_buffer;
+pub const COMBO_CANCEL_FROM: f32 = COMBAT.combo_cancel_from;
+pub const COMBO_CD: f32 = COMBAT.combo_cd;
+pub const FINISHER_DAMAGE: f32 = COMBAT.finisher_damage;
+pub const FINISHER_POISE: f32 = COMBAT.finisher_poise;
+pub const FINISHER_TIME: f32 = COMBAT.finisher_time;
+pub const FINISHER_HYPER: f32 = COMBAT.finisher_hyper;
+pub const FINISHER_ACTIVE: (f32, f32) = COMBAT.finisher_active;
 pub const MELEE_RANGE: f32 = COMBAT.melee_range;
 pub const MELEE_CONE: f32 = COMBAT.melee_cone;
 pub const LIGHT_ACTIVE: (f32, f32) = COMBAT.light_active;
@@ -524,11 +555,27 @@ pub enum CombatState {
     Light,
     Heavy,
     Charged,
+    /// The combo finisher — the heavy move that ends a live light chain
+    /// (§2.4 extended). Heavier than a standalone `Heavy` and, unlike it,
+    /// unreachable from Idle: it only exists as the payoff of L1/L2/L3.
+    Finisher,
     Dodge,
     Block,
     Parry,
     Stagger,
     Dead,
+}
+
+/// A buffered combo input (§2.4 extended). A press that arrives while the player
+/// cannot act yet (mid-windup, mid-active, in recovery) is parked here instead of
+/// dropped, and fired the frame the move's cancel window opens — or the moment
+/// the player is idle again. `PlayerCombat` owns the validity timer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum BufferedAttack {
+    #[default]
+    None,
+    Light,
+    Heavy,
 }
 
 /// One shared stamina pool (§2.1). All actions draw from it; it regens after a
@@ -681,9 +728,18 @@ pub struct PlayerCombat {
     pub riposte_on: Option<Entity>,
     /// Lock before the next action may start (dodge recovery, parry recovery…).
     pub recovery: f32,
-    /// Combo index (0..3) and the window left to continue it.
+    /// Combo index: 0 = no chain, 1..3 = light step, 4 = finisher.
     pub combo: u8,
+    /// Time left to continue the chain before it resets (§2.4 extended).
     pub combo_window: f32,
+    /// Cooldown before a new chain may start (opened by a finisher or a dropped
+    /// chain). While > 0, fresh light/heavy presses from Idle are refused.
+    pub combo_cd: f32,
+    /// A press that arrived while the player couldn't act yet. Fired the frame
+    /// the cancel window opens, or the moment the player is idle again.
+    pub buffer: BufferedAttack,
+    /// Remaining validity of `buffer` — when it hits 0 the press is dropped.
+    pub buffer_time: f32,
     /// +25% punish window opened by a successful parry (on the *attacker*, but
     /// mirrored here so the demo can read it).
     pub punish: f32,
@@ -707,6 +763,9 @@ impl Default for PlayerCombat {
             recovery: 0.0,
             combo: 0,
             combo_window: 0.0,
+            combo_cd: 0.0,
+            buffer: BufferedAttack::None,
+            buffer_time: 0.0,
             punish: 0.0,
             charge: 0.0,
             hitstop: 0.0,
@@ -729,27 +788,71 @@ impl PlayerCombat {
             && stam.exhausted <= 0.0
     }
 
+    /// Is the current light far enough through that the next chain step may
+    /// cancel its remaining recovery (§2.4 extended)? Only lights cancel — the
+    /// finisher and standalone heavy are full commitments.
+    pub fn in_cancel_window(&self) -> bool {
+        self.state == CombatState::Light
+            && self.combo > 0
+            && self.timer >= LIGHT_TIME * COMBO_CANCEL_FROM
+    }
+
+    /// Start a fresh light chain from Idle (step 1). Refused during the combo
+    /// cooldown so a dropped chain or finisher has a readable end.
     pub fn start_light(&mut self, stam: &mut Stamina) -> bool {
-        if !self.can_act(stam) || !stam.try_spend(COST_LIGHT, DELAY_LIGHT) {
+        if !self.can_act(stam) || self.combo_cd > 0.0 || !stam.try_spend(COST_LIGHT, DELAY_LIGHT) {
             return false;
         }
+        self.enter_light(1);
+        true
+    }
+
+    /// Advance the live light chain: L1→L2→L3→L1. Only valid while a chain is
+    /// open (`combo > 0`); the *cancel* itself is gated by the caller via
+    /// `in_cancel_window`. A stale combo is refused here, never silently restarted.
+    pub fn start_next_light(&mut self, stam: &mut Stamina) -> bool {
+        if self.combo == 0 || !stam.try_spend(COST_LIGHT, DELAY_LIGHT) {
+            return false;
+        }
+        let step = if self.combo >= 3 { 1 } else { self.combo + 1 };
+        self.enter_light(step);
+        true
+    }
+
+    /// Shared body of a light step — fresh chain or continuation.
+    fn enter_light(&mut self, step: u8) {
         self.state = CombatState::Light;
         self.timer = 0.0;
         self.hit_applied = false;
-        // Chain the combo if still inside the reset window, else start at 1.
-        self.combo = if self.combo_window > 0.0 { (self.combo % 3) + 1 } else { 1 };
+        self.combo = step;
         self.combo_window = COMBO_RESET;
+        self.combo_cd = 0.0;
+    }
+
+    /// The heavy finisher (§2.4 extended) — only reachable while a light chain is
+    /// live. Heavier than a standalone heavy (its own damage/poise/active window)
+    /// and it *ends* the chain: `combo_cd` opens the moment it completes.
+    pub fn start_finisher(&mut self, stam: &mut Stamina) -> bool {
+        if self.combo == 0 || !stam.try_spend(COST_HEAVY, DELAY_HEAVY) {
+            return false;
+        }
+        self.state = CombatState::Finisher;
+        self.timer = 0.0;
+        self.hit_applied = false;
+        self.combo = 4;
+        self.combo_window = 0.0;
         true
     }
 
     pub fn start_heavy(&mut self, stam: &mut Stamina) -> bool {
-        if !self.can_act(stam) || !stam.try_spend(COST_HEAVY, DELAY_HEAVY) {
+        if !self.can_act(stam) || self.combo_cd > 0.0 || !stam.try_spend(COST_HEAVY, DELAY_HEAVY) {
             return false;
         }
         self.state = CombatState::Heavy;
         self.timer = 0.0;
         self.hit_applied = false;
         self.combo = 0;
+        self.combo_window = 0.0;
         true
     }
 
@@ -763,6 +866,7 @@ impl PlayerCombat {
         self.timer = 0.0;
         self.hit_applied = false;
         self.combo = 0;
+        self.combo_window = 0.0;
         true
     }
 
@@ -775,6 +879,7 @@ impl PlayerCombat {
         self.iframes = DODGE_IFRAMES;
         self.iframe_frames = crate::dodge_parry::DODGE_IFRAME_FRAMES;
         self.combo = 0;
+        self.combo_window = 0.0;
         true
     }
 
@@ -791,6 +896,7 @@ impl PlayerCombat {
             }
             CombatState::Heavy => (HEAVY_DAMAGE, HEAVY_POISE, HEAVY_ACTIVE),
             CombatState::Charged => (CHARGED_DAMAGE, CHARGED_POISE, CHARGED_ACTIVE),
+            CombatState::Finisher => (FINISHER_DAMAGE, FINISHER_POISE, FINISHER_ACTIVE),
             _ => return None,
         };
         if self.timer >= window.0 && self.timer <= window.1 {
@@ -800,10 +906,17 @@ impl PlayerCombat {
         }
     }
 
-    /// True during the heavy-attack hyper-armor tail (§2.4/§3.2).
+    /// True during the heavy-attack hyper-armor tail (§2.4/§3.2). The finisher
+    /// gets its own (shorter) hyper window so it reads as the payoff of a combo
+    /// rather than free super-armor.
     pub fn hyper_armor(&self) -> bool {
-        matches!(self.state, CombatState::Heavy | CombatState::Charged)
-            && self.timer >= (self.action_len() - HEAVY_HYPER)
+        match self.state {
+            CombatState::Heavy | CombatState::Charged => {
+                self.timer >= (self.action_len() - HEAVY_HYPER)
+            }
+            CombatState::Finisher => self.timer >= (self.action_len() - FINISHER_HYPER),
+            _ => false,
+        }
     }
 
     fn action_len(&self) -> f32 {
@@ -811,6 +924,7 @@ impl PlayerCombat {
             CombatState::Light => LIGHT_TIME,
             CombatState::Heavy => HEAVY_TIME,
             CombatState::Charged => CHARGED_TIME,
+            CombatState::Finisher => FINISHER_TIME,
             CombatState::Dodge => DODGE_IFRAMES + DODGE_RECOVERY,
             // Without this arm the state fell through to 0.0 and `tick` dropped
             // it back to Idle on the next frame — which made the 12-frame parry
@@ -827,8 +941,20 @@ impl PlayerCombat {
         }
         if self.combo_window > 0.0 {
             self.combo_window = (self.combo_window - dt).max(0.0);
-            if self.combo_window == 0.0 {
+            if self.combo_window == 0.0 && self.combo > 0 {
+                // Chain dropped — the player missed the continue window. Reset
+                // and open the combo cooldown so the whiff has a readable end.
                 self.combo = 0;
+                self.combo_cd = COMBO_CD;
+            }
+        }
+        if self.combo_cd > 0.0 {
+            self.combo_cd = (self.combo_cd - dt).max(0.0);
+        }
+        if self.buffer_time > 0.0 {
+            self.buffer_time = (self.buffer_time - dt).max(0.0);
+            if self.buffer_time == 0.0 {
+                self.buffer = BufferedAttack::None; // press expired before it could fire
             }
         }
         if self.punish > 0.0 {
@@ -847,6 +973,12 @@ impl PlayerCombat {
         }
         self.timer += dt;
         if self.timer >= self.action_len() {
+            // A finisher that finishes opens the combo cooldown — the chain has a
+            // readable end, so the next combo can't start on the very next frame.
+            if self.state == CombatState::Finisher {
+                self.combo = 0;
+                self.combo_cd = COMBO_CD;
+            }
             // Action finished → enter its recovery, then Idle.
             self.recovery = match self.state {
                 CombatState::Dodge => 0.0, // recovery folded into action_len
@@ -1020,6 +1152,9 @@ pub struct HuskArm;
 #[derive(Resource, Default, Clone)]
 pub struct CombatIntent {
     pub light: bool,
+    /// Heavy button *pressed this frame* — the combo finisher trigger (§2.4
+    /// extended). Distinct from `heavy_down`, the hold-to-charge channel.
+    pub heavy_pressed: bool,
     /// Heavy button *held* — released past `CHARGE_HOLD` commits a charged attack.
     pub heavy_down: bool,
     pub dodge: bool,
@@ -1677,6 +1812,7 @@ pub fn gather_input(
     mut route: ResMut<RKeyRoute>,
 ) {
     let light_pressed = mouse.just_pressed(MouseButton::Left) || keys.just_pressed(KeyCode::KeyX);
+    let heavy_pressed = keys.just_pressed(KeyCode::KeyC);
     // R is shared with the quest build prompt. The contextual consumer runs first
     // (`quest::check_block_place_triggers`, ordered `.before(gather_input)`) and
     // claims the press when a `place_block` objective is in reach; lock-on is the
@@ -1687,6 +1823,7 @@ pub fn gather_input(
         keys.just_pressed(KeyCode::KeyR) && route.claim(RKeyUse::LockOn, "combat::gather_input");
     *intent = CombatIntent {
         light: light_pressed,
+        heavy_pressed,
         heavy_down: keys.pressed(KeyCode::KeyC),
         dodge: keys.just_pressed(KeyCode::Space),
         block: mouse.pressed(MouseButton::Right),
@@ -1778,7 +1915,7 @@ pub fn player_combat(
         }
     }
 
-    // Start actions from intent (priority: dodge > parry > block > heavy > light).
+    // Start actions from intent (priority: dodge > parry > block > combo > charge).
     if intent.dodge {
         if pc.start_dodge(&mut stam) {
             // Only a roll that actually paid its stamina announces itself — a
@@ -1801,26 +1938,80 @@ pub fn player_combat(
         pc.timer = 0.0;
     } else if pc.state == CombatState::Block && !intent.block {
         pc.state = CombatState::Idle; // release hold-to-block
-    } else if intent.heavy_down {
-        // Hold to charge (§2.4); the commit happens on release below.
-        if pc.can_act(&stam) {
-            pc.charge += dt;
-        }
-    } else if pc.charge > 0.0 {
-        // Heavy button released: charged if held past the threshold, else heavy.
-        if pc.charge >= CHARGE_HOLD {
-            if pc.start_charged(&mut stam) {
-                sfx.write(SfxEvent::SwingHeavy { position: ptf.translation });
-            }
+    } else {
+        // --- combo chain resolution (§2.4 extended) --------------------------
+        // A chain continuation (next light, or the heavy finisher) fires either
+        // the frame its cancel window opens, or the moment the player is idle
+        // again while the chain window is still open. Otherwise the press parks
+        // in the input buffer and waits — it is never dropped.
+        let chain_ready =
+            pc.combo > 0 && (pc.in_cancel_window() || pc.state == CombatState::Idle);
+
+        // Exactly one combo action may fire per frame. A fresh press wins over a
+        // buffered one (it is newer); either way a mash can never skip a step.
+        let want = if intent.heavy_pressed && pc.combo > 0 {
+            BufferedAttack::Heavy
+        } else if intent.light {
+            BufferedAttack::Light
         } else {
-            if pc.start_heavy(&mut stam) {
+            pc.buffer
+        };
+
+        match want {
+            BufferedAttack::Light => {
+                if chain_ready {
+                    if pc.start_next_light(&mut stam) {
+                        sfx.write(SfxEvent::SwingLight { position: ptf.translation });
+                        pc.buffer = BufferedAttack::None;
+                        pc.buffer_time = 0.0;
+                    }
+                } else if pc.can_act(&stam) && pc.combo_cd <= 0.0 {
+                    // No live chain to continue — start a fresh one.
+                    if pc.start_light(&mut stam) {
+                        sfx.write(SfxEvent::SwingLight { position: ptf.translation });
+                        pc.buffer = BufferedAttack::None;
+                        pc.buffer_time = 0.0;
+                    }
+                } else if pc.buffer == BufferedAttack::None {
+                    // Not actionable yet — park it for `combo_input_buffer` seconds.
+                    pc.buffer = BufferedAttack::Light;
+                    pc.buffer_time = COMBO_INPUT_BUFFER;
+                }
+            }
+            BufferedAttack::Heavy => {
+                if chain_ready {
+                    if pc.start_finisher(&mut stam) {
+                        sfx.write(SfxEvent::SwingHeavy { position: ptf.translation });
+                        pc.buffer = BufferedAttack::None;
+                        pc.buffer_time = 0.0;
+                    }
+                } else if pc.combo > 0 && pc.buffer == BufferedAttack::None {
+                    // Finisher pressed mid-windup — park it until the cancel
+                    // window opens. (From a standing start, heavy belongs to the
+                    // hold-to-charge channel below, so nothing is buffered there.)
+                    pc.buffer = BufferedAttack::Heavy;
+                    pc.buffer_time = COMBO_INPUT_BUFFER;
+                }
+            }
+            BufferedAttack::None => {}
+        }
+
+        // Hold to charge (§2.4); the commit happens on release below. Mid-chain
+        // this never accumulates — `can_act` is false while a swing is live.
+        if intent.heavy_down {
+            if pc.can_act(&stam) {
+                pc.charge += dt;
+            }
+        } else if pc.charge > 0.0 {
+            // Heavy button released: charged if held past the threshold, else heavy.
+            if pc.charge >= CHARGE_HOLD {
+                if pc.start_charged(&mut stam) {
+                    sfx.write(SfxEvent::SwingHeavy { position: ptf.translation });
+                }
+            } else if pc.start_heavy(&mut stam) {
                 sfx.write(SfxEvent::SwingHeavy { position: ptf.translation });
             }
-        }
-        pc.charge = 0.0;
-    } else if intent.light {
-        if pc.start_light(&mut stam) {
-            sfx.write(SfxEvent::SwingLight { position: ptf.translation });
+            pc.charge = 0.0;
         }
     }
 
@@ -1870,6 +2061,7 @@ pub fn player_combat(
                 _ if riposte => ImpactWeight::Critical, // a riposte is the loudest hit there is
                 _ if broke => ImpactWeight::Critical, // a poise break outranks the swing
                 CombatState::Charged => ImpactWeight::Critical,
+                CombatState::Finisher => ImpactWeight::Critical,
                 CombatState::Heavy => ImpactWeight::Heavy,
                 _ => ImpactWeight::Light,
             };
@@ -2032,7 +2224,10 @@ pub struct EvadeSlot {
 /// from a player just standing there reads as jitter, not as a read.
 #[inline]
 pub fn player_is_swinging(s: CombatState) -> bool {
-    matches!(s, CombatState::Light | CombatState::Heavy | CombatState::Charged)
+    matches!(
+        s,
+        CombatState::Light | CombatState::Heavy | CombatState::Charged | CombatState::Finisher
+    )
 }
 
 /// Should this husk start an evade hop *this frame*?
@@ -2121,7 +2316,11 @@ pub fn husk_ai(
     let player_noisy = kin.speed >= HUSK_SPRINT_NOISE
         || matches!(
             pc.state,
-            CombatState::Light | CombatState::Heavy | CombatState::Charged | CombatState::Dodge
+            CombatState::Light
+                | CombatState::Heavy
+                | CombatState::Charged
+                | CombatState::Finisher
+                | CombatState::Dodge
         );
 
     // Squad snapshot (immutable pre-pass): who is where, and who currently
@@ -4333,12 +4532,109 @@ mod tests {
         pc.start_light(&mut s); // combo 1
         pc.timer = 0.15;
         assert_eq!(pc.active_hit().unwrap().0, 20.0);
-        // Continue the combo within the window.
-        pc.state = CombatState::Idle;
-        pc.start_light(&mut s); // combo 2 → +10%
+        // Continue the chain — the cancel window has opened, so the next press
+        // advances to combo 2 (the fresh-start path would reset to 1).
+        pc.timer = LIGHT_TIME * COMBO_CANCEL_FROM; // past the cancel point
+        assert!(pc.start_next_light(&mut s));
         pc.timer = 0.15;
         assert!((pc.active_hit().unwrap().0 - 22.0).abs() < 1e-4);
     }
+
+    // ---- combo chain state machine (§2.4 extended) -------------------------
+
+    #[test]
+    fn next_light_advances_and_wraps_the_chain() {
+        let mut s = Stamina::full();
+        let mut pc = PlayerCombat::default();
+        pc.start_light(&mut s); // 1
+        pc.timer = LIGHT_TIME * COMBO_CANCEL_FROM;
+        assert!(pc.start_next_light(&mut s));
+        assert_eq!(pc.combo, 2);
+        pc.timer = LIGHT_TIME * COMBO_CANCEL_FROM;
+        assert!(pc.start_next_light(&mut s));
+        assert_eq!(pc.combo, 3);
+        pc.timer = LIGHT_TIME * COMBO_CANCEL_FROM;
+        assert!(pc.start_next_light(&mut s));
+        assert_eq!(pc.combo, 1); // wraps
+    }
+
+    #[test]
+    fn cancel_window_opens_halfway_through_a_light() {
+        let mut s = Stamina::full();
+        let mut pc = PlayerCombat::default();
+        pc.start_light(&mut s);
+        pc.timer = LIGHT_TIME * COMBO_CANCEL_FROM - 0.01;
+        assert!(!pc.in_cancel_window());
+        pc.timer = LIGHT_TIME * COMBO_CANCEL_FROM + 0.01;
+        assert!(pc.in_cancel_window());
+    }
+
+    #[test]
+    fn finisher_requires_a_live_chain() {
+        let mut s = Stamina::full();
+        let mut pc = PlayerCombat::default();
+        // From Idle there is no chain to finish — the finisher is refused.
+        assert!(!pc.start_finisher(&mut s));
+        assert_eq!(pc.state, CombatState::Idle);
+        // Open a chain, then the finisher is available.
+        assert!(pc.start_light(&mut s));
+        assert!(pc.start_finisher(&mut s));
+        assert_eq!(pc.state, CombatState::Finisher);
+        assert_eq!(pc.combo, 4);
+    }
+
+    #[test]
+    fn finisher_is_heavier_than_a_standalone_heavy() {
+        assert!(FINISHER_DAMAGE > HEAVY_DAMAGE); // 60 > 45 — the payoff of a combo
+        assert!(FINISHER_POISE > HEAVY_POISE); // 55 > 40
+    }
+
+    #[test]
+    fn chain_resets_and_opens_cooldown_when_window_missed() {
+        let mut s = Stamina::full();
+        let mut pc = PlayerCombat::default();
+        assert!(pc.start_light(&mut s));
+        assert_eq!(pc.combo, 1);
+        // The reset window elapses with no continuation — the chain must reset
+        // and open a cooldown so the whiff has a readable end.
+        pc.state = CombatState::Idle;
+        pc.tick(COMBO_RESET + 0.01);
+        assert_eq!(pc.combo, 0);
+        assert!(pc.combo_cd > 0.0);
+    }
+
+    #[test]
+    fn finisher_opens_cooldown_on_completion() {
+        let mut s = Stamina::full();
+        let mut pc = PlayerCombat::default();
+        pc.start_light(&mut s);
+        assert!(pc.start_finisher(&mut s));
+        // Run the finisher to completion (action_len = FINISHER_TIME).
+        pc.tick(FINISHER_TIME + 0.01);
+        assert_eq!(pc.state, CombatState::Idle);
+        assert_eq!(pc.combo, 0);
+        assert!(pc.combo_cd > 0.0);
+    }
+
+    #[test]
+    fn fresh_light_refused_during_combo_cooldown() {
+        let mut s = Stamina::full();
+        let mut pc = PlayerCombat::default();
+        pc.combo_cd = 0.2; // cooldown open
+        assert!(!pc.start_light(&mut s));
+        assert_eq!(pc.state, CombatState::Idle);
+    }
+
+    #[test]
+    fn buffered_attack_expires_after_input_buffer() {
+        let mut pc = PlayerCombat::default();
+        pc.buffer = BufferedAttack::Light;
+        pc.buffer_time = COMBO_INPUT_BUFFER;
+        pc.tick(COMBO_INPUT_BUFFER + 0.01);
+        assert_eq!(pc.buffer, BufferedAttack::None);
+        assert_eq!(pc.buffer_time, 0.0);
+    }
+
 
     #[test]
     fn player_dies_when_health_reaches_zero() {

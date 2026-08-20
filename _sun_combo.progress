@@ -1,0 +1,6 @@
+# Sun combo-system lane progress
+- [2026-08-20] chunk1 DONE: CombatConfig combo+finisher knobs (combo_input_buffer, combo_cancel_from, combo_cd, finisher_damage/poise/time/hyper/active) + const aliases in combat.rs
+- [2026-08-20] chunk2 DONE: CombatState::Finisher + BufferedAttack enum + PlayerCombat fields (buffer/buffer_time/combo_cd) + rewritten start_light/start_next_light/enter_light/start_finisher/start_heavy/start_charged/start_dodge + active_hit/hyper_armor/action_len/tick (combo_cd on finisher+missed window, buffer expiry) in combat.rs
+- [2026-08-20] chunk3 DONE: wired buffer+combo into player_combat (chain_ready + one-action-per-frame match) + CombatIntent.heavy_pressed + gather_input + Finisher weight=Critical + player_is_swinging + husk noise matches in combat.rs
+- [2026-08-20] chunk4 DONE: anim.rs — player_beat Finisher arm (combo=4), swing_pose combo 4 => FINISHER_COCK/FOLLOW, new FINISHER_COCK/FOLLOW keys
+- [2026-08-20] chunk5 DONE: unit tests — fixed combo_ramps test to start_next_light; added next_light wraps, cancel window, finisher-requires-chain, finisher>heavy, chain reset+cooldown, finisher cooldown, fresh-light-during-cd, buffer expiry
