@@ -131,9 +131,13 @@ struct KindEntry {
     side: Option<String>,
     #[serde(default)]
     bottom: Option<String>,
-    /// `"cross"` marks a cross-quad billboard kind (the seven vegetation
-    /// sprites); absent (or anything else) means a cube kind. Read only by
-    /// [`TileSet::cross`] / the foliage scatter.
+    /// How this kind is built in the world: absent means a cube (the default
+    /// every material had before shapes existed), otherwise one of
+    /// `stair` · `slab` · `fence` · `pane` · `cross` — see [`TileSet::modes`].
+    ///
+    /// An unknown string is a hard error at load, not a silent fallback to cube:
+    /// a typo'd `"stiar"` that quietly renders a box is exactly the class of bug
+    /// that reaches a screenshot review and gets blamed on the modeller.
     #[serde(default)]
     mode: Option<String>,
 }
@@ -226,9 +230,28 @@ pub struct TileSet {
     /// vegetation sprites live here; the foliage scatter reads them so the art
     /// stays editable in `atlas.json` with no Rust change.
     pub cross: BTreeMap<String, String>,
+    /// Every kind that declares a `"mode"`, `kind` → the mode string, validated
+    /// against [`SHAPE_MODES`] at load. This is the manifest half of the shaped
+    /// palette: `client/src/block_shapes.rs` turns the string into geometry and
+    /// `sim`'s `BlockId::is_shaped` is the data half. Cube kinds are absent
+    /// rather than present-as-`"cube"`, so "has an entry" == "is not a cube".
+    ///
+    /// The `cross` map above is a strict subset of this one, kept separate
+    /// because the foliage scatter wants the *file* (it builds a billboard from
+    /// the sprite directly) while the mesher wants only the *shape* (it takes its
+    /// texture from the ordinary per-face material table).
+    pub modes: BTreeMap<String, String>,
     pub mode: AtlasMode,
     pub dir: PathBuf,
 }
+
+/// The render modes a `kinds` entry may declare. Anything else fails the load.
+///
+/// `cross` is listed here as well as in [`TileSet::cross`]: a cross kind placed
+/// in the voxel grid is meshed by `block_shapes` like any other shape, while the
+/// same mode on a vegetation sprite is what the ambient scatter looks for. One
+/// word, two consumers, and this is the list both of them agree on.
+pub const SHAPE_MODES: &[&str] = &["stair", "slab", "fence", "pane", "cross"];
 
 impl TileSet {
     /// The raw tile one face of `kind` wears, or `None` if the manifest has no
@@ -256,6 +279,15 @@ impl TileSet {
     /// manifest has none (or predates the render mode).
     pub fn cross_kinds(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
         self.cross.iter().map(|(k, f)| (k.as_str(), f.as_str()))
+    }
+
+    /// The render mode `kind` declares, or `None` for a cube.
+    ///
+    /// The whole shaped-palette lookup, one line, so the manifest stays the only
+    /// place a shape is decided — adding a `slab_limestone` is an `atlas.json`
+    /// edit plus a `BlockId`, never a change to the mesher.
+    pub fn shape_mode(&self, kind: &str) -> Option<&str> {
+        self.modes.get(kind).map(String::as_str)
     }
 }
 
@@ -397,18 +429,34 @@ pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
         );
     }
 
-    // ---- resolve cross-quad billboard kinds ---------------------------------
+    // ---- resolve render modes (the shaped palette) --------------------------
+    //
+    // Validated here rather than at the point of use, because this is the only
+    // place that has the manifest in hand and can name the offending kind. A
+    // shape the renderer does not know is a load error: rendering it as a cube
+    // would look like the shape feature silently not working.
+    let mut modes = BTreeMap::new();
     let mut cross = BTreeMap::new();
     for (kind, spec) in &manifest.kinds {
-        if spec.mode.as_deref() != Some("cross") {
+        let Some(m) = spec.mode.as_deref() else {
             continue;
-        }
-        let Some(&i) = spec.all.as_deref().and_then(|n| index_of.get(n)) else {
-            return Err(format!(
-                "kind {kind:?} declares \"mode\": \"cross\" but has no `all` tile"
-            ));
         };
-        cross.insert(kind.clone(), files[i].clone());
+        if !SHAPE_MODES.contains(&m) {
+            return Err(format!(
+                "kind {kind:?} declares unknown \"mode\": {m:?} — expected one of {SHAPE_MODES:?}"
+            ));
+        }
+        modes.insert(kind.clone(), m.to_string());
+        if m == "cross" {
+            // Only the billboard scatter needs the file; a cross kind placed in
+            // the grid is textured off the ordinary material table like the rest.
+            let Some(&i) = spec.all.as_deref().and_then(|n| index_of.get(n)) else {
+                return Err(format!(
+                    "kind {kind:?} declares \"mode\": \"cross\" but has no `all` tile"
+                ));
+            };
+            cross.insert(kind.clone(), files[i].clone());
+        }
     }
 
     Ok(Some(TileSet {
@@ -417,6 +465,7 @@ pub fn load_tiles(dir: Option<&Path>) -> Result<Option<TileSet>, String> {
         files,
         kinds,
         cross,
+        modes,
         mode,
         dir,
     }))
@@ -440,6 +489,9 @@ pub fn load(dir: Option<&Path>) -> Result<Option<BlockAtlas>, String> {
         // material path in `voxel.rs` cares what they were called.
         files: _,
         cross: _,
+        // The packed atlas is the far-LOD path: it draws every block as a cube
+        // by construction, so a shape mode has nothing to say to it.
+        modes: _,
     } = set;
 
     // `Detail` normalises a *copy*: `load_tiles` hands back the artist's albedo

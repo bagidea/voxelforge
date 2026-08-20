@@ -77,8 +77,14 @@ use crate::block_atlas::{self, Face, TileSet};
 pub const LAMP: BlockId = BlockId::LAMP;
 
 /// Number of block types the texture tables cover — the 16 sim blocks, [`LAMP`],
-/// [`BlockId::GLASS`], [`BlockId::WATER`] and [`BlockId::METAL`].
-const N_TILES: usize = 20;
+/// [`BlockId::GLASS`], [`BlockId::WATER`], [`BlockId::METAL`] and the five
+/// shaped blocks (ids 20-24, see `client/src/block_shapes.rs`).
+///
+/// A shaped block needs its whole material row exactly like a cube does: it is
+/// meshed separately but textured through the SAME `build_block_materials`
+/// table, so leaving this at 20 would index a stair's material out of bounds and
+/// fall back to stone.
+const N_TILES: usize = 25;
 
 /// Edge length of a **procedurally baked** tile, and nothing else.
 ///
@@ -164,6 +170,19 @@ pub fn cross_vegetation() -> Vec<(String, String)> {
     tile_set()
         .map(|s| s.cross_kinds().map(|(k, f)| (k.to_string(), f.to_string())).collect())
         .unwrap_or_default()
+}
+
+/// The render mode this block's `kinds` entry declares, or `None` for a cube.
+///
+/// The manifest half of the shaped palette: `atlas.json` says a `stair_wood` is
+/// `"mode": "stair"` and `block_shapes` turns that word into geometry, so a new
+/// shaped material is an art edit plus a `BlockId` rather than a mesher change.
+///
+/// `None` also covers "no art set loaded at all" (`VOXELFORGE_ATLAS_MODE=off`);
+/// `block_shapes::shape_of` falls back to the sim's own `is_shaped` there, so
+/// the procedural path still builds stairs rather than boxes.
+pub fn block_shape_mode(id: BlockId) -> Option<&'static str> {
+    tile_set()?.shape_mode(atlas_kind(id))
 }
 
 /// The manifest `kinds` entry a block type wears — its own sim name.
@@ -319,6 +338,29 @@ fn has_per_face_art(id: BlockId) -> bool {
 /// uniform gradient across a long merged wall.
 const AO_SHADE: [f32; 4] = [0.28, 0.52, 0.76, 1.0];
 
+/// How far up a face looks for something hanging over it, in blocks.
+///
+/// The corner term above only ever sees the ONE ring of cells touching the face,
+/// so a floor under an eave three blocks up is lit exactly like open ground —
+/// which is the flat-paper read in the outdoor plates. This is the second term:
+/// straight up from the air in front of the face, nearest hit wins.
+const CONTACT_RANGE: i32 = 4;
+
+/// Darkening at a hard contact (a block sitting directly over the face), fading
+/// linearly to nothing at [`CONTACT_RANGE`].
+///
+/// Deliberately smaller than one AO step: it stacks ON TOP of the corner term,
+/// and an eave that also forms a corner must not slam the vertex to black.
+const CONTACT_MAX: f32 = 0.34;
+
+/// Quantisation of the contact term, in steps, before it enters the merge key.
+///
+/// The value is a per-corner average of four columns, so it is naturally
+/// continuous — and a continuous merge key would shatter every merged quad.
+/// Twelve steps keeps the gradient smooth to the eye while still letting a run
+/// of equally-shaded cells merge.
+const CONTACT_STEPS: u8 = 12;
+
 // ---------------------------------------------------------------------------
 // per-block surface response
 // ---------------------------------------------------------------------------
@@ -335,6 +377,19 @@ pub struct BlockSurface {
     pub alpha: f32,
     /// Whether this block draws in the transparent pass.
     pub alpha_blend: bool,
+    /// Cut the texture's alpha out instead of blending it — the plant answer.
+    ///
+    /// A cross-quad leaf sprite is mostly empty texels, and blending them costs
+    /// a sorted transparent pass AND makes two plants overlap wrong. A masked
+    /// cutout is opaque-pass, sorts for free, and casts a leaf-shaped shadow
+    /// instead of a square one. Wins over [`Self::alpha_blend`] when both are set.
+    pub alpha_mask: bool,
+    /// Draw the back of the mesh too.
+    ///
+    /// Chunk meshes are closed shells, so this is `false` for every cube. A
+    /// crossed plant quad is the exception it exists for: a single-sided leaf is
+    /// invisible from one half of the compass.
+    pub double_sided: bool,
 }
 
 impl Default for BlockSurface {
@@ -347,6 +402,8 @@ impl Default for BlockSurface {
             emissive: LinearRgba::BLACK,
             alpha: 1.0,
             alpha_blend: false,
+            alpha_mask: false,
+            double_sided: false,
         }
     }
 }
@@ -540,6 +597,51 @@ fn flat_material() -> bool {
 /// noise.
 fn flat_instance() -> bool {
     matches!(std::env::var("VOXELFORGE_FLAT_INSTANCE"), Ok(v) if !v.is_empty() && v != "0")
+}
+
+/// `VOXELFORGE_AO` — the A/B lever over every mesher-side occlusion term.
+///
+/// * unset ⇒ `1.0`, the shipped look.
+/// * `off` / `0` ⇒ `0.0`: every vertex fully lit, which is exactly the frame
+///   this pass is measured against — flat-lit blocks, no corner, no eave.
+/// * any other non-negative number scales the darkening, so a diagnostic plate
+///   can be shot at `2` out of the SAME binary when the question is "does the
+///   attribute reach the pixels at all" rather than "is it strong enough".
+///
+/// One `OnceLock`, because this is read once per emitted vertex.
+fn ao_strength() -> f32 {
+    static AO: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *AO.get_or_init(|| {
+        let raw = std::env::var("VOXELFORGE_AO").unwrap_or_default();
+        let t = raw.trim();
+        let v = if t.is_empty() {
+            1.0
+        } else if t.eq_ignore_ascii_case("off") || t.eq_ignore_ascii_case("false") {
+            0.0
+        } else {
+            // A typo must not silently ship an unlit world, so anything
+            // unparseable or negative falls back to the shipped strength.
+            match t.parse::<f32>() {
+                Ok(v) if v.is_finite() && v >= 0.0 => v.min(4.0),
+                _ => 1.0,
+            }
+        };
+        println!("AO strength {v} (VOXELFORGE_AO={t:?}) — corner + contact, per vertex");
+        v
+    })
+}
+
+/// `VOXELFORGE_AO_STATS=1` — print what the mesher actually emitted.
+///
+/// The whole question this pass opened with was un-answerable from a frame:
+/// AO could be missing because the mesher never darkens anything, or because
+/// the attribute never reaches the shader. One line per batch of chunks
+/// separates those two worlds without a second build.
+fn ao_stats_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(
+        || matches!(std::env::var("VOXELFORGE_AO_STATS"), Ok(v) if !v.is_empty() && v != "0"),
+    )
 }
 
 /// `VOXELFORGE_GLASS_OPAQUE=1` — render [`BlockId::GLASS`] the way it rendered
@@ -844,14 +946,28 @@ pub fn block_material(id: BlockId, texture: Handle<Image>, maps: BlockMaps) -> S
         metallic: maps.mr_source.metallic_factor(id),
         reflectance: s.reflectance,
         emissive: s.emissive,
-        alpha_mode: if s.alpha_blend {
+        alpha_mode: if s.alpha_mask {
+            // 0.5 rather than a hair above zero: the vegetation sprites are
+            // authored with soft edges, and cutting at the midpoint keeps a leaf
+            // silhouette crisp instead of fringed with half-transparent dust.
+            AlphaMode::Mask(0.5)
+        } else if s.alpha_blend {
             AlphaMode::Blend
         } else {
             AlphaMode::Opaque
         },
         // Chunk meshes are closed shells; drawing the inside of them is wasted
-        // fill and, for the blended panes, a double-blend.
-        double_sided: false,
+        // fill and, for the blended panes, a double-blend. A crossed plant quad
+        // is the one surface in the world that is genuinely two-sided.
+        double_sided: s.double_sided,
+        // A double-sided mesh whose back faces are still culled is a mesh that
+        // is double-sided in name only — the pipeline reads `cull_mode`, and
+        // Bevy does NOT derive one from the flag above.
+        cull_mode: if s.double_sided {
+            None
+        } else {
+            Some(bevy::render::render_resource::Face::Back)
+        },
         ..default()
     }
 }
@@ -1032,10 +1148,17 @@ const WATER_TOP_OFFSET: u8 = 2;
 /// as `ao`: a surface cell and a submerged cell of one column must never merge
 /// (their side quads end at different heights), and comparing the offset here
 /// is what keeps them apart.
+///
+/// `contact` is the second occlusion term, in [`CONTACT_STEPS`] steps per
+/// corner: how much of the sky straight above this corner is roofed over within
+/// [`CONTACT_RANGE`] blocks. It rides the same equality trick as `ao` for the
+/// same reason — merged away, an eave's shadow would spread evenly over the
+/// whole floor and stop being an eave's shadow.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct MaskFace {
     id: i32,
     ao: [u8; 4],
+    contact: [u8; 4],
     top: u8,
 }
 
@@ -1049,6 +1172,20 @@ fn ao_corner(side1: bool, side2: bool, corner: bool) -> u8 {
     } else {
         3 - (side1 as u8 + side2 as u8 + corner as u8)
     }
+}
+
+/// How roofed-over one column of air is: 1.0 for a block resting directly on it,
+/// falling linearly to 0.0 at [`CONTACT_RANGE`], and 0.0 for open sky.
+///
+/// Nearest hit wins, so a low eave is not diluted by the empty sky above it.
+#[inline]
+fn contact_column(chunk: &ChunkData, x: i32, y: i32, z: i32) -> f32 {
+    for k in 1..=CONTACT_RANGE {
+        if hides(chunk.get(x, y + k, z)) {
+            return (CONTACT_RANGE + 1 - k) as f32 / CONTACT_RANGE as f32;
+        }
+    }
+    0.0
 }
 
 /// Vertex buffers for one draw call.
@@ -1133,6 +1270,18 @@ pub fn greedy_mesh_chunk_split(chunk: &ChunkData) -> Vec<(FaceKey, Mesh, usize)>
 /// The returned key is a [`material_index`] on the split path and always `0` on
 /// the atlas path.
 fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
+    use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+    /// Cumulative mesher-side occlusion tally behind [`ao_stats_enabled`]. The
+    /// point is to be able to tell "the mesher emitted no dark vertices" from
+    /// "the dark vertices never reached the shader" out of one binary — the two
+    /// look identical in a frame and want opposite fixes.
+    static AO_VERTS: AtomicU64 = AtomicU64::new(0);
+    static AO_DARK: AtomicU64 = AtomicU64::new(0);
+    static AO_MIN: AtomicU32 = AtomicU32::new(u32::MAX);
+    static AO_CHUNKS: AtomicU64 = AtomicU64::new(0);
+
+    let ao_scale = ao_strength();
+    let stats = ao_stats_enabled();
     let dims = [CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE];
     // Indexed by material slot so the bucket lookup is O(1) inside the hot loop.
     let mut buckets: Vec<Option<Buffers>> = (0..256 * N_FACES).map(|_| None).collect();
@@ -1228,6 +1377,51 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                             ao_corner(solid(1, 0), solid(0, 1), solid(1, 1)),
                             ao_corner(solid(-1, 0), solid(0, 1), solid(-1, 1)),
                         ];
+                        // The eave term. Sampled from the SAME air layer the
+                        // corner term reads, one column of sky per cell, and
+                        // averaged per corner over the four columns touching it
+                        // — that averaging is what makes it a soft gradient
+                        // across a floor instead of a block-shaped stamp.
+                        //
+                        // A down-facing face is skipped: the column straight up
+                        // from the air beneath it starts with the face's OWN
+                        // block, so every underside in the world would come back
+                        // fully roofed and the term would carry no information.
+                        // Undersides already read dark from the corner term and
+                        // from having no sun on them.
+                        // Computed even when the lever is OFF, and that is
+                        // deliberate: `contact` is part of the merge key, so
+                        // skipping it under `AO=off` would hand the "before"
+                        // plate a DIFFERENT set of quads and a faster mesher,
+                        // and a capture that fires 3.2 s after launch can
+                        // photograph a different set of loaded chunks. Paying
+                        // the cost on both sides makes the pair differ in
+                        // vertex colour and nothing else.
+                        let contact = if !(d == 1 && !show_a) {
+                            let col = |du: i32, dv: i32| -> f32 {
+                                let mut p = [0i32; 3];
+                                p[d] = air_d;
+                                p[u] = i + du;
+                                p[v] = j + dv;
+                                contact_column(chunk, p[0], p[1], p[2])
+                            };
+                            let (nn, zn, pn) = (col(-1, -1), col(0, -1), col(1, -1));
+                            let (nz, zz, pz) = (col(-1, 0), col(0, 0), col(1, 0));
+                            let (np, zp, pp) = (col(-1, 1), col(0, 1), col(1, 1));
+                            let q = |a: f32, b: f32, c: f32, e: f32| -> u8 {
+                                let m = (a + b + c + e) * 0.25 * CONTACT_STEPS as f32;
+                                m.round().clamp(0.0, CONTACT_STEPS as f32) as u8
+                            };
+                            // Same corner order as `ao` above: (0,0) (1,0) (1,1) (0,1).
+                            [
+                                q(nn, zn, nz, zz),
+                                q(zn, pn, zz, pz),
+                                q(zz, pz, zp, pp),
+                                q(nz, zz, np, zp),
+                            ]
+                        } else {
+                            [0; 4]
+                        };
                         // A liquid's face knows whether it belongs to a surface
                         // cell: submerged cells (water directly above) carry 0
                         // so their sides run full height and join the column
@@ -1243,7 +1437,12 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                         } else {
                             0
                         };
-                        MaskFace { id, ao, top }
+                        MaskFace {
+                            id,
+                            ao,
+                            contact,
+                            top,
+                        }
                     };
                     n += 1;
                 }
@@ -1427,9 +1626,25 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                         } else {
                             (0.0, 0.0, 0.0, 0.0)
                         };
-                        for a in c.ao {
-                            let ao = AO_SHADE[a as usize];
+                        for (k, a) in c.ao.into_iter().enumerate() {
+                            // Corner term and eave term compose as one darkening
+                            // amount, and the lever scales that amount — so
+                            // `VOXELFORGE_AO=off` is a genuinely flat-lit frame
+                            // (every vertex 1.0) rather than a weaker version of
+                            // this one, and `=2` is the same frame with the
+                            // darkening doubled. One binary, three plates.
+                            let eave =
+                                c.contact[k] as f32 / CONTACT_STEPS as f32 * CONTACT_MAX;
+                            let dark = ((1.0 - AO_SHADE[a as usize]) + eave) * ao_scale;
+                            let ao = (1.0 - dark).clamp(0.0, 1.0);
                             let bright = (ao + mao).clamp(0.0, 1.0);
+                            if stats {
+                                AO_VERTS.fetch_add(1, Ordering::Relaxed);
+                                if ao < 0.995 {
+                                    AO_DARK.fetch_add(1, Ordering::Relaxed);
+                                }
+                                AO_MIN.fetch_min((ao * 1000.0) as u32, Ordering::Relaxed);
+                            }
                             buf.colors.push([
                                 (bright + nr).clamp(0.0, 1.0),
                                 (bright + ng).clamp(0.0, 1.0),
@@ -1442,7 +1657,17 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                         // corners with the widest occlusion gap. Splitting the
                         // other way makes a shaded corner leak a hard triangular
                         // seam across the face — the classic voxel-AO artefact.
-                        let flip = c.ao[0] as u16 + c.ao[2] as u16 > c.ao[1] as u16 + c.ao[3] as u16;
+                        //
+                        // Read off the COMBINED shade, not the corner level
+                        // alone: a quad whose asymmetry comes from the eave term
+                        // wants the same treatment, and with `AO_SHADE` evenly
+                        // spaced this is bit-identical to the old comparison
+                        // wherever the eave term is zero.
+                        let lum = |k: usize| -> f32 {
+                            AO_SHADE[c.ao[k] as usize]
+                                - c.contact[k] as f32 / CONTACT_STEPS as f32 * CONTACT_MAX
+                        };
+                        let flip = lum(0) + lum(2) > lum(1) + lum(3);
                         let tris: [u32; 6] = match (front, flip) {
                             (true, false) => [0, 1, 2, 0, 2, 3],
                             (true, true) => [0, 1, 3, 1, 2, 3],
@@ -1466,6 +1691,22 @@ fn sweep(chunk: &ChunkData, split: bool) -> Vec<(usize, Buffers)> {
                     }
                 }
             }
+        }
+    }
+
+    if stats {
+        let n = AO_CHUNKS.fetch_add(1, Ordering::Relaxed) + 1;
+        // Every 32 chunks, not every chunk: enough to read the trend in a
+        // 4-second capture run without the log becoming the bottleneck.
+        if n % 32 == 0 {
+            let verts = AO_VERTS.load(Ordering::Relaxed).max(1);
+            let dark = AO_DARK.load(Ordering::Relaxed);
+            let min = AO_MIN.load(Ordering::Relaxed);
+            println!(
+                "AO_STATS chunks={n} verts={verts} dark={:.1}% min_shade={:.3} scale={ao_scale}",
+                100.0 * dark as f64 / verts as f64,
+                min as f32 / 1000.0,
+            );
         }
     }
 
@@ -2241,13 +2482,111 @@ mod tests {
             shades.iter().any(|s| (*s - 1.0).abs() < 1e-6),
             "faces facing away from the wall must stay fully lit"
         );
-        // Every emitted shade has to come from the table, not from an average.
+        // Every emitted shade has to come off the lattice, not out of an
+        // average: one of the four corner levels, minus a whole number of eave
+        // steps. Built from the live constants rather than pinned literals, so
+        // a retune of either table moves the test with it.
+        let lattice: Vec<f32> = AO_SHADE
+            .iter()
+            .flat_map(|a| {
+                (0..=CONTACT_STEPS)
+                    .map(move |s| a - s as f32 / CONTACT_STEPS as f32 * CONTACT_MAX)
+            })
+            .collect();
         for s in shades {
             assert!(
-                AO_SHADE.iter().any(|a| (a - s).abs() < 1e-6),
-                "shade {s} is not one of the four AO levels"
+                lattice.iter().any(|a| (a - s).abs() < 1e-6),
+                "shade {s} is neither an AO level nor a level minus whole eave steps"
             );
         }
+    }
+
+    /// The eave. A roof three blocks over the pad touches nothing the corner
+    /// term can see — every cell of that floor has open air on all four sides —
+    /// so before the contact term this floor rendered exactly as bright as open
+    /// ground, which is the flat-paper read the outdoor plates were shot on.
+    #[test]
+    fn a_roof_overhead_darkens_the_floor_under_it() {
+        let mut c = pad(false);
+        for z in 4..8 {
+            for x in 4..8 {
+                c.set(x, 7, z, BlockId::STONE);
+            }
+        }
+        let roofed = colors(&greedy_mesh_chunk(&c).0)
+            .iter()
+            .map(|c| c[0])
+            .fold(f32::INFINITY, f32::min);
+        let open = colors(&greedy_mesh_chunk(&pad(false)).0)
+            .iter()
+            .map(|c| c[0])
+            .fold(f32::INFINITY, f32::min);
+        assert_eq!(open, 1.0, "the bare pad is the fully-lit control");
+        assert!(
+            roofed < 0.95,
+            "a roof {} blocks up must darken the floor under it; min shade was {roofed}",
+            3
+        );
+    }
+
+    /// The eave term has to FADE, or it is a stamp rather than a shadow: the
+    /// same roof further up darkens less, and past [`CONTACT_RANGE`] not at all.
+    #[test]
+    fn the_eave_fades_with_height_and_stops_at_the_range() {
+        let floor_min = |gap: i32| -> f32 {
+            let mut c = pad(false);
+            for z in 4..8 {
+                for x in 4..8 {
+                    c.set(x, 4 + gap, z, BlockId::STONE);
+                }
+            }
+            // A plain min over the mesh is safe even though the roof's own
+            // quads are in it: the roof's underside is a down-facing face and
+            // the contact term skips those by construction, and nothing here
+            // touches anything, so the corner term is flat 3 throughout. The
+            // only thing that can move this number is the eave.
+            colors(&greedy_mesh_chunk(&c).0)
+                .iter()
+                .map(|c| c[0])
+                .fold(f32::INFINITY, f32::min)
+        };
+        let near = floor_min(2);
+        let far = floor_min(4);
+        let beyond = floor_min(CONTACT_RANGE + 2);
+        assert!(near < far, "a lower roof must bite harder ({near} vs {far})");
+        assert!(
+            far < 1.0,
+            "a roof inside the range must still bite ({far})"
+        );
+        assert_eq!(
+            beyond, 1.0,
+            "a roof past CONTACT_RANGE must leave the floor fully lit"
+        );
+    }
+
+    /// The A/B lever. `off` has to produce the genuinely flat frame — every
+    /// vertex 1.0, both terms gone — or the "before" plate is not a before.
+    #[test]
+    fn the_ao_lever_switches_the_whole_darkening_off() {
+        // `ao_strength` is a process-wide OnceLock, so this asserts the arithmetic
+        // the lever drives rather than re-reading the environment mid-process.
+        for level in 0..4u8 {
+            for step in 0..=CONTACT_STEPS {
+                let eave = step as f32 / CONTACT_STEPS as f32 * CONTACT_MAX;
+                let shade = |scale: f32| {
+                    (1.0 - ((1.0 - AO_SHADE[level as usize]) + eave) * scale).clamp(0.0, 1.0)
+                };
+                assert_eq!(shade(0.0), 1.0, "AO=off must leave every vertex fully lit");
+                assert!(
+                    shade(2.0) <= shade(1.0),
+                    "a bigger scale must never brighten a corner"
+                );
+            }
+        }
+        assert_eq!(
+            AO_SHADE[3], 1.0,
+            "level 3 is the open-sky corner and must cost nothing"
+        );
     }
 
     /// AO belongs in the merge key. Without it the wall's occlusion would be

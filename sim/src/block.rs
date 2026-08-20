@@ -44,6 +44,32 @@ impl BlockId {
     /// response is allowed a `metallic > 0`.
     pub const METAL:       Self = Self(19);
 
+    // ---- shaped palette (IDs 20-24) ----
+    //
+    // The first blocks that do NOT fill their cell. Everything above is a cube;
+    // these five wear a `"mode"` in `assets/textures/blocks/atlas.json` and the
+    // client emits their real geometry (`client/src/block_shapes.rs`) instead of
+    // six faces. Data-side that makes them exactly one thing: **not opaque** —
+    // a half-height slab must not cull the face of the block beside it, or the
+    // wall behind a fence post disappears.
+    //
+    // They stay `is_solid()`, so collision keeps treating the cell as full. That
+    // is a deliberate, documented approximation and the honest one to make first:
+    // a stair you can walk up (one cube step) reads right, while a stair you fall
+    // through does not. Per-shape collision hulls are a separate pass.
+    /// Wooden step — a bottom slab plus a back half-block, auto-facing the way
+    /// it is climbed (see `block_shapes::stair_facing`).
+    pub const STAIR_WOOD:  Self = Self(20);
+    /// Stone half-block: the bottom half of the cell.
+    pub const SLAB_STONE:  Self = Self(21);
+    /// Fence post + rails, joined to whatever it stands next to.
+    pub const FENCE_WOOD:  Self = Self(22);
+    /// A thin sheet of glass, joined along whichever axis it continues on.
+    pub const PANE_GLASS:  Self = Self(23);
+    /// Two crossed alpha-masked quads — the placeable, deliberate cousin of the
+    /// ambient scatter in `scene::scatter_foliage`.
+    pub const PLANT_CROSS: Self = Self(24);
+
     /// All placeable (non-air) blocks in palette order — used by the client HUD
     /// cycle and the editor's pick row.
     pub const ALL_PLACEABLE: &[Self] = &[
@@ -66,7 +92,30 @@ impl BlockId {
         Self::GLASS,
         Self::WATER,
         Self::METAL,
+        Self::STAIR_WOOD,
+        Self::SLAB_STONE,
+        Self::FENCE_WOOD,
+        Self::PANE_GLASS,
+        Self::PLANT_CROSS,
     ];
+
+    /// Does this block render as something other than a cube?
+    ///
+    /// The one question the shaped palette adds, and the reason it is here rather
+    /// than in the client: [`BlockId::is_opaque`] has to answer it too, and a
+    /// second list of shaped ids on the client would be a contract that has to
+    /// agree with this one.
+    #[inline]
+    pub fn is_shaped(self) -> bool {
+        matches!(
+            self,
+            Self::STAIR_WOOD
+                | Self::SLAB_STONE
+                | Self::FENCE_WOOD
+                | Self::PANE_GLASS
+                | Self::PLANT_CROSS
+        )
+    }
 
     /// Does this block **occupy** its cell? Everything but air.
     ///
@@ -84,9 +133,18 @@ impl BlockId {
     /// neighbour is opaque, and ambient occlusion is cast by opaque blocks. A
     /// pane of glass is solid to a player and invisible to both — which is why
     /// this is no longer just "not air".
+    ///
+    /// A shaped block answers `false` for a different reason than glass does: not
+    /// because you can see through it, but because it does not *fill* the cell.
+    /// A slab that culled its neighbour's face would punch a hole in the floor
+    /// beside it, and a fence post casting a full cell of AO would darken a whole
+    /// square of ground.
     #[inline]
     pub fn is_opaque(self) -> bool {
-        self.0 != 0 && self.0 != Self::GLASS.0 && self.0 != Self::WATER.0
+        self.0 != 0
+            && self.0 != Self::GLASS.0
+            && self.0 != Self::WATER.0
+            && !self.is_shaped()
     }
 
     /// Is this the liquid? Water is the only one; the question exists apart
@@ -121,6 +179,15 @@ impl BlockId {
             Self::GLASS       => "glass",
             Self::WATER       => "water",
             Self::METAL       => "metal",
+            // The shaped five. These names are also the `kinds` keys the client
+            // atlas looks them up by (`voxel::atlas_kind` is `name()`), so the
+            // manifest entry that gives a stair its `"mode": "stair"` is found
+            // under exactly this string.
+            Self::STAIR_WOOD  => "stair_wood",
+            Self::SLAB_STONE  => "slab_stone",
+            Self::FENCE_WOOD  => "fence_wood",
+            Self::PANE_GLASS  => "pane_glass",
+            Self::PLANT_CROSS => "plant_cross",
             _                 => "unknown",
         }
     }
@@ -175,6 +242,17 @@ impl BlockId {
             // unweathered steel bright enough to take the key.
             Self::WATER       => [38, 92, 118],    // #265c76
             Self::METAL       => [178, 174, 166],  // #b2aea6
+            // The shaped five deliberately REUSE their material's designer hex
+            // rather than inventing one: a wooden stair is wood, seen at a
+            // different angle. Borrowing keeps `docs/block-palette.md` the one
+            // place a colour is decided — a new hex here would be a second
+            // palette nobody signed off. (Only the procedural fallback path,
+            // `VOXELFORGE_ATLAS_MODE=off`, ever paints with these; the shipped
+            // path takes its albedo from the `kinds` entry in atlas.json.)
+            Self::STAIR_WOOD | Self::FENCE_WOOD => Self::WOOD.base_color(),
+            Self::SLAB_STONE  => Self::STONE.base_color(),
+            Self::PANE_GLASS  => Self::GLASS.base_color(),
+            Self::PLANT_CROSS => Self::LEAVES.base_color(),
             _                 => [255, 0, 255], // error magenta
         }
     }
@@ -228,8 +306,15 @@ mod tests {
     /// asks the second, and swapping them gives you either a world you fall
     /// through or a pane you cannot see past. Water joins glass in the
     /// solid-but-see-through pair — a river you stand on and see the bed of.
+    ///
+    /// The shaped five are the *second* reason the two answers differ, and it is
+    /// not transparency: a slab occupies half a cell, so it must not cull the
+    /// face of the block beside it. Which is why this test is written as "every
+    /// solid-but-not-opaque block is one we can name a reason for" rather than
+    /// re-listing the ids — the list is `is_shaped()` plus the two see-through
+    /// blocks, and anything else reaching that state is the bug.
     #[test]
-    fn exactly_glass_and_water_are_solid_but_not_opaque() {
+    fn solid_but_not_opaque_is_exactly_glass_water_and_the_shaped_blocks() {
         assert!(BlockId::GLASS.is_solid());
         assert!(!BlockId::GLASS.is_opaque());
         assert!(BlockId::WATER.is_solid());
@@ -237,10 +322,34 @@ mod tests {
         assert!(!BlockId::AIR.is_solid());
         assert!(!BlockId::AIR.is_opaque());
         for &id in BlockId::ALL_PLACEABLE {
-            if id == BlockId::GLASS || id == BlockId::WATER {
+            let excused = id == BlockId::GLASS || id == BlockId::WATER || id.is_shaped();
+            assert!(id.is_solid(), "{} stopped occupying its cell", id.name());
+            assert_eq!(
+                id.is_opaque(),
+                !excused,
+                "{} changed meaning to the mesher",
+                id.name()
+            );
+        }
+    }
+
+    /// A shaped block still fills its cell for collision. This is the compromise
+    /// the shaped palette shipped with, written down so it is a decision and not
+    /// a bug someone finds later: you stand ON a slab at full block height, and a
+    /// fence is as wide as its cell. Per-shape hulls are a separate pass; the day
+    /// they land, this test is the one that should change.
+    #[test]
+    fn shaped_blocks_are_still_solid_to_collision() {
+        for &id in BlockId::ALL_PLACEABLE {
+            if !id.is_shaped() {
                 continue;
             }
-            assert!(id.is_solid() && id.is_opaque(), "{} changed meaning", id.name());
+            assert!(id.is_solid(), "{} became walk-through", id.name());
+            assert!(!id.is_opaque(), "{} would cull its neighbour", id.name());
+        }
+        // ...and no cube quietly joined them.
+        for &id in &[BlockId::STONE, BlockId::WOOD, BlockId::GLASS, BlockId::WATER] {
+            assert!(!id.is_shaped(), "{} is not a shaped block", id.name());
         }
     }
 
