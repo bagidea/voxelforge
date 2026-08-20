@@ -1,0 +1,44 @@
+diff --git a/client/src/scene.rs b/client/src/scene.rs
+index b712e7d..16057fd 100644
+--- a/client/src/scene.rs
++++ b/client/src/scene.rs
+@@ -417,15 +417,35 @@ fn place_player(
+         fly.vel = Vec3::ZERO;
+     }
+     if let Ok((mut ctf, mut orbit)) = cam_q.single_mut() {
+-        orbit.yaw = camp.yaw;
+-        orbit.pitch = WAKE_PITCH;
+-        orbit.dist = BOOM_DIST;
++        // Don't stomp a look-lane pose. `VOXELFORGE_LOOK_CAM=yaw,pitch,dist`
++        // (main.rs) frames the boom at spawn so a proof shot can be taken through
++        // the REAL gameplay camera; this reset then ran and threw two of its three
++        // numbers away — yaw and pitch went back to the wake pose while `want_dist`
++        // (which this function never touches) survived, so the shot silently
++        // disagreed with the pose it claimed to be. Unset ⇒ the wake pose, byte for
++        // byte what it always was.
++        let (yaw, pitch, dist) = match look_cam_pose() {
++            Some(pose) => pose,
++            None => (camp.yaw, WAKE_PITCH, BOOM_DIST),
++        };
++        orbit.yaw = yaw;
++        orbit.pitch = pitch;
++        orbit.dist = dist;
+         let rot = Quat::from_axis_angle(Vec3::Y, orbit.yaw) * Quat::from_axis_angle(Vec3::X, orbit.pitch);
+-        ctf.translation = camp.eye + Vec3::Y * PIVOT_UP + (rot * Vec3::Z) * BOOM_DIST;
++        ctf.translation = camp.eye + Vec3::Y * PIVOT_UP + (rot * Vec3::Z) * dist;
+         ctf.rotation = rot;
+     }
+ }
+ 
++/// The `VOXELFORGE_LOOK_CAM` boom pose in radians+metres, if that override is set.
++///
++/// Same parse as the camera-spawn site in main.rs (degrees in, radians out) and the
++/// same source string, so the two cannot drift apart.
++fn look_cam_pose() -> Option<(f32, f32, f32)> {
++    crate::env_floats::<3>("VOXELFORGE_LOOK_CAM")
++        .map(|[y, p, d]| (y.to_radians(), p.to_radians(), d))
++}
++
+ // ---------------------------------------------------------------------------
+ // The campfire
+ // ---------------------------------------------------------------------------

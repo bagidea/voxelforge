@@ -1,0 +1,75 @@
+diff --git a/client/src/main.rs b/client/src/main.rs
+index 96416d4..9a83676 100644
+--- a/client/src/main.rs
++++ b/client/src/main.rs
+@@ -511,6 +511,7 @@ fn main() {
+                     // during Play — the player fights, not builds. EditorPlugin
+                     // owns the build loop in Editor state.
+                     fly_camera.run_if(editor::not_interactive_editor).run_if(settings_menu::settings_closed),
++                    boom_walk_demo.before(fly_camera),
+                     editor_controls,
+                     highlight_target,
+                     edit_demo,
+@@ -1412,15 +1413,61 @@ pub(crate) fn fly_camera(
+     let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
+     let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
+     let want = orbit.want_dist;
+-    let dist = match world.as_deref() {
++    let raw = match world.as_deref() {
+         Some(world) => camera_boom(world, pivot, back, want),
+         None => want,
+     };
++    let dist = raw;
+     orbit.dist = dist;
++    // `VOXELFORGE_BOOM_TRACE=1` prints the boom every frame — `raw` straight out of
++    // `camera_boom` (quantized to its 0.1 march) next to the length actually used.
++    // The step-jitter is a *time* series; no single screenshot can show it, so this
++    // is the only way to check the smoothing against the real binary.
++    if boom_trace_on() {
++        println!(
++            "BOOM_TRACE dt={dt:.4} raw={raw:.3} used={dist:.3} \
++             pivot=({:.3},{:.3},{:.3})",
++            pivot.x, pivot.y, pivot.z
++        );
++    }
+     ctf.translation = pivot + back * dist;
+     ctf.rotation = cam_rot;
+ }
+ 
++/// Is the per-frame boom trace switched on? Read once — this sits in the camera's
++/// hot path.
++fn boom_trace_on() -> bool {
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ON.get_or_init(|| std::env::var("VOXELFORGE_BOOM_TRACE").is_ok())
++}
++
++/// `VOXELFORGE_BOOM_WALK=<secs>` holds W for `<secs>` and then quits, so the avatar
++/// really walks along a wall — the boom's step-jitter only appears while the pivot
++/// is moving. The key is pressed into `ButtonInput<KeyCode>` exactly the way the
++/// quest demo does it, so the input goes *through* the real controller, not around
++/// it.
++fn boom_walk_demo(
++    time: Res<Time>,
++    mut keys: ResMut<ButtonInput<KeyCode>>,
++    mut exit: MessageWriter<AppExit>,
++) {
++    let Some(secs) = std::env::var("VOXELFORGE_BOOM_WALK")
++        .ok()
++        .and_then(|v| v.parse::<f32>().ok())
++    else {
++        return;
++    };
++    let t = time.elapsed_secs();
++    if t < 0.5 {
++        return; // let the scene finish loading before the first step
++    }
++    if t > 0.5 + secs {
++        exit.write(AppExit::Success);
++        return;
++    }
++    keys.press(KeyCode::KeyW);
++}
++
+ // ---------------------------------------------------------------------------
+ // Voxel editing — raycast pick, then break (→AIR) or place (selected block).
+ // ---------------------------------------------------------------------------

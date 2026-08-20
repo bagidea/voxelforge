@@ -1,0 +1,811 @@
+diff --git a/client/src/anim.rs b/client/src/anim.rs
+index 5d8f17e..0d1cbab 100644
+--- a/client/src/anim.rs
++++ b/client/src/anim.rs
+@@ -18,6 +18,11 @@
+ //!                   detached corpse rig (combat despawns the real one the same frame).
+ //!   ⑥ weight      — head/torso bob + lateral sway while walking, and a spring
+ //!                   squash-and-stretch on landing.
++//!   ⑦ conversation— a real standing/talking/listening layer for dialogue, driven
++//!                   by `cutscene::Conversation` so the pose and the cutscene
++//!                   lens blend in and out on the same clock. Story NPCs
++//!                   (`quest::Npc`) get a rig of their own here too — see
++//!                   [`RigLook`] for why that is not a third [`Actor`].
+ //!
+ //! **It cannot move a hitbox.** Every transform written here belongs to a child of
+ //! the actor. Combat reads only the actor's own `Transform.translation` (melee range,
+@@ -32,6 +37,7 @@ use bevy::ecs::message::MessageWriter;
+ use bevy::prelude::*;
+ 
+ use crate::combat::{self, CombatState, Enemy, Health, HuskState, PlayerCombat};
++use crate::cutscene::{Conversation, Speaker};
+ use crate::{Cfg, FlyCam, EYE_HEIGHT};
+ 
+ // ===========================================================================
+@@ -215,6 +221,20 @@ const CLOAK_MOTION: SecondaryMotionSpec = SecondaryMotionSpec {
+     damp: CLOAK_DAMP,
+ };
+ 
++/// The villager shawl. Same spring path as the cloak, tuned quieter: it hangs
++/// heavier (a shorter, wider panel), reacts less to speed because a story NPC
++/// mostly stands, and keeps just enough turn/sway gain that a shoulder shrug
++/// during a conversation still ripples through it.
++const SHAWL_MOTION: SecondaryMotionSpec = SecondaryMotionSpec {
++    base_pitch: 0.16,
++    loco_gain: 0.14,
++    fwd_gain: 0.6,
++    sway_gain: -0.26,
++    turn_gain: -0.34,
++    spring: CLOAK_SPRING * 0.8,
++    damp: CLOAK_DAMP,
++};
++
+ // ---------------------------------------------------------------------------
+ // Plugin
+ // ---------------------------------------------------------------------------
+@@ -234,6 +254,10 @@ impl Plugin for AnimPlugin {
+             .add_message::<AnimHit>()
+             .add_message::<AnimFootstep>()
+             .add_message::<AnimLand>()
++            // `animate_rigs` reads it for the conversation layer. `CutscenePlugin`
++            // owns it, but `init_resource` is idempotent and this makes the rig
++            // driver independent of plugin registration ORDER in main.rs.
++            .init_resource::<Conversation>()
+             .add_systems(Startup, init_rig_assets)
+             .add_systems(
+             Update,
+@@ -272,6 +296,22 @@ pub enum Actor {
+     Husk,
+ }
+ 
++/// Which body a rig WEARS — proportions, palette, and whether it carries a blade.
++///
++/// Deliberately separate from [`Actor`], which says what a rig *does*. A villager
++/// is a player-shaped body in a different palette with no weapon; giving it an
++/// `Actor` variant instead would ripple into every lane that matches on `Actor`
++/// (`vfx_bridge`'s blade table, its footstep-dust arms) for a body that never
++/// swings, never runs and never bleeds. `animate_rigs` keeps every anim event
++/// off a `Villager` rig for the same reason.
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum RigLook {
++    Player,
++    Husk,
++    /// Story NPCs (`quest::Npc`) — Elder Maren and whoever follows her.
++    Villager,
++}
++
+ /// Marker on the ACTOR entity: its rig has been built, don't build a second one.
+ #[derive(Component)]
+ pub struct Rigged;
+@@ -370,6 +410,9 @@ struct SecondaryPart {
+ #[derive(Component)]
+ pub struct Rig {
+     actor: Actor,
++    /// The body this rig wears — see [`RigLook`]. Drives proportions, palette
++    /// and the event mute on story NPCs.
++    look: RigLook,
+     // Joints, top-down. Arms/legs are two-bone so knees and elbows really bend.
+     hips: Entity,
+     torso: Entity,
+@@ -420,6 +463,8 @@ pub struct Rig {
+     stagger_fade: f32,
+     /// Death progress, 0 → 1. Reset when the actor comes back alive.
+     death: f32,
++    /// Eased 0 → 1: is this body the one currently talking? See `conversation()`.
++    convo_talk: f32,
+     // --- animation-event edge state (see the events section above) -----------
+     /// The swing phase this rig was in last frame, so a phase change fires its
+     /// `AnimSwing` exactly once on the frame it crosses.
+@@ -477,6 +522,7 @@ pub struct Dying;
+ struct RigAssets {
+     player: Parts,
+     husk: Parts,
++    npc: Parts,
+ }
+ 
+ struct Parts {
+@@ -560,9 +606,9 @@ fn build_extra_parts(
+ ///     secondary: None,                     // Some(spec) = cloth/hair that lags
+ /// }]
+ /// ```
+-fn extra_parts(actor: Actor) -> Vec<PartSpec> {
+-    match actor {
+-        Actor::Player => vec![
++fn extra_parts(look: RigLook) -> Vec<PartSpec> {
++    match look {
++        RigLook::Player => vec![
+             // --- Hair: tousled voxel-cluster mass, NOT a flat slab (character-bible
+             // §1 fix #2 — see docs/assets/characters/auren-hero-concept.png and the
+             // before/after at auren-hero-concept-before-after-2026-08-06-hairfix.png).
+@@ -714,7 +760,9 @@ fn extra_parts(actor: Actor) -> Vec<PartSpec> {
+                 secondary: None,
+             },
+         ],
+-        Actor::Husk => Vec::new(),
++        // The Husk is armor and stone; the villager's one moving shape is the
++        // shawl `build_rig` hangs off the cloak anchor, not a listed extra.
++        RigLook::Husk | RigLook::Villager => Vec::new(),
+     }
+ }
+ 
+@@ -747,10 +795,10 @@ struct Dims {
+ }
+ 
+ impl Dims {
+-    fn of(actor: Actor) -> Self {
+-        match actor {
++    fn of(look: RigLook) -> Self {
++        match look {
+             // 1.80 crown-to-floor, matching PLAYER_HEIGHT.
+-            Actor::Player => Dims {
++            RigLook::Player => Dims {
+                 hip_y: 0.84,
+                 hip_x: 0.125,
+                 thigh: 0.44,
+@@ -768,7 +816,7 @@ impl Dims {
+                 sway: 0.030,
+             },
+             // ~2.38 crown-to-floor — the same reading silhouette the box Husk had.
+-            Actor::Husk => Dims {
++            RigLook::Husk => Dims {
+                 hip_y: 1.00,
+                 hip_x: 0.20,
+                 thigh: 0.52,
+@@ -785,6 +833,26 @@ impl Dims {
+                 bob: 0.070,
+                 sway: 0.045,
+             },
++            // ~1.65 crown-to-floor — an elder stands a head shorter and slighter
++            // than Auren, so the two-shot reads as two different people rather
++            // than one body in two palettes.
++            RigLook::Villager => Dims {
++                hip_y: 0.78,
++                hip_x: 0.115,
++                thigh: 0.40,
++                shin: 0.37,
++                sh_y: 0.46,
++                sh_x: 0.225,
++                upper: 0.27,
++                fore: 0.26,
++                neck_y: 0.54,
++                head_off: 0.17,
++                face_y: 0.19,
++                face_z: -0.15,
++                foot_h: 0.045,
++                bob: 0.045,
++                sway: 0.026,
++            },
+         }
+     }
+ 
+@@ -793,6 +861,38 @@ impl Dims {
+     }
+ }
+ 
++/// Feet-relative offset from the ACTOR entity's own origin down to the rig root.
++///
++/// Three different conventions meet here and every one of them is somebody
++/// else's: the avatar's origin is its EYE (main.rs's `move_body` contract), the
++/// Husk's is already its feet (combat.rs), and a story NPC's is the centre of the
++/// 1.4-tall body box `quest::spawn_npcs` places it with — so its soles sit half
++/// that box below the origin. Spelled once so `build_rig` and `animate_rigs`
++/// cannot drift apart on it.
++#[inline]
++fn root_offset(look: RigLook) -> f32 {
++    match look {
++        RigLook::Player => -EYE_HEIGHT,
++        RigLook::Husk => 0.0,
++        RigLook::Villager => -0.7,
++    }
++}
++
++/// Height of this body's head above its ACTOR entity's origin — what an eye line
++/// between two bodies is measured on. Derived from the rig `build_rig` actually
++/// builds (root offset + hips + neck + the head cube's own centre), so it cannot
++/// drift out of step with the proportions the way a hand-typed constant would.
++/// `cutscene.rs` aims its two-shot with this.
++pub fn head_lift(look: RigLook) -> f32 {
++    let d = Dims::of(look);
++    root_offset(look) + d.hip_y + d.neck_y + d.head_off
++}
++
++/// The villager head lift, for lanes that hold an NPC entity but not a [`RigLook`].
++pub fn npc_head_lift() -> f32 {
++    head_lift(RigLook::Villager)
++}
++
+ // ---------------------------------------------------------------------------
+ // Asset setup
+ // ---------------------------------------------------------------------------
+@@ -802,8 +902,9 @@ fn init_rig_assets(
+     mut meshes: ResMut<Assets<Mesh>>,
+     mut materials: ResMut<Assets<StandardMaterial>>,
+ ) {
+-    let pd = Dims::of(Actor::Player);
+-    let hd = Dims::of(Actor::Husk);
++    let pd = Dims::of(RigLook::Player);
++    let hd = Dims::of(RigLook::Husk);
++    let vd = Dims::of(RigLook::Villager);
+ 
+     let player = Parts {
+         pelvis: meshes.add(Cuboid::new(0.40, 0.20, 0.26)),
+@@ -842,7 +943,7 @@ fn init_rig_assets(
+             reflectance: 0.7,
+             ..default()
+         }),
+-        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(Actor::Player)),
++        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(RigLook::Player)),
+     };
+ 
+     let husk = Parts {
+@@ -882,10 +983,54 @@ fn init_rig_assets(
+             reflectance: 0.7,
+             ..default()
+         }),
+-        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(Actor::Husk)),
++        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(RigLook::Husk)),
+     };
+ 
+-    commands.insert_resource(RigAssets { player, husk });
++    // Story NPCs. The palette is deliberately the slate-blue quest.rs already
++    // spawned Maren's placeholder body in (`srgb(0.35,0.45,0.55)`) — swapping a
++    // box for a rig should not also recolour the character in anyone's shot.
++    // `weapon` is allocated but never spawned (see `build_rig`): villagers carry
++    // nothing, and a `RigWeapon` on one would put a swing trail on an elder.
++    let npc = Parts {
++        pelvis: meshes.add(Cuboid::new(0.36, 0.18, 0.24)),
++        torso: meshes.add(Cuboid::new(0.41, 0.53, 0.25)),
++        head: meshes.add(Cuboid::new(0.33, 0.32, 0.31)),
++        face: meshes.add(Cuboid::new(0.22, 0.09, 0.06)),
++        upper_arm: meshes.add(Cuboid::new(0.13, vd.upper, 0.14)),
++        forearm: meshes.add(Cuboid::new(0.11, vd.fore, 0.12)),
++        thigh: meshes.add(Cuboid::new(0.17, vd.thigh, 0.18)),
++        shin: meshes.add(Cuboid::new(0.15, vd.shin, 0.16)),
++        foot: meshes.add(Cuboid::new(0.17, 0.08, 0.26)),
++        weapon: meshes.add(Cuboid::new(0.05, 0.40, 0.05)),
++        // A shawl rather than a half-cloak: shorter, wider, hangs off both
++        // shoulders. Same secondary-motion path the player's cloak rides.
++        cloak: meshes.add(Cuboid::new(0.40, 0.44, 0.05)),
++        cloth: materials.add(StandardMaterial {
++            base_color: Color::srgb(0.350, 0.450, 0.550), // quest.rs's Maren slate
++            perceptual_roughness: 0.90,
++            ..default()
++        }),
++        trim: materials.add(StandardMaterial {
++            base_color: Color::srgb(0.255, 0.330, 0.415),
++            perceptual_roughness: 0.85,
++            ..default()
++        }),
++        skin: materials.add(StandardMaterial {
++            base_color: Color::srgb(0.780, 0.640, 0.545), // older, cooler than Auren's
++            perceptual_roughness: 0.60,
++            ..default()
++        }),
++        steel: materials.add(StandardMaterial {
++            base_color: Color::srgb(0.42, 0.46, 0.50),
++            perceptual_roughness: 0.55,
++            metallic: 0.0,
++            reflectance: 0.4,
++            ..default()
++        }),
++        extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(RigLook::Villager)),
++    };
++
++    commands.insert_resource(RigAssets { player, husk, npc });
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -902,20 +1047,20 @@ fn build_rig(
+     commands: &mut Commands,
+     assets: &RigAssets,
+     actor: Actor,
++    look: RigLook,
+     parent: Entity,
+ ) -> (Entity, Rig) {
+-    let d = Dims::of(actor);
+-    let p = match actor {
+-        Actor::Player => &assets.player,
+-        Actor::Husk => &assets.husk,
++    let d = Dims::of(look);
++    let p = match look {
++        RigLook::Player => &assets.player,
++        RigLook::Husk => &assets.husk,
++        RigLook::Villager => &assets.npc,
+     };
+ 
+     // The rig root sits at the actor's FEET. The avatar's own origin is its eye, the
+-    // Husk's is already its feet — hence the two offsets.
+-    let root_dy = match actor {
+-        Actor::Player => -EYE_HEIGHT,
+-        Actor::Husk => 0.0,
+-    };
++    // Husk's is already its feet, and a story NPC's is the middle of the body box
++    // quest.rs spawned it with — hence the three offsets.
++    let root_dy = root_offset(look);
+     let root = commands
+         .spawn((
+             Transform::from_xyz(0.0, root_dy, 0.0),
+@@ -969,11 +1114,18 @@ fn build_rig(
+             BoneName::KneeR => knee_r,
+         }
+     };
+-    let cloak_anchor = if actor == Actor::Player {
+-        let base_pos = Vec3::new(d.sh_x * 0.7, d.sh_y * 0.95, 0.08);
+-        Some((joint(base_pos.x, base_pos.y, base_pos.z, torso), base_pos))
+-    } else {
+-        None
++    // Auren's half-cloak hangs off ONE shoulder (asymmetric, character-bible §1);
++    // a villager's shawl sits centred across both. The Husk wears neither.
++    let cloak_anchor = match look {
++        RigLook::Player => {
++            let base_pos = Vec3::new(d.sh_x * 0.7, d.sh_y * 0.95, 0.08);
++            Some((joint(base_pos.x, base_pos.y, base_pos.z, torso), base_pos))
++        }
++        RigLook::Villager => {
++            let base_pos = Vec3::new(0.0, d.sh_y * 0.98, 0.07);
++            Some((joint(base_pos.x, base_pos.y, base_pos.z, torso), base_pos))
++        }
++        RigLook::Husk => None,
+     };
+     // Only the secondary-motion extra parts need a joint; rigid ones ride
+     // directly on their bone and are meshed straight from `p.extra` below.
+@@ -1010,8 +1162,10 @@ fn build_rig(
+     );
+     // The dark face block keeps the old "which way am I looking" read (local -Z).
+     // Husk-only per character-bible §2 (LOCKED): the Husk face is a blank, featureless
+-    // slab — no visor slit. Only the Player gets the directional face-accent block.
+-    if actor == Actor::Player {
++    // slab — no visor slit. Everyone who TALKS gets the directional face-accent
++    // block: in a two-shot it is the only thing that says which way a head is
++    // turned, and the conversation layer spends its whole budget turning heads.
++    if look != RigLook::Husk {
+         skin(
+             &p.face,
+             &p.trim,
+@@ -1059,7 +1213,7 @@ fn build_rig(
+         // Sole flush with the ground plane, toe protruding forward (-Z).
+         // Player boots are leather (trim), not the sword's chrome steel — a traveller's
+         // boots, not polished metal. The Husk's armored boots stay on steel.
+-        let boot_mat = if actor == Actor::Player { &p.trim } else { &p.steel };
++        let boot_mat = if look == RigLook::Husk { &p.steel } else { &p.trim };
+         skin(
+             &p.foot,
+             boot_mat,
+@@ -1078,11 +1232,17 @@ fn build_rig(
+     // this is just the mesh + spring-state bookkeeping.
+     let mut secondary: Vec<SecondaryPart> = Vec::new();
+     if let Some((anchor, base_pos)) = cloak_anchor {
+-        skin(&p.cloak, &p.trim, Transform::from_xyz(0.0, -0.31, 0.0), anchor);
++        // Hang the slab half its own length below the hinge, so the hinge swings
++        // it instead of spinning it about its middle.
++        let (drop, motion) = match look {
++            RigLook::Villager => (-0.22, SHAWL_MOTION),
++            _ => (-0.31, CLOAK_MOTION),
++        };
++        skin(&p.cloak, &p.trim, Transform::from_xyz(0.0, drop, 0.0), anchor);
+         secondary.push(SecondaryPart {
+             anchor,
+             base_pos,
+-            spec: CLOAK_MOTION,
++            spec: motion,
+             pitch: 0.0,
+             pitch_vel: 0.0,
+             roll: 0.0,
+@@ -1117,26 +1277,32 @@ fn build_rig(
+ 
+     // Weapon in the right hand: blade forward-and-down at rest, so the whole arc is
+     // a rotation of the grip rather than a teleport.
+-    let blade_len = match actor {
+-        Actor::Player => 0.86,
+-        Actor::Husk => 1.05,
+-    };
+-    let weapon_entity = commands
+-        .spawn((
+-            Mesh3d(p.weapon.clone()),
+-            MeshMaterial3d(p.steel.clone()),
+-            Transform::from_xyz(0.0, -blade_len * 0.5 + 0.06, -0.04),
+-            ChildOf(hand_r),
+-            RigWeapon { actor },
+-        ))
+-        .id();
+-    // Proof marker for docs/anim-events.md's checklist — one line per rig built
+-    // (edge-triggered by `attach_rigs`'/`spawn_husk_corpse`'s `Without<Rigged>`/
+-    // `Without<Dying>` filters, never per-frame), so this is cheap to leave in.
+-    println!("ANIM_RIG_WEAPON spawn actor={actor:?} entity={weapon_entity:?}");
++    // A villager carries nothing. It matters beyond the silhouette: `RigWeapon`
++    // is what `vfx_bridge` hangs a swing trail off, so an armed elder would trail
++    // a ribbon the first time any lane fired an `AnimSwing`.
++    if look != RigLook::Villager {
++        let blade_len = match look {
++            RigLook::Husk => 1.05,
++            _ => 0.86,
++        };
++        let weapon_entity = commands
++            .spawn((
++                Mesh3d(p.weapon.clone()),
++                MeshMaterial3d(p.steel.clone()),
++                Transform::from_xyz(0.0, -blade_len * 0.5 + 0.06, -0.04),
++                ChildOf(hand_r),
++                RigWeapon { actor },
++            ))
++            .id();
++        // Proof marker for docs/anim-events.md's checklist — one line per rig built
++        // (edge-triggered by `attach_rigs`'/`spawn_husk_corpse`'s `Without<Rigged>`/
++        // `Without<Dying>` filters, never per-frame), so this is cheap to leave in.
++        println!("ANIM_RIG_WEAPON spawn actor={actor:?} entity={weapon_entity:?}");
++    }
+ 
+     let rig = Rig {
+         actor,
++        look,
+         hips,
+         torso,
+         head,
+@@ -1168,6 +1334,7 @@ fn build_rig(
+         parry_t: 0.0,
+         stagger_fade: 0.0,
+         death: 0.0,
++        convo_talk: 0.0,
+         prev_swing: None,
+         in_iframe: false,
+         in_parry: false,
+@@ -1185,7 +1352,20 @@ fn attach_rigs(
+     mut commands: Commands,
+     assets: Option<Res<RigAssets>>,
+     player_q: Query<(Entity, &Transform), (With<FlyCam>, With<PlayerCombat>, Without<Rigged>)>,
+-    enemy_q: Query<(Entity, &Transform), (With<Enemy>, Without<Rigged>)>,
++    // `Without<EnemyBody>`: enemies spawned through `combat::spawn_husk_of_kind`
++    // carry one of `enemies.rs`'s hand-tooled silhouettes (Monanisa's lane) on
++    // their own children — dressing them with the generic Husk rig would hide
++    // the authored body and render the old guard over it. The rig still owns
++    // any enemy without an `EnemyBody` (legacy spawns, demos).
++    enemy_q: Query<
++        (Entity, &Transform),
++        (
++            With<Enemy>,
++            Without<Rigged>,
++            Without<crate::enemies::EnemyBody>,
++        ),
++    >,
++    npc_q: Query<(Entity, &Transform), (With<crate::quest::Npc>, Without<Enemy>, Without<Rigged>)>,
+     child_q: Query<&Children>,
+     mut vis_q: Query<&mut Visibility, With<Mesh3d>>,
+ ) {
+@@ -1193,7 +1373,11 @@ fn attach_rigs(
+         return;
+     };
+ 
+-    let mut dress = |entity: Entity, tf: &Transform, actor: Actor, commands: &mut Commands| {
++    let mut dress = |entity: Entity,
++                     tf: &Transform,
++                     actor: Actor,
++                     look: RigLook,
++                     commands: &mut Commands| {
+         // Blank the placeholder meshes BEFORE the rig's own children exist — the
+         // spawn above is deferred, so `Children` here only holds the old boxes.
+         if let Ok(children) = child_q.get(entity) {
+@@ -1203,7 +1387,7 @@ fn attach_rigs(
+                 }
+             }
+         }
+-        let (root, mut rig) = build_rig(commands, &assets, actor, entity);
++        let (root, mut rig) = build_rig(commands, &assets, actor, look, entity);
+         rig.prev_pos = tf.translation;
+         rig.face_yaw = yaw_of(tf);
+         commands.entity(root).insert(rig);
+@@ -1211,10 +1395,23 @@ fn attach_rigs(
+     };
+ 
+     for (e, tf) in player_q.iter() {
+-        dress(e, tf, Actor::Player, &mut commands);
++        dress(e, tf, Actor::Player, RigLook::Player, &mut commands);
+     }
+     for (e, tf) in enemy_q.iter() {
+-        dress(e, tf, Actor::Husk, &mut commands);
++        dress(e, tf, Actor::Husk, RigLook::Husk, &mut commands);
++    }
++    // Story NPCs. Their placeholder body is a mesh on the ACTOR entity itself,
++    // not a child — so the `Visibility::Hidden` sweep above cannot reach it, and
++    // hiding the entity would hide the rig hanging off it too. Drop the mesh
++    // handle instead: the entity keeps its transform, the rig renders, and
++    // quest.rs's spawn is untouched (it runs once, in PostStartup).
++    for (e, tf) in npc_q.iter() {
++        dress(e, tf, Actor::Player, RigLook::Villager, &mut commands);
++        commands
++            .entity(e)
++            .remove::<Mesh3d>()
++            .remove::<MeshMaterial3d<StandardMaterial>>();
++        println!("ANIM_RIG_NPC dressed entity={e:?} look=Villager");
+     }
+ }
+ 
+@@ -1245,7 +1442,7 @@ fn spawn_husk_corpse(
+         let root = commands
+             .spawn((*tf, Visibility::default(), Corpse { age: 0.0 }))
+             .id();
+-        let (rig_root, mut rig) = build_rig(&mut commands, &assets, Actor::Husk, root);
++        let (rig_root, mut rig) = build_rig(&mut commands, &assets, Actor::Husk, RigLook::Husk, root);
+         rig.prev_pos = tf.translation;
+         rig.face_yaw = yaw_of(tf);
+         rig.death = 0.001; // already dying — the fall starts on frame one
+@@ -1316,6 +1513,18 @@ fn animate_rigs(
+         (With<Enemy>, Without<Rig>, Without<Joint>, Without<FlyCam>),
+     >,
+     corpse_q: Query<&Transform, (With<Corpse>, Without<Rig>, Without<Joint>)>,
++    npc_q: Query<
++        &Transform,
++        (
++            With<crate::quest::Npc>,
++            Without<Rig>,
++            Without<Joint>,
++            Without<FlyCam>,
++            Without<Enemy>,
++            Without<Corpse>,
++        ),
++    >,
++    convo: Res<Conversation>,
+     mut rig_q: Query<
+         (&ChildOf, &mut Rig, &mut Transform),
+         (Without<Joint>, Without<FlyCam>, Without<Enemy>, Without<Corpse>),
+@@ -1331,6 +1540,23 @@ fn animate_rigs(
+     let dt = time.delta_secs().clamp(1.0 / 240.0, 1.0 / 15.0);
+     let elapsed = time.elapsed_secs();
+ 
++    // ---- conversation staging (cutscene.rs) ---------------------------------
++    // Both bodies in a dialogue need the OTHER body's position, so the pair is
++    // resolved ONCE here rather than re-queried per rig. `None` outside a
++    // conversation — which is every frame of ordinary play, so the whole layer
++    // below costs one resource read and one branch.
++    let staged: Option<(Vec3, Vec3)> = if convo.weight() > 0.0 {
++        match (
++            player_q.iter().next(),
++            convo.npc().and_then(|e| npc_q.get(e).ok()),
++        ) {
++            (Some((ptf, ..)), Some(ntf)) => Some((ptf.translation, ntf.translation)),
++            _ => None,
++        }
++    } else {
++        None
++    };
++
+     for (parent, mut rig, mut root_tf) in rig_q.iter_mut() {
+         let owner = parent.0;
+ 
+@@ -1365,6 +1591,11 @@ fn animate_rigs(
+                 // A corpse keeps the heading it died with — it is not turning anywhere.
+                 let face = rig.face_yaw;
+                 (tf.translation, yaw_of(tf), face, true, 0.0, Beat::none(), None)
++            } else if let Ok(tf) = npc_q.get(owner) {
++                // A story NPC stands where quest.rs put it: no controller, no combat
++                // state, no health bar. It holds its heading until the conversation
++                // block below hands it one — that is the ONLY thing that turns it.
++                (tf.translation, yaw_of(tf), rig.face_yaw, true, 0.0, Beat::none(), None)
+             } else {
+                 continue;
+             };
+@@ -1375,7 +1606,9 @@ fn animate_rigs(
+         // own contact frame so the shot reads as blades meeting, not two actors
+         // posed independently.
+         let mut beat = beat;
+-        if let Some(op) = pose_override() {
++        // Never on a villager: it wears `Actor::Player` for the pose tables but
++        // carries no blade, so an `attack` capture would have it swing at air.
++        if let Some(op) = pose_override().filter(|_| rig.look != RigLook::Villager) {
+             match rig.actor {
+                 Actor::Player => beat = override_beat(op),
+                 Actor::Husk if op == OverridePose::Clash => beat = override_husk_beat(),
+@@ -1383,6 +1616,43 @@ fn animate_rigs(
+             }
+         }
+ 
++        // ---- conversation: where this body should be pointing -----------------
++        // Both actors turn onto their partner, opened a few degrees off the line
++        // of conversation (in OPPOSITE directions) so the pair stands three-
++        // quarters to the lens rather than in profile. `conversation()` closes
++        // that same angle back with the chest and head, so they still look at
++        // each other — the body is angled, the gaze is not.
++        let mut want_yaw = want_yaw;
++        let mut convo_beat: Option<(f32, f32)> = None; // (residual yaw, eye-line pitch)
++        if let Some((ppos, npos)) = staged {
++            let is_player = rig.look == RigLook::Player;
++            if is_player || convo.npc() == Some(owner) {
++                let (mine, theirs) = if is_player { (ppos, npos) } else { (npos, ppos) };
++                let (my_lift, their_lift) = if is_player {
++                    (head_lift(RigLook::Player), head_lift(RigLook::Villager))
++                } else {
++                    (head_lift(RigLook::Villager), head_lift(RigLook::Player))
++                };
++                let to = theirs - mine;
++                let flat = Vec3::new(to.x, 0.0, to.z);
++                let reach = flat.length();
++                if reach > 0.05 {
++                    let open = convo.stage_open(is_player);
++                    want_yaw = (-flat.x).atan2(-flat.z) + open;
++                    let eye_dy = (theirs.y + their_lift) - (mine.y + my_lift);
++                    convo_beat = Some((-open, eye_dy.atan2(reach)));
++                }
++            }
++        }
++        // Who holds the floor, eased — the talker alternates, and arms that
++        // snapped between gesturing and hanging would pop on every swap.
++        let want_talk = match (convo_beat.is_some(), convo.speaker()) {
++            (true, Speaker::Player) => (rig.look == RigLook::Player) as u8 as f32,
++            (true, Speaker::Npc) => (rig.look == RigLook::Villager) as u8 as f32,
++            _ => 0.0,
++        };
++        rig.convo_talk += (want_talk - rig.convo_talk) * (4.5 * dt).min(1.0);
++
+         // ---- speed, stride phase, facing ------------------------------------
+         let moved = Vec3::new(pos.x - rig.prev_pos.x, 0.0, pos.z - rig.prev_pos.z);
+         rig.prev_pos = pos;
+@@ -1497,9 +1767,13 @@ fn animate_rigs(
+         // Footfalls: twice per stride cycle (one per foot), only while actually
+         // locomoting and free of a committed action. Phase advances by distance
+         // travelled, so a planted body crosses no boundary and stays silent.
++        // A villager fires NO anim events at all — see [`RigLook`]. It wears
++        // `Actor::Player` for the pose tables, and an `AnimFootstep { Player }`
++        // from an elder at a gate would put the avatar's dust under her feet.
+         if speed > IDLE_SPEED
+             && matches!(beat.action, Action::None | Action::Guard)
+             && pose_override().is_none()
++            && rig.look != RigLook::Villager
+         {
+             if phase_crossed(rig.prev_phase, rig.phase, std::f32::consts::PI) {
+                 steps.write(AnimFootstep { actor: rig.actor, foot: Foot::Left });
+@@ -1513,13 +1787,21 @@ fn animate_rigs(
+         // =====================================================================
+         // Pose
+         // =====================================================================
+-        let d = Dims::of(rig.actor);
++        let d = Dims::of(rig.look);
+         let mut pose = Pose::default();
+ 
+         locomotion(&mut pose, &rig, &d, loco, run, elapsed);
+         turn_in_place(&mut pose, &rig, turn);
+         airborne(&mut pose, air_w);
+ 
++        // ⑦ Conversation. Sits above locomotion (a body that walks off mid-line
++        // fades the layer out with `loco`) and below the action match, so drawing
++        // a blade during a dialogue still overrides it completely.
++        if let Some((face, tilt)) = convo_beat {
++            let cw = convo.weight() * (1.0 - loco) * (1.0 - air_w);
++            conversation(&mut pose, &rig, cw, face, tilt, elapsed);
++        }
++
+         // Attacks/guards override the upper body and bias the stance.
+         let action = if rig.death > 0.0 {
+             Action::Dead
+@@ -1621,10 +1903,7 @@ fn animate_rigs(
+         }
+ 
+         // ---- write the rig ---------------------------------------------------
+-        let root_dy = match rig.actor {
+-            Actor::Player => -EYE_HEIGHT,
+-            Actor::Husk => 0.0,
+-        };
++        let root_dy = root_offset(rig.look);
+         root_tf.translation = Vec3::new(0.0, root_dy + root_lift, root_fwd);
+         root_tf.rotation = Quat::from_axis_angle(Vec3::Y, wrap_pi(rig.face_yaw - root_yaw)) * root_extra;
+         root_tf.scale = squash;
+@@ -1755,6 +2034,87 @@ fn locomotion(pose: &mut Pose, rig: &Rig, d: &Dims, loco: f32, run: f32, elapsed
+     pose.hand = pitch(-0.90) * roll(0.12);
+ }
+ 
++/// ⑦ Conversation — the stand / talk / listen layer.
++///
++/// A dialogue is the easiest place in a game for a body to look dead: locomotion
++/// parks at `loco == 0` and every joint holds the same breathing idle until the
++/// text box closes. This lays a real STANCE over that idle and then plays one of
++/// two behaviours on top of it.
++///
++///   * **stance** — contrapposto. Weight loads onto one leg, that hip lifts and
++///     its knee straightens while the free leg softens, and the load crosses
++///     over on a long uneven cycle. This is what separates *standing* from
++///     *placed*, and it runs whether the actor is talking or listening.
++///   * **talking** — the LEFT arm gestures (the right one is carrying a sword,
++///     which is exactly what a person does), the chest leans in a touch, and the
++///     head punctuates on the beat of the gesture.
++///   * **listening** — arms hang, and the head acknowledges in short bursts
++///     rather than nodding metronomically.
++///
++/// `w`     0..1 — the camera's own conversation blend (`cutscene.rs`), already
++///         de-weighted by locomotion and airtime, so pose and lens arrive
++///         together and a body that walks off mid-line simply leaves the scene.
++/// `face`  the yaw the chest and head must close to look AT the partner, after
++///         the root has been turned to stand three-quarters to the lens.
++/// `tilt`  eye-line pitch: signed angle up to the partner's head. An elder is a
++///         head shorter than Auren, and both of them should show it.
++///
++/// Every cycle below is a sum of sines whose periods do not divide one another,
++/// so the stance never lands back on the same frame inside any shot length — a
++/// visible loop is the single thing that reads as "animation" instead of a
++/// person.
++fn conversation(pose: &mut Pose, rig: &Rig, w: f32, face: f32, tilt: f32, elapsed: f32) {
++    let w = w.clamp(0.0, 1.0);
++    if w <= 0.001 {
++        return;
++    }
++    let talk = rig.convo_talk.clamp(0.0, 1.0);
++    let t = elapsed;
++
++    let breath = (t * 1.15).sin();
++    // +1 = weight over the right leg, -1 = over the left.
++    let load = 0.62 * (t * 0.41).sin() + 0.38 * (t * 0.17 + 1.1).sin();
++    let free_l = load.max(0.0); // weight right ⇒ the LEFT leg is the free one
++    let free_r = (-load).max(0.0);
++    // Gesture drive, and the two nod shapes.
++    let g = 0.55 * (t * 2.10).sin() + 0.30 * (t * 3.70 + 0.6).sin() + 0.15 * (t * 1.27).sin();
++    let talk_nod = (t * 2.10).sin().max(0.0).powi(2);
++    let listen_nod = smoothstep(0.55, 0.95, (t * 0.37).sin()) * (t * 5.0).sin();
++
++    // ---- lower body: the weight shift --------------------------------------
++    pose.hips_pos.x += 0.030 * load * w;
++    pose.hips_pos.y -= 0.018 * w;
++    pose.hips = pose.hips.slerp(roll(-0.075 * load) * yaw(0.15 * face), w);
++    pose.hip_l = pose.hip_l.slerp(pitch(0.11 * free_l) * roll(0.05 * load), w);
++    pose.hip_r = pose.hip_r.slerp(pitch(0.11 * free_r) * roll(0.05 * load), w);
++    pose.knee_l = pose.knee_l.slerp(pitch(-0.13 - 0.17 * free_l), w);
++    pose.knee_r = pose.knee_r.slerp(pitch(-0.13 - 0.17 * free_r), w);
++
++    // ---- spine + head: close the opened angle, hold the eye line ------------
++    // hips 0.15 + torso 0.45 + head 0.40 = the whole residual, spread down the
++    // chain the way a real turn distributes: least at the pelvis, most at the neck.
++    let torso_lean = -0.045 - 0.035 * talk + 0.018 * breath;
++    pose.torso = pose.torso.slerp(yaw(0.45 * face) * pitch(torso_lean), w);
++    let head_pitch =
++        tilt * 0.85 - 0.09 * talk_nod * talk + 0.11 * listen_nod * (1.0 - talk);
++    pose.head = pose
++        .head
++        .slerp(yaw(0.40 * face + 0.05 * (t * 0.63).sin()) * pitch(head_pitch), w);
++
++    // ---- arms ---------------------------------------------------------------
++    // The off hand does the talking; the sword hand stays where `locomotion`'s
++    // resting grip put it, just settled (shoulder eased back, elbow softened).
++    let idle_l = pitch(-0.16 - 0.05 * breath) * roll(-0.14);
++    let gest_l = pitch(-0.62 - 0.40 * g) * roll(0.30 + 0.22 * g) * yaw(0.10 * g);
++    pose.sh_l = pose.sh_l.slerp(idle_l.slerp(gest_l, talk), w);
++    pose.el_l = pose
++        .el_l
++        .slerp(pitch(0.42 + 0.55 * talk + 0.45 * talk * g.abs()), w);
++    pose.sh_r = pose.sh_r.slerp(pitch(-0.11 - 0.04 * breath) * roll(0.12), w);
++    pose.el_r = pose.el_r.slerp(pitch(0.30 + 0.10 * talk), w);
++    pose.hand = pose.hand.slerp(pitch(-0.95) * roll(0.10), w);
++}
++
+ /// ② Turn-in-place. A planted body cannot rotate rigidly: the head leads, the chest
+ /// follows, the hips come last, and the feet cross-step to catch up.
+ fn turn_in_place(pose: &mut Pose, rig: &Rig, turn: f32) {
+@@ -2600,7 +2960,20 @@ fn husk_beat(e: &Enemy) -> Beat {
+             action: Action::Dead,
+             ..Beat::none()
+         },
+-        HuskState::Patrol | HuskState::Chase => Beat::none(),
++        HuskState::Patrol
++        | HuskState::Chase
++        | HuskState::Alert
++        | HuskState::Reposition
++        | HuskState::Search
++        | HuskState::LungeWind
++        | HuskState::LungeDash => {
++            // Movement / tactics states (added with the perception pass in
++            // combat.rs): no arm-arc beat yet. The melee telegraph pose lives in
++            // combat.rs's `husk_telegraph` (arm-mesh raise) and covers these
++            // states' tells; dedicated beats for the lunge crouch belong to the
++            // animation lane if wanted later.
++            Beat::none()
++        }
+     }
+ }
+ 
+@@ -2784,6 +3157,11 @@ mod tests {
+             rhythm: combat::HuskRhythm::Straight,
+             combo_no: 0,
+             feinted: false,
++            lunge_cd: 0.0,
++            strafe_dir: 1.0,
++            logged_state: state,
++            kind: crate::enemies::EnemyKind::Sentinel,
++            last_seen: Vec3::ZERO,
+         };
+         let wind_end = husk_beat(&mk(HuskState::Telegraph, combat::HUSK_TELEGRAPH)).t;
+         let swing_start = husk_beat(&mk(HuskState::Swing1, 0.0)).t;

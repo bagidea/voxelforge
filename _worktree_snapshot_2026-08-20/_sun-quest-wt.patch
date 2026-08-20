@@ -1,0 +1,148 @@
+diff --git a/client/src/quest.rs b/client/src/quest.rs
+index ffd6c89..37ee4b1 100644
+--- a/client/src/quest.rs
++++ b/client/src/quest.rs
+@@ -20,6 +20,10 @@ use crate::audio::SfxEvent;
+ use crate::FlyCam;
+ use voxelforge_sim::block::BlockId;
+ use bevy::math::IVec3;
++// Temporary Act-1-end capture hook (`VOXELFORGE_ACT1_SHOT`). Poppy owns the real
++// cinematic camera; this is the placeholder so the quest demo can hand back a
++// screenshot at the moment Act 1 closes.
++use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+ 
+ // =============================================================================
+ // JSON data types — matching assets/story/act1.json (Rose's schema v1.0.0)
+@@ -1787,6 +1791,7 @@ fn check_act_end(
+     journal: Res<QuestJournal>,
+     story: Res<StoryDataRes>,
+     mut fired: Local<bool>,
++    mut commands: Commands,
+ ) {
+     if *fired { return; }
+     let q5_done = journal.quests.get("q5_sigil_that_knew_you")
+@@ -1804,6 +1809,18 @@ fn check_act_end(
+         println!("ACT_END card: {}", end.card);
+         println!("ACT1_COMPLETE");
+     }
++
++    // Temporary end capture: the demo (or a human) sets `VOXELFORGE_ACT1_SHOT`
++    // to a PNG path and this saves the frame the act closes on. Fire exactly
++    // once, and only when asked — normal play is untouched.
++    if let Ok(path) = std::env::var("VOXELFORGE_ACT1_SHOT") {
++        if !path.trim().is_empty() {
++            commands
++                .spawn(Screenshot::primary_window())
++                .observe(save_to_disk(path.clone()));
++            println!("ACT1_SHOT queued to {path}");
++        }
++    }
+ }
+ 
+ // =============================================================================
+@@ -1836,12 +1853,20 @@ fn check_act_end(
+ /// the previous "east-first" route on the current map.
+ const GATE_ROUTE: [(f32, f32); 5] = [
+     (32.5, 22.0), // north — clear the shelter posts (x=29/35) + longhouse south edge
+-    (45.0, 22.0), // east along clear ground south of the longhouse
+-    (45.0, 16.5), // north along the open east field
++    (45.4, 22.0), // east along clear ground south of the longhouse
++    (45.4, 16.5), // north through the 1-wide gap between the (44,19) wall and the east house
+     (32.5, 16.5), // west onto the ramp column
+     (32.5, 6.4),  // up the ramp onto the gate square
+ ];
+ const WAYPOINT_TOL: f32 = 0.6; // blocks — a 6 b/s walk moves ~0.1 per frame
++/// Movement dead-zone for `steer`, kept far below [`WAYPOINT_TOL`]. Arrival
++/// decides when a leg is done, but *movement* has to keep correcting toward the
++/// waypoint until that fires — a dead-zone equal to the arrival tolerance
++/// swallowed the last 0.4 block of a diagonal correction and wedged the body one
++/// column off the clear path (the `none` walk froze at (44.6,20.3) against the
++/// (44,19) wall because `dx=0.4 < 0.6` stopped pressing D, so it pushed north
++/// into the wall instead of sliding east onto the x=45 corridor).
++const MOVE_TOL: f32 = 0.05;
+ /// How close the demo walks to Maren before pressing E. `INTERACT_RANGE` is 5.0
+ /// and the gate plateau puts the eye 2.6 blocks above her, so leave real margin.
+ const TALK_DIST: f32 = 4.3;
+@@ -2050,7 +2075,7 @@ fn quest_demo(
+                 }
+                 press_key(&mut demo, &mut key_input,KeyCode::KeyX, t);
+             } else {
+-                steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL);
++                steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL);
+             }
+             let tick = phase_t as u32;
+             if tick > 0 && tick % 3 == 0 && tick != demo.debug_tick {
+@@ -2169,9 +2194,9 @@ fn quest_demo(
+             let dz = quest_chaos::AMBUSH_Z - ptf.translation.z;
+             let dx = quest_chaos::AMBUSH_X - ptf.translation.x;
+             if dz.abs() > WAYPOINT_TOL {
+-                steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
++                steer(&mut key_input, cam_yaw, 0.0, dz, MOVE_TOL);
+             } else if dx.abs() > WAYPOINT_TOL {
+-                steer(&mut key_input, cam_yaw, dx, 0.0, WAYPOINT_TOL);
++                steer(&mut key_input, cam_yaw, dx, 0.0, MOVE_TOL);
+             } else {
+                 // Hold the line. Steering toward him from here is what would walk
+                 // the fight into the region.
+@@ -2213,9 +2238,9 @@ fn quest_demo(
+             // by Shiba; z=8–9 are now clear all the way from x=30..52.
+             let dz = POST_LANE_Z - ptf.translation.z;
+             if dz.abs() > WAYPOINT_TOL {
+-                steer(&mut key_input, cam_yaw, 0.0, dz, WAYPOINT_TOL);
++                steer(&mut key_input, cam_yaw, 0.0, dz, MOVE_TOL);
+             } else {
+-                steer(&mut key_input, cam_yaw, POST_STOP_X - ptf.translation.x, 0.0, WAYPOINT_TOL);
++                steer(&mut key_input, cam_yaw, POST_STOP_X - ptf.translation.x, 0.0, MOVE_TOL);
+             }
+             if phase_t > 25.0 {
+                 steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
+@@ -2334,7 +2359,7 @@ fn quest_demo(
+                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                 if dx.abs() <= 2.0 && dz.abs() <= 2.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
+                     press_key(&mut demo, &mut key_input,KeyCode::KeyR, t); }
+-                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
++                else { steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL); }
+                 // DEBUG: log walk progress every second
+                 let tick = phase_t as u32;
+                 if tick > 0 && tick != demo.debug_tick && tick % 3 == 0 {
+@@ -2349,14 +2374,14 @@ fn quest_demo(
+                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
+                     press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
+-                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
++                else { steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL); }
+                 if phase_t > 30.0 { hands_off!();
+                     println!("QUEST_STAGE_COMPLETE q4 o2_ledger => FAIL (timeout)"); demo.phase = 99; } }
+             2 => { let (tx, tz) = (33.0, 14.0);
+                 let (dx, dz) = (tx - ptf.translation.x, tz - ptf.translation.z);
+                 if dx.abs() <= 3.0 && dz.abs() <= 3.0 { steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
+                     press_key(&mut demo, &mut key_input,KeyCode::KeyE, t); }
+-                else { steer(&mut key_input, cam_yaw, dx, dz, WAYPOINT_TOL); }
++                else { steer(&mut key_input, cam_yaw, dx, dz, MOVE_TOL); }
+                 if phase_t > 30.0 { hands_off!();
+                     println!("QUEST_STAGE_COMPLETE q4 o3_offering => FAIL (timeout)"); demo.phase = 99; } }
+             _ => { hands_off!(); enter!(5); }
+@@ -2381,7 +2406,7 @@ fn quest_demo(
+             if ptf.translation.x < 35.0 && ptf.translation.z < 2.0 {
+                 steer(&mut key_input, cam_yaw, 0.0, 0.0, 1.0);
+             } else if ptf.translation.x > 36.0 || ptf.translation.z > 8.0 {
+-                steer(&mut key_input, cam_yaw, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, WAYPOINT_TOL);
++                steer(&mut key_input, cam_yaw, 32.0 - ptf.translation.x, 5.0 - ptf.translation.z, MOVE_TOL);
+             } else { steer(&mut key_input, cam_yaw, 0.0, -1.0, 0.0); }
+             if phase_t > 40.0 { hands_off!();
+                 println!("QUEST_STAGE_COMPLETE q5 gate => FAIL (timeout at z={:.1})", ptf.translation.z);
+diff --git a/client/src/quest_chaos.rs b/client/src/quest_chaos.rs
+index 15475df..1ca3416 100644
+--- a/client/src/quest_chaos.rs
++++ b/client/src/quest_chaos.rs
+@@ -111,8 +111,8 @@ const DETOUR_EAST_X: f32 = 49.5;
+ /// wall and blames the fix.
+ pub const GATE_ROUTE_ZONE_EARLY: [(f32, f32); 10] = [
+     (GATE_X, 22.0),          // north — clear the shelter posts (x=29/35)
+-    (45.0, 22.0),            // east along clear ground south of the longhouse
+-    (45.0, RAMP_FOOT_Z),     // north along the open east field
++    (45.4, 22.0),            // east along clear ground south of the longhouse
++    (45.4, RAMP_FOOT_Z),     // north through the 1-wide gap between the (44,19) wall and the east house
+     (GATE_X, RAMP_FOOT_Z),   // west onto the ramp column
+     (GATE_X, GATE_SQUARE_Z), // up the ramp onto the gate square (q2 o1_gate)
+     (GATE_X, LANE_Z),        // drop south off the plateau onto the clear lane
