@@ -69,6 +69,13 @@ pub fn block_id_from_name(name: &str) -> Option<BlockId> {
         "glass" => BlockId::GLASS,
         "water" => BlockId::WATER,
         "metal" => BlockId::METAL,
+        // The shaped five — same names `BlockId::name()` writes, so a saved map
+        // round-trips. Their `kinds` entries in the atlas carry the render mode.
+        "stair_wood" => BlockId::STAIR_WOOD,
+        "slab_stone" => BlockId::SLAB_STONE,
+        "fence_wood" => BlockId::FENCE_WOOD,
+        "pane_glass" => BlockId::PANE_GLASS,
+        "plant_cross" => BlockId::PLANT_CROSS,
         _ => return None,
     })
 }

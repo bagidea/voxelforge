@@ -69,6 +69,11 @@ build a level.
 | `glass`        | 17  | See-through pane.            |
 | `water`        | 18  | River block — solid to stand on, see-through; the mesher draws its surface 2/16 below the cell top. |
 | `metal`        | 19  | Structural metal (metallic PBR response). |
+| `stair_wood`   | 20  | Half-step stair (render mode `stair`). |
+| `slab_stone`   | 21  | Bottom-half slab (render mode `slab`). |
+| `fence_wood`   | 22  | Post + rails (render mode `fence`). |
+| `pane_glass`   | 23  | Thin glass sheet (render mode `pane`). |
+| `plant_cross`  | 24  | Cross-quad billboard plant (render mode `cross`). |
 
 Names are case-insensitive on load.
 
