@@ -1,0 +1,248 @@
+[2m2026-08-20T14:06:45.507698Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-08-20T14:06:45.798550Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+EDITOR_CONFIG loaded editor_config.json — 16 actions, grid_snap=1
+AI_MODE tactics (perception + squad pass)
+SETTINGS loaded settings.json
+[2m2026-08-20T14:06:45.926249Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-08-20T14:06:45.926313Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-08-20T14:06:45.926678Z[0m [32m INFO[0m [2mbevy_egui::render[0m[2m:[0m Using bindless_mode_array_size 16 (Device maximum 1048576)
+[2m2026-08-20T14:06:45.926891Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — Phase 0 spike (65v0)
+STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
+[2m2026-08-20T14:06:45.957147Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/skin.png
+[2m2026-08-20T14:06:45.957217Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/shirt.png
+[2m2026-08-20T14:06:45.957217Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/boots.png
+[2m2026-08-20T14:06:45.957228Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/pants.png
+BLOCK_ART file-backed dir=assets/textures/blocks tiles=26 kinds=26 tile_px=64
+BLOCK_ART LOD atlas 3840x64 (960 KiB) cell=64px
+BLOCK_PBR authored assets/textures/blocks\grass_top_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_top_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_side_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_side_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_r.png 64x64
+MAP_LOAD ok path=maps/river_sunset.json name="river-sunset" blocks=14350 size=2x2 chunks
+MESH_PATH split (one mesh + material per block type)
+AO strength 1 (VOXELFORGE_AO="") — corner + contact, per vertex
+MAP_APPLY set=14350 skipped=0 total_quads=14195
+ENTER_EDITOR
+WATER extended material built (1 face slot(s) so far) wave=0.055 depth=3.5m f0=0.02 glint=2.4 shore_a=0.3 deep_a=0.92
+[2m2026-08-20T14:06:46.246724Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.480645Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.484875Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.488297Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.493225Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.496817Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.515513Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.545508Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.578983Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.613574Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.646367Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.680295Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.713135Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.745571Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.780009Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.813796Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.845817Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.881813Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.914266Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.948243Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.964174Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:46.996188Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.031026Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.046904Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.063622Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.096452Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.129747Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.146988Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.164693Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.179811Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.213100Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.247043Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.280323Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.313474Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.347653Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.380832Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.413675Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.447071Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.463729Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.496741Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.530193Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.563971Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.598688Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.630412Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.663755Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.697949Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.714998Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.749557Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.781406Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.814956Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.849114Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.891504Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.915278Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.931268Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.949236Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:47.982667Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.015490Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.049482Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.081817Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.114899Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.132635Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.165507Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.198253Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.215834Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.249306Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.281838Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.315911Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.349554Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.382549Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.416352Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.448889Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.483490Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.516174Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.550188Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.583966Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.600569Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.633047Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.667835Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.684839Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.717647Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.750582Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.783876Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.800027Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.816775Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.850111Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.883607Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.916671Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.950360Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:48.982778Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.015991Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.049703Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.083703Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.116876Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.149782Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.183286Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.216639Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.250137Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.283602Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.316660Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.350712Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.383775Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+SHOT saved to E:/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge/docs/evidence/poppy-ao-2026-08-20/pair2-canopy-AFTER-ao-on.png
+[2m2026-08-20T14:06:49.417026Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.450388Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.468509Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.501247Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.579692Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to E:/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge/docs/evidence/poppy-ao-2026-08-20/pair2-canopy-AFTER-ao-on.png
+[2m2026-08-20T14:06:49.589130Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.592930Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.599951Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.617361Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.650751Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.684282Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.717890Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.751596Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.768259Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.801138Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.834546Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.852349Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.885433Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.918189Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.951882Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:49.984930Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.019102Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.052068Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.085016Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.119134Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.152215Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.185905Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.219257Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.252417Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.269410Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.302492Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.335824Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.369197Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.402446Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.419890Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.454046Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.486288Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.519262Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.553033Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl
+[2m2026-08-20T14:06:50.586325Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\shaders/water.wgsl

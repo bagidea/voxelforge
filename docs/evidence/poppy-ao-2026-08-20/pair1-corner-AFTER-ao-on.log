@@ -1,0 +1,107 @@
+[2m2026-08-20T14:06:33.420322Z[0m [32m INFO[0m [2mbevy_diagnostic::system_information_diagnostics_plugin::internal[0m[2m:[0m SystemInfo { os: "Windows 11 Home", kernel: "26200", cpu: "12th Gen Intel(R) Core(TM) i5-12600K", core_count: "10", memory: "15.8 GiB" }
+[2m2026-08-20T14:06:33.714685Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce GTX 1060 6GB", vendor: 4318, device: 7171, device_type: DiscreteGpu, device_pci_bus_id: "0000:03:00.0", driver: "NVIDIA", driver_info: "560.94", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: false }
+EDITOR_CONFIG loaded editor_config.json — 16 actions, grid_snap=1
+AI_MODE tactics (perception + squad pass)
+SETTINGS loaded settings.json
+[2m2026-08-20T14:06:33.836372Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-08-20T14:06:33.836430Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-08-20T14:06:33.836817Z[0m [32m INFO[0m [2mbevy_egui::render[0m[2m:[0m Using bindless_mode_array_size 16 (Device maximum 1048576)
+[2m2026-08-20T14:06:33.837017Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Voxelforge — Phase 0 spike (65v0)
+STORY_LOAD ok path=assets/story/act1.json quests=5 npcs=3 dialogues=12 regions=9
+[2m2026-08-20T14:06:33.867071Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/skin.png
+[2m2026-08-20T14:06:33.867142Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/pants.png
+[2m2026-08-20T14:06:33.867163Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/shirt.png
+[2m2026-08-20T14:06:33.867153Z[0m [31mERROR[0m [2mbevy_asset::server[0m[2m:[0m Path not found: E:\Projects\bagidea-ai-agents-office\workspace\projects\Voxelforge\target-poppy\perf\assets\textures/character/boots.png
+BLOCK_ART file-backed dir=assets/textures/blocks tiles=26 kinds=26 tile_px=64
+BLOCK_ART LOD atlas 3840x64 (960 KiB) cell=64px
+BLOCK_PBR authored assets/textures/blocks\grass_top_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_top_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\grass_side_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\dirt_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\stone_bricks_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_side_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_side_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\oak_log_top_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\leaves_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\snow_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\red_sand_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\brick_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\clay_plaster_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\lamp_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\glass_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\water_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_r.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_n.png 64x64
+BLOCK_PBR authored assets/textures/blocks\metal_r.png 64x64
+MAP_LOAD ok path=maps/castle.json name="castle-20x20" blocks=928 size=1x1 chunks
+MESH_PATH split (one mesh + material per block type)
+AO strength 1 (VOXELFORGE_AO="") — corner + contact, per vertex
+MAP_APPLY set=928 skipped=0 total_quads=317
+ENTER_EDITOR
+SHOT saved to E:/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge/docs/evidence/poppy-ao-2026-08-20/pair1-corner-AFTER-ao-on.png
+[2m2026-08-20T14:06:37.406255Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to E:/Projects/bagidea-ai-agents-office/workspace/projects/Voxelforge/docs/evidence/poppy-ao-2026-08-20/pair1-corner-AFTER-ao-on.png
