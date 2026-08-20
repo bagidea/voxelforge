@@ -20,12 +20,15 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::combat::{self, Health, Stamina};
-use crate::editor::AppState;
-use crate::inventory::Inventory;
-use crate::quest::{self, QuestJournal, QuestProgress, QuestStatus};
-use crate::scene::Campsite;
-use crate::{FlyCam, OrbitCam};
+use crate::{
+    combat::{self, Health, Stamina},
+    editor::AppState,
+    inventory::Inventory,
+    player_tuning as pt,
+    quest::{self, QuestJournal, QuestProgress, QuestStatus},
+    scene::Campsite,
+    FlyCam, OrbitCam,
+};
 
 /// Where the player's own save lives (position/heading/HP/stamina). Quest progress
 /// is `quest_save.json`, owned by `quest.rs` — the two are written together so a
@@ -180,6 +183,7 @@ pub fn start_new_game(
         (&mut Transform, &mut FlyCam, &mut Health, &mut Stamina),
         Without<OrbitCam>,
     >,
+    cam: &mut Query<(&mut Transform, &mut OrbitCam)>,
     camp: Option<&Campsite>,
     journal: &mut QuestJournal,
     inv: &mut Inventory,
@@ -198,12 +202,30 @@ pub fn start_new_game(
         fly.walking = true;
         fly.grounded = true;
         fly.vel = Vec3::ZERO;
+        fly.hvel = Vec3::ZERO;
+        fly.coyote_timer = 0.0;
+        fly.jump_buffer = 0.0;
         *hp = Health::new(combat::HP_PLAYER);
         *stam = Stamina::full();
         println!(
             "GAME_NEW ok spawn=({:.2},{:.2},{:.2}) hp={:.0} stamina={:.0}",
             tf.translation.x, tf.translation.y, tf.translation.z, hp.cur, stam.cur
         );
+    }
+    if let Ok((mut ctf, mut orbit)) = cam.single_mut() {
+        if let Some(camp) = camp {
+            let rot = Quat::from_axis_angle(Vec3::Y, camp.yaw);
+            ctf.translation = camp.eye + Vec3::Y * pt::PIVOT_UP + (rot * Vec3::Z) * pt::BOOM_DIST;
+            ctf.rotation = rot;
+            orbit.smooth_pos = ctf.translation;
+            orbit.smooth_rot = rot;
+        }
+        orbit.yaw = camp.map(|c| c.yaw).unwrap_or_default();
+        orbit.pitch = 0.0;
+        orbit.dist = pt::BOOM_DIST;
+        orbit.want_dist = pt::BOOM_DIST;
+        orbit.pos_vel = Vec3::ZERO;
+        orbit.fov = pt::CAM_BASE_FOV;
     }
 }
 
@@ -215,6 +237,7 @@ pub fn continue_game(
         (&mut Transform, &mut FlyCam, &mut Health, &mut Stamina),
         Without<OrbitCam>,
     >,
+    cam: &mut Query<(&mut Transform, &mut OrbitCam)>,
     journal: &mut QuestJournal,
     inv: &mut Inventory,
 ) -> bool {
@@ -231,6 +254,9 @@ pub fn continue_game(
     fly.walking = true;
     fly.grounded = true;
     fly.vel = Vec3::ZERO;
+    fly.hvel = Vec3::ZERO;
+    fly.coyote_timer = 0.0;
+    fly.jump_buffer = 0.0;
     hp.cur = save.hp.clamp(0.0, hp.max);
     stam.cur = save.stamina.clamp(0.0, combat::STAMINA_MAX);
     stam.delay = 0.0;
@@ -245,6 +271,21 @@ pub fn continue_game(
     // files together, so Continue must read both (savegame.json + quest_save.json).
     if let Some(saved) = quest::load_quest_journal() {
         *journal = saved;
+    }
+    // Reset camera spring state so the lens doesn't interpolate from wherever it
+    // was in the menu into the loaded position.
+    if let Ok((mut ctf, mut orbit)) = cam.single_mut() {
+        let rot = Quat::from_axis_angle(Vec3::Y, save.yaw);
+        ctf.translation = tf.translation + Vec3::Y * pt::PIVOT_UP + (rot * Vec3::Z) * pt::BOOM_DIST;
+        ctf.rotation = rot;
+        orbit.yaw = save.yaw;
+        orbit.pitch = 0.0;
+        orbit.dist = pt::BOOM_DIST;
+        orbit.want_dist = pt::BOOM_DIST;
+        orbit.smooth_pos = ctf.translation;
+        orbit.smooth_rot = rot;
+        orbit.pos_vel = Vec3::ZERO;
+        orbit.fov = pt::CAM_BASE_FOV;
     }
     println!("GAME_LOAD flags={:?}", journal.flags);
     println!(

@@ -327,17 +327,24 @@ fn handle_menu_action(
         (&mut Transform, &mut FlyCam, &mut Health, &mut Stamina),
         Without<OrbitCam>,
     >,
+    mut cam: Query<(&mut Transform, &mut OrbitCam)>,
     mut inv: ResMut<Inventory>,
     camp: Option<Res<Campsite>>,
 ) {
     for action in reader.read() {
         match action {
             MenuAction::NewGame => {
-                save_game::start_new_game(&mut player, camp.as_deref(), &mut journal, &mut inv);
+                save_game::start_new_game(
+                    &mut player,
+                    &mut cam,
+                    camp.as_deref(),
+                    &mut journal,
+                    &mut inv,
+                );
                 next.set(AppState::Play);
             }
             MenuAction::Continue => {
-                if save_game::continue_game(&mut player, &mut journal, &mut inv) {
+                if save_game::continue_game(&mut player, &mut cam, &mut journal, &mut inv) {
                     next.set(AppState::Play);
                 }
             }

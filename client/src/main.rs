@@ -33,6 +33,7 @@ mod inventory;
 mod look;
 mod main_menu;
 mod mapfile;
+mod player_tuning;
 mod quest;
 mod save_game;
 mod quest_chaos;
@@ -67,6 +68,8 @@ use voxel::{
 };
 
 use editor::AppState;
+
+use player_tuning as pt;
 
 // ---------------------------------------------------------------------------
 // Config (env vars on native, ?query params on web)
@@ -404,11 +407,17 @@ pub(crate) struct FlyCam {
     pub(crate) face_yaw: f32,
     /// Vertical (+residual) velocity used by walk mode's gravity/jump; unused in fly.
     pub(crate) vel: Vec3,
+    /// Horizontal velocity used while walking so starts/stops ramp instead of snapping.
+    pub(crate) hvel: Vec3,
     /// true = grounded walking body (gravity + AABB voxel collision); false =
     /// free noclip fly (EDIT mode building). Toggled live with F.
     pub(crate) walking: bool,
     /// Set the frame the body rests on a solid voxel below — gates the jump.
     pub(crate) grounded: bool,
+    /// Seconds of coyote time remaining: you can still jump briefly after leaving ground.
+    pub(crate) coyote_timer: f32,
+    /// Seconds of buffered jump input remaining: an early Space press is remembered.
+    pub(crate) jump_buffer: f32,
 }
 
 /// The orbit camera — rides a spring-arm/boom behind + above the avatar (Roblox
@@ -428,6 +437,13 @@ pub(crate) struct OrbitCam {
     /// `VOXELFORGE_LOOK_CAM` to frame a proof shot (a long boom for a vista, a
     /// short one for a character close-up) without a second camera path.
     pub(crate) want_dist: f32,
+    /// Smoothed camera position and rotation (damped spring) so the frame never
+    /// snaps with the avatar.
+    pub(crate) smooth_pos: Vec3,
+    pub(crate) smooth_rot: Quat,
+    pub(crate) pos_vel: Vec3,
+    /// Current vertical FOV in radians (bumps up slightly while sprinting).
+    pub(crate) fov: f32,
 }
 
 #[derive(Component)]
@@ -1062,8 +1078,11 @@ fn setup(
             FlyCam {
                 face_yaw,
                 vel: Vec3::ZERO,
+                hvel: Vec3::ZERO,
                 walking,
                 grounded: false,
+                coyote_timer: 0.0,
+                jump_buffer: 0.0,
             },
             // Combat kit (§8.1–3, §3): state machine, stamina, HP, poise.
             combat::player_bundle(),
@@ -1094,15 +1113,28 @@ fn setup(
         Some([y, p, d]) => (y.to_radians(), p.to_radians(), d),
         None => (orbit_yaw, orbit_pitch, BOOM_DIST),
     };
+    let base_fov = pt::CAM_BASE_FOV;
+    let spawn_rot = Quat::from_axis_angle(Vec3::Y, orbit_yaw)
+        * Quat::from_axis_angle(Vec3::X, orbit_pitch);
+    let spawn_pos = eye + Vec3::Y * PIVOT_UP + spawn_rot * Vec3::Z * boom;
     let cam = commands
         .spawn((
             Camera3d::default(),
-            Transform::from_translation(eye + Vec3::new(0.0, PIVOT_UP, boom)),
+            Transform::from_translation(spawn_pos).with_rotation(spawn_rot),
+            Projection::Perspective(PerspectiveProjection {
+                fov: base_fov,
+                near: 0.05,
+                ..default()
+            }),
             OrbitCam {
                 yaw: orbit_yaw,
                 pitch: orbit_pitch,
                 dist: boom,
                 want_dist: boom,
+                smooth_pos: spawn_pos,
+                smooth_rot: spawn_rot,
+                pos_vel: Vec3::ZERO,
+                fov: base_fov,
             },
             // Warm bounce fill. `look::apply_look_to_cameras` re-colours and
             // re-powers this for the live hour; these are the neutral values the
@@ -1567,22 +1599,15 @@ pub(crate) fn find_spawn(cx: i32, cz: i32) -> (i32, i32, i32) {
     (cx, cz, terrain_height(cx as f32, cz as f32))
 }
 
-/// Rotate an angle toward a target by at most `max_step` radians, taking the
-/// short way round the circle (used to swing the avatar's facing to its heading).
-fn turn_toward(cur: f32, target: f32, max_step: f32) -> f32 {
-    use std::f32::consts::{PI, TAU};
-    let mut d = (target - cur).rem_euclid(TAU);
-    if d > PI {
-        d -= TAU;
-    }
-    cur + d.clamp(-max_step, max_step)
-}
-
 /// Third-person controller (Roblox style): the mouse orbits the camera on a boom
 /// behind + above the avatar; WASD moves the avatar relative to where the camera
-/// looks; the avatar turns to face its heading. Grounded walk reuses `move_body`
-/// (gravity + AABB voxel collision + step-up) exactly; EDIT mode is a free noclip
-/// fly. The camera follows every frame, pulling in against walls via `camera_boom`.
+/// looks; the avatar turns to face its heading.  This version adds:
+///   * velocity-based horizontal movement with acceleration / deceleration ramps,
+///   * coyote time + jump buffer,
+///   * eased turn rate that also faces the camera when idle,
+///   * damped-spring camera follow with a small speed-based lag and FOV bump.
+/// Grounded walk reuses `move_body` (gravity + AABB voxel collision + step-up);
+/// EDIT mode is a free noclip fly.
 pub(crate) fn fly_camera(
     time: Res<Time>,
     cfg: Res<Cfg>,
@@ -1592,6 +1617,7 @@ pub(crate) fn fly_camera(
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
     mut player_q: Query<(&mut Transform, &mut FlyCam), Without<OrbitCam>>,
     mut cam_q: Query<(&mut Transform, &mut OrbitCam)>,
+    mut proj_q: Query<&mut Projection, With<OrbitCam>>,
     world: Option<Res<World>>,
 ) {
     let Ok((mut ptf, mut fly)) = player_q.single_mut() else {
@@ -1616,6 +1642,7 @@ pub(crate) fn fly_camera(
     if keys.just_pressed(KeyCode::KeyF) {
         fly.walking = !fly.walking;
         fly.vel = Vec3::ZERO;
+        fly.hvel = Vec3::ZERO;
     }
 
     // Mouse orbits the camera (yaw around, pitch clamped so it never rolls over).
@@ -1661,17 +1688,45 @@ pub(crate) fn fly_camera(
         }
     }
     let wish = wish.normalize_or_zero();
+    let sprint = keys.pressed(KeyCode::ControlLeft);
 
     if fly.walking {
         // ---- WALK: grounded body — reuse move_body's gravity/collision/step-up.
         if let Some(world) = world.as_deref() {
-            let speed = if keys.pressed(KeyCode::ControlLeft) { 10.0 } else { 6.0 };
-            let horiz = wish * speed * dt;
+            let speed = if sprint { pt::SPRINT_SPEED } else { pt::WALK_SPEED };
+            let target_h = wish * speed;
+
+            // Accelerate toward the target horizontal velocity, or decelerate with
+            // friction when there is no input.  Air control is much weaker.
+            fly.hvel = if wish != Vec3::ZERO {
+                let accel = if fly.grounded { pt::ACCEL_GROUND } else { pt::AIR_ACCEL };
+                pt::accel_toward(fly.hvel, target_h, accel, dt)
+            } else {
+                let decel = if fly.grounded { pt::DECEL_GROUND } else { pt::AIR_DECEL };
+                pt::apply_friction(fly.hvel, decel, dt)
+            };
+
+            // Gravity.
             fly.vel.y = (fly.vel.y - GRAVITY * dt).max(-TERMINAL);
-            if fly.grounded && keys.just_pressed(KeyCode::Space) {
-                fly.vel.y = JUMP_SPEED;
+
+            // Coyote time + jump buffer.
+            if fly.grounded {
+                fly.coyote_timer = pt::COYOTE_TIME;
+            } else {
+                fly.coyote_timer = (fly.coyote_timer - dt).max(0.0);
             }
-            let delta = Vec3::new(horiz.x, fly.vel.y * dt, horiz.z);
+            if keys.just_pressed(KeyCode::Space) {
+                fly.jump_buffer = pt::JUMP_BUFFER_TIME;
+            } else {
+                fly.jump_buffer = (fly.jump_buffer - dt).max(0.0);
+            }
+            if fly.jump_buffer > 0.0 && (fly.grounded || fly.coyote_timer > 0.0) {
+                fly.vel.y = JUMP_SPEED;
+                fly.jump_buffer = 0.0;
+                fly.coyote_timer = 0.0;
+            }
+
+            let delta = Vec3::new(fly.hvel.x * dt, fly.vel.y * dt, fly.hvel.z * dt);
             let can_step = fly.grounded && fly.vel.y <= 0.0;
             let (np, grounded) = move_body(world, ptf.translation, delta, can_step);
             ptf.translation = np;
@@ -1689,17 +1744,22 @@ pub(crate) fn fly_camera(
         if keys.pressed(KeyCode::ShiftLeft) {
             dir -= Vec3::Y;
         }
-        let speed = if keys.pressed(KeyCode::ControlLeft) { 90.0 } else { 28.0 };
+        let speed = if sprint { 90.0 } else { 28.0 };
         if dir != Vec3::ZERO {
             ptf.translation += dir.normalize() * speed * dt;
         }
     }
 
-    // Turn the avatar to face its heading (its body mesh's forward is local -Z).
-    if wish != Vec3::ZERO {
-        let target = (-wish.x).atan2(-wish.z);
-        fly.face_yaw = turn_toward(fly.face_yaw, target, TURN_RATE * dt);
-    }
+    // Turn the avatar.  While moving, face the movement direction with an eased
+    // turn rate.  While idle, slowly turn to face the camera forward so the
+    // third-person body doesn't drift sideways to the lens.
+    let want_yaw = if wish != Vec3::ZERO {
+        (-wish.x).atan2(-wish.z)
+    } else {
+        (-flat_fwd.x).atan2(-flat_fwd.z)
+    };
+    let turn_rate = if wish != Vec3::ZERO { pt::TURN_RATE } else { pt::TURN_RATE_IDLE };
+    fly.face_yaw = pt::smooth_turn_toward(fly.face_yaw, want_yaw, turn_rate, dt, pt::TURN_EASE);
     ptf.rotation = Quat::from_axis_angle(Vec3::Y, fly.face_yaw);
 
     // ---- Camera follow: ride the boom behind + above the avatar, pulled in when
@@ -1711,34 +1771,56 @@ pub(crate) fn fly_camera(
         Some(world) => camera_boom(world, pivot, back, want),
         None => want,
     };
-    // Post-collision safety: `camera_boom` only sweeps along the boom axis, so a
-    // block flush against the lens from the side (avatar past a wall, boom swung
-    // out) is invisible to it and can fill a third of the frame with one face.
-    // Walk back toward the pivot until the lens centre is clear in all six
-    // cardinal directions (A5).
+    // Post-collision safety: walk back toward the pivot until the lens centre is clear
+    // in all six cardinal directions (A5).
     if let Some(world) = world.as_deref() {
         let clear = camera_lens_clear(world, pivot, back, dist);
         if clear < dist {
             dist = clear; // hard snap on side-collision — never trail into a block
         }
     }
-    // Asymmetric spring-arm smoothing. `camera_boom` marches the lens along the
-    // boom in fixed 0.1 steps against the voxel grid, so as the avatar drifts the
-    // raw distance flickers between adjacent grid steps and the camera jitters.
-    // Snap shut the instant a wall closes — the lens must never trail a collision
-    // and clip back through it — but ease back *out* frame-rate-independently; the
-    // slow release collapses the flicker without ever docking late. Hard snap on
-    // pull-in (closing), exponential ease on release (opening).
-    const BOOM_RELEASE_K: f32 = 8.0; // release time-constant: ~0.5s to near-full
+    // Asymmetric boom-distance smoothing: snap shut instantly, ease back out.
     let prev = orbit.dist;
     let dist = if dist <= prev {
         dist
     } else {
-        prev + (dist - prev) * (1.0 - (-BOOM_RELEASE_K * dt).exp())
+        prev + (dist - prev) * (1.0 - (-pt::exp_decay(0.0, 1.0, 8.0, dt)).exp())
     };
     orbit.dist = dist;
-    ctf.translation = pivot + back * dist;
-    ctf.rotation = cam_rot;
+
+    // Damped-spring camera position + rotation.  First build the raw boom target,
+    // then add a small speed-based lag so fast runs feel like the camera is leaning
+    // back to catch up.
+    let raw_pos = pivot + back * dist;
+    let flat_speed = fly.hvel.length();
+    let lag_t = pt::smoothstep(pt::RUN_CAM_LAG_SPEED_LO, pt::RUN_CAM_LAG_SPEED_HI, flat_speed);
+    let lag_dist = lag_t * pt::RUN_CAM_LAG_DIST;
+    let lag_pos = raw_pos - fly.hvel.normalize_or_zero() * lag_dist;
+
+    orbit.smooth_pos = pt::damped_spring(
+        orbit.smooth_pos,
+        lag_pos,
+        &mut orbit.pos_vel,
+        pt::CAM_SPRING_STIFFNESS,
+        pt::CAM_SPRING_DAMP,
+        dt,
+    );
+    orbit.smooth_rot = orbit
+        .smooth_rot
+        .slerp(cam_rot, 1.0 - (-pt::CAM_ROT_CATCHUP * dt).exp());
+
+    // Running FOV bump: subtle stretch when the avatar is hauling.
+    let fov_target = pt::CAM_BASE_FOV
+        + pt::RUN_FOV_BUMP * pt::smoothstep(pt::RUN_FOV_SPEED_LO, pt::RUN_FOV_SPEED_HI, flat_speed);
+    orbit.fov = pt::exp_decay(orbit.fov, fov_target, pt::CAM_ROT_CATCHUP, dt);
+    if let Ok(mut proj) = proj_q.single_mut() {
+        if let Projection::Perspective(p) = proj.as_mut() {
+            p.fov = orbit.fov;
+        }
+    }
+
+    ctf.translation = orbit.smooth_pos;
+    ctf.rotation = orbit.smooth_rot;
 }
 
 // ---------------------------------------------------------------------------
@@ -1811,13 +1893,8 @@ const STEP_HEIGHT: f32 = 1.0; // auto-climb a single-block ledge while walking
 const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before stepping
 
 // ---- Third-person orbit camera (spring-arm / boom) ------------------------
-pub(crate) const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
-const BOOM_MARGIN: f32 = 0.9; // keep the camera this far off a wall it pulls up to (was 0.35 — a wall at 0.35 fills >30% of the frame)
-const BOOM_RADIUS: f32 = 0.7; // treat the lens as a disc this wide so walls beside the boom (corners, parallel faces) pull it in too — not just a wall dead on the boom axis (was 0.4 — missed blocks beside a wall-hugging camera)
-pub(crate) const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
-const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
-const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
-const TURN_RATE: f32 = 12.0; // how fast the avatar turns to face its movement (rad/s)
+// Constants live in `player_tuning.rs` so the feel can be tuned in one place.
+pub(crate) use player_tuning::{BOOM_DIST, BOOM_MARGIN, BOOM_RADIUS, PITCH_MAX, PITCH_MIN, PIVOT_UP};
 
 /// Does the player body — camera (eye) at `eye` — overlap any solid voxel? A tiny
 /// epsilon inset stops a body that merely *touches* a block face from sticking.

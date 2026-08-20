@@ -34,8 +34,8 @@ use crate::foliage;
 use crate::hud;
 use crate::voxel;
 use crate::{
-    box_fill, find_spawn, get_world_voxel, highest_solid, Cfg, FlyCam, OrbitCam, World, BOOM_DIST,
-    EYE_HEIGHT, PIVOT_UP, PLAYER_HALF_W,
+    box_fill, find_spawn, get_world_voxel, highest_solid, player_tuning as pt, Cfg, FlyCam,
+    OrbitCam, World, BOOM_DIST, EYE_HEIGHT, PIVOT_UP, PLAYER_HALF_W,
 };
 
 /// The hand-built Village of Edhari (`docs/first-playable-loop.md` Act 0). Shiba owns
@@ -740,6 +740,9 @@ fn place_player(
         fly.walking = true;
         fly.grounded = true;
         fly.vel = Vec3::ZERO;
+        fly.hvel = Vec3::ZERO;
+        fly.coyote_timer = 0.0;
+        fly.jump_buffer = 0.0;
     }
     if let Ok((mut ctf, mut orbit)) = cam_q.single_mut() {
         // Don't stomp a look-lane pose. `VOXELFORGE_LOOK_CAM=yaw,pitch,dist`
@@ -755,9 +758,14 @@ fn place_player(
         };
         orbit.yaw = yaw;
         orbit.pitch = pitch;
+        orbit.want_dist = dist;
         orbit.dist = dist;
+        orbit.fov = pt::CAM_BASE_FOV;
         let rot = Quat::from_axis_angle(Vec3::Y, orbit.yaw) * Quat::from_axis_angle(Vec3::X, orbit.pitch);
+        orbit.smooth_rot = rot;
         ctf.translation = camp.eye + Vec3::Y * PIVOT_UP + (rot * Vec3::Z) * dist;
+        orbit.smooth_pos = ctf.translation;
+        orbit.pos_vel = Vec3::ZERO;
         ctf.rotation = rot;
     }
 }
