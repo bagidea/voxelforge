@@ -543,6 +543,10 @@ struct Parts {
     trim: Handle<StandardMaterial>,
     skin: Handle<StandardMaterial>,
     steel: Handle<StandardMaterial>,
+    /// Boots — its own material so the player's leather footwear reads darker
+    /// (espresso) than the trim bucket it used to share with the legs/pelvis.
+    /// Husk keeps armored boots on `steel`; the villager keeps `trim`.
+    boot: Handle<StandardMaterial>,
     /// Extra decorative pieces baked from [`extra_parts`] — armor, props,
     /// hair. Empty until that function returns something; `build_rig` spawns
     /// whatever is here without needing to know it's there.
@@ -901,10 +905,22 @@ fn init_rig_assets(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     let pd = Dims::of(RigLook::Player);
     let hd = Dims::of(RigLook::Husk);
     let vd = Dims::of(RigLook::Villager);
+
+    // Per-part surface textures for the player, hand-authored at the same 16x16
+    // texel size as the world's block art. Recolored 2026-08-20 to the LOCKED
+    // character-bible palette already baked into the flat `base_color`s below
+    // (they shipped from an earlier, since-abandoned LOD-body pass in an
+    // unrelated orange/teal palette — see `docs/character-design-review-
+    // 2026-08-18.md` Q2) so wiring them in adds grain, not a color regression.
+    let skin_tex: Handle<Image> = asset_server.load("textures/character/skin.png");
+    let shirt_tex: Handle<Image> = asset_server.load("textures/character/shirt.png");
+    let pants_tex: Handle<Image> = asset_server.load("textures/character/pants.png");
+    let boots_tex: Handle<Image> = asset_server.load("textures/character/boots.png");
 
     let player = Parts {
         pelvis: meshes.add(Cuboid::new(0.40, 0.20, 0.26)),
@@ -922,17 +938,23 @@ fn init_rig_assets(
         // cloak hinge.
         cloak: meshes.add(Cuboid::new(0.30, 0.62, 0.05)),
         cloth: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.420, 0.290, 0.180), // #6B4A2E, character-bible §1 tunic
+            // #6B4A2E walnut tunic, now carried by the texture (recolored to this
+            // exact mean, see the load block above) instead of a flat fill — base
+            // color stays white so the texture isn't double-tinted.
+            base_color: Color::WHITE,
+            base_color_texture: Some(shirt_tex.clone()),
             perceptual_roughness: 0.85,
             ..default()
         }),
         trim: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.34, 0.20, 0.13),
+            base_color: Color::WHITE,
+            base_color_texture: Some(pants_tex.clone()),
             perceptual_roughness: 0.65,
             ..default()
         }),
         skin: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.84, 0.62, 0.47),
+            base_color: Color::WHITE,
+            base_color_texture: Some(skin_tex.clone()),
             perceptual_roughness: 0.50,
             ..default()
         }),
@@ -943,9 +965,24 @@ fn init_rig_assets(
             reflectance: 0.7,
             ..default()
         }),
+        boot: materials.add(StandardMaterial {
+            // #3A2716 espresso leather (bible "cloak / leather outer"), a shade
+            // darker than the trim/pants bucket so boots read as their own piece.
+            base_color: Color::WHITE,
+            base_color_texture: Some(boots_tex.clone()),
+            perceptual_roughness: 0.75,
+            ..default()
+        }),
         extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(RigLook::Player)),
     };
 
+    let husk_steel = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.55, 0.51, 0.46),
+        perceptual_roughness: 0.20,
+        metallic: 0.0,
+        reflectance: 0.7,
+        ..default()
+    });
     let husk = Parts {
         pelvis: meshes.add(Cuboid::new(0.68, 0.26, 0.44)),
         torso: meshes.add(Cuboid::new(0.88, 0.86, 0.58)),
@@ -976,13 +1013,10 @@ fn init_rig_assets(
             perceptual_roughness: 0.85,
             ..default()
         }),
-        steel: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.55, 0.51, 0.46),
-            perceptual_roughness: 0.20,
-            metallic: 0.0,
-            reflectance: 0.7,
-            ..default()
-        }),
+        steel: husk_steel.clone(),
+        // Armored boots stay on the same steel as the spearhead (build_rig's
+        // boot_mat match) — no matching texture swatch exists for the Husk.
+        boot: husk_steel,
         extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(RigLook::Husk)),
     };
 
@@ -991,6 +1025,11 @@ fn init_rig_assets(
     // box for a rig should not also recolour the character in anyone's shot.
     // `weapon` is allocated but never spawned (see `build_rig`): villagers carry
     // nothing, and a `RigWeapon` on one would put a swing trail on an elder.
+    let npc_trim = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.255, 0.330, 0.415),
+        perceptual_roughness: 0.85,
+        ..default()
+    });
     let npc = Parts {
         pelvis: meshes.add(Cuboid::new(0.36, 0.18, 0.24)),
         torso: meshes.add(Cuboid::new(0.41, 0.53, 0.25)),
@@ -1010,11 +1049,7 @@ fn init_rig_assets(
             perceptual_roughness: 0.90,
             ..default()
         }),
-        trim: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.255, 0.330, 0.415),
-            perceptual_roughness: 0.85,
-            ..default()
-        }),
+        trim: npc_trim.clone(),
         skin: materials.add(StandardMaterial {
             base_color: Color::srgb(0.780, 0.640, 0.545), // older, cooler than Auren's
             perceptual_roughness: 0.60,
@@ -1027,6 +1062,9 @@ fn init_rig_assets(
             reflectance: 0.4,
             ..default()
         }),
+        // No boot swatch for the villager either — build_rig's boot_mat match
+        // keeps her on plain `trim`.
+        boot: npc_trim,
         extra: build_extra_parts(&mut meshes, &mut materials, extra_parts(RigLook::Villager)),
     };
 
@@ -1211,9 +1249,14 @@ fn build_rig(
             knee,
         );
         // Sole flush with the ground plane, toe protruding forward (-Z).
-        // Player boots are leather (trim), not the sword's chrome steel — a traveller's
-        // boots, not polished metal. The Husk's armored boots stay on steel.
-        let boot_mat = if look == RigLook::Husk { &p.steel } else { &p.trim };
+        // Player boots get their own textured espresso-leather material (`boot`,
+        // darker than the trim/pants bucket); the Husk's armored boots stay on
+        // steel; the villager (no matching swatch) stays on `trim`.
+        let boot_mat = match look {
+            RigLook::Husk => &p.steel,
+            RigLook::Player => &p.boot,
+            RigLook::Villager => &p.trim,
+        };
         skin(
             &p.foot,
             boot_mat,
@@ -1800,7 +1843,7 @@ fn animate_rigs(
 
         locomotion(&mut pose, &rig, &d, loco, run, elapsed);
         turn_in_place(&mut pose, &rig, turn);
-        airborne(&mut pose, air_w);
+        airborne(&mut pose, air_w, fall);
 
         // ⑦ Conversation. Sits above locomotion (a body that walks off mid-line
         // fades the layer out with `loco`) and below the action match, so drawing
@@ -2145,19 +2188,42 @@ fn turn_in_place(pose: &mut Pose, rig: &Rig, turn: f32) {
     pose.hips_pos.y -= 0.02 * turn;
 }
 
-/// Legs tuck and arms rise while off the ground, so a jump does not look like a
-/// standing pose being levitated.
-fn airborne(pose: &mut Pose, w: f32) {
+/// Three read poses blended by the actor's REAL vertical velocity, not one
+/// static airborne shape — a jump does not look like a standing pose being
+/// levitated, and it does not look the same on the way up as on the way down.
+///
+///   * **rising**  — the push-off is still spending itself: legs snap together
+///     and back, the trailing knee drives up hardest, arms sweep up for lift.
+///   * **float**   — the arc has flattened near the apex: legs hang loosely
+///     tucked, arms drift out. (This is the original single airborne pose —
+///     still exactly what plays at `vel_y == 0`.)
+///   * **falling** — descent has picked up speed: legs reach down and forward
+///     to meet the ground, torso tips in, arms spread for balance.
+///
+/// `w` is the existing time-in-air blend-in/out (unchanged); `vel_y` is the
+/// actor's own vertical speed for THIS frame (`FlyCam::vel.y`, 0 for actors
+/// with no such notion), read straight off the same value `animate_rigs`
+/// already uses to detect landings.
+fn airborne(pose: &mut Pose, w: f32, vel_y: f32) {
     if w <= 0.001 {
         return;
     }
-    pose.hip_l = pose.hip_l.slerp(pitch(0.42), w);
-    pose.hip_r = pose.hip_r.slerp(pitch(0.18), w);
-    pose.knee_l = pose.knee_l.slerp(pitch(-0.95), w);
-    pose.knee_r = pose.knee_r.slerp(pitch(-0.55), w);
-    pose.sh_l = pose.sh_l.slerp(pitch(-0.55) * roll(-0.45), w);
-    pose.sh_r = pose.sh_r.slerp(pitch(-0.35) * roll(0.45), w);
-    pose.torso = pose.torso.slerp(pitch(-0.14), w);
+    let rise = smoothstep(0.3, 2.2, vel_y);
+    let drop = smoothstep(0.3, 2.2, -vel_y);
+    let float = (1.0 - rise - drop).max(0.0);
+    let mix = |up: f32, apex: f32, down: f32| rise * up + float * apex + drop * down;
+
+    pose.hip_l = pose.hip_l.slerp(pitch(mix(0.62, 0.42, 0.20)), w);
+    pose.hip_r = pose.hip_r.slerp(pitch(mix(0.10, 0.18, 0.28)), w);
+    pose.knee_l = pose.knee_l.slerp(pitch(mix(-1.25, -0.95, -0.35)), w);
+    pose.knee_r = pose.knee_r.slerp(pitch(mix(-0.30, -0.55, -0.45)), w);
+    pose.sh_l = pose
+        .sh_l
+        .slerp(pitch(mix(-0.80, -0.55, -0.25)) * roll(mix(-0.30, -0.45, -0.60)), w);
+    pose.sh_r = pose
+        .sh_r
+        .slerp(pitch(mix(-0.20, -0.35, -0.25)) * roll(mix(0.55, 0.45, 0.60)), w);
+    pose.torso = pose.torso.slerp(pitch(mix(-0.22, -0.14, 0.10)), w);
 }
 
 /// ④ Hit reaction — a sharp recoil that rings down over [`HIT_TIME`]. Additive, so
@@ -2320,10 +2386,12 @@ fn swing_pose(actor: Actor, beat: &Beat) -> Key {
         Actor::Husk => (HUSK_COCK, HUSK_FOLLOW),
         Actor::Player => match beat.combo {
             // The three-hit light chain alternates its arc so a combo reads as one
-            // continuous sentence rather than the same swing three times.
+            // continuous sentence rather than the same swing three times. `4` is
+            // the finisher — a heavier payoff than a standalone heavy.
             1 => (LIGHT1_COCK, LIGHT1_FOLLOW),
             2 => (LIGHT2_COCK, LIGHT2_FOLLOW),
             3 => (LIGHT3_COCK, LIGHT3_FOLLOW),
+            4 => (FINISHER_COCK, FINISHER_FOLLOW),
             _ => (HEAVY_COCK, HEAVY_FOLLOW),
         },
     };
@@ -2586,6 +2654,51 @@ const HEAVY_FOLLOW: Key = Key {
     weight: 1.0,
 };
 
+/// Combo finisher (§2.4 extended) — the chain's payoff. A deeper overhead than
+/// the standalone heavy: the blade comes all the way back over the shoulder and
+/// drives through a bigger lunge, so the last hit reads as the end of a sentence
+/// rather than just a fourth swing.
+const FINISHER_COCK: Key = Key {
+    sh_pitch: -3.10,
+    sh_yaw: 0.10,
+    sh_roll: -0.20,
+    elbow: 1.85,
+    grip_pitch: -0.85,
+    grip_roll: 0.05,
+    off_pitch: -0.70,
+    off_roll: -0.20,
+    off_elbow: 1.35,
+    torso_yaw: 0.12,
+    torso_pitch: 0.44,
+    hips_yaw: 0.08,
+    head_yaw: -0.04,
+    head_pitch: -0.36,
+    lunge: -0.22,
+    crouch: 0.06,
+    stance: 0.28,
+    weight: 1.0,
+};
+const FINISHER_FOLLOW: Key = Key {
+    sh_pitch: 1.60,
+    sh_yaw: -0.12,
+    sh_roll: 0.16,
+    elbow: 0.10,
+    grip_pitch: 0.70,
+    grip_roll: -0.12,
+    off_pitch: 0.60,
+    off_roll: 0.30,
+    off_elbow: 0.18,
+    torso_yaw: -0.28,
+    torso_pitch: -0.72,
+    hips_yaw: -0.16,
+    head_yaw: 0.08,
+    head_pitch: 0.42,
+    lunge: 0.74,
+    crouch: 0.32,
+    stance: 0.90,
+    weight: 1.0,
+};
+
 /// The Husk's two-handed overhead. Bigger and slower than the player's — its whole
 /// silhouette has to telegraph for `HUSK_TELEGRAPH` (0.8 s) before it commits.
 const HUSK_COCK: Key = Key {
@@ -2796,6 +2909,15 @@ fn player_beat(pc: &PlayerCombat) -> Beat {
                 t,
                 active: a,
                 combo: 0,
+            }
+        }
+        CombatState::Finisher => {
+            let (t, a) = norm(pc.timer, combat::FINISHER_TIME, combat::FINISHER_ACTIVE);
+            Beat {
+                action: Action::Swing,
+                t,
+                active: a,
+                combo: 4,
             }
         }
         CombatState::Dodge => Beat {
