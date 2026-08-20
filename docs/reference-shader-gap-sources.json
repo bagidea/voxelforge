@@ -1,0 +1,261 @@
+[
+  {
+    "claim": "SSAO ~0.3-0.8 ms, HBAO+ ~0.8-1.5 ms, GTAO ~1.0-2.0 ms at 1080p on modern GPUs",
+    "url": "https://superrendersfarm.com/article/ambient-occlusion-explained-ssao-hbao-gtao-2026",
+    "title": "Ambient Occlusion Explained: SSAO vs HBAO vs GTAO 2026",
+    "tags": ["ao", "ssao", "hbao", "gtao", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: light + AO"
+  },
+  {
+    "claim": "Bevy 0.15 introduced VBAO (Visibility Bitmask Ambient Occlusion), replacing the prior GTAO implementation",
+    "url": "https://bevy.org/news/bevy-0-15/",
+    "title": "Bevy 0.15 release notes — VBAO replaces GTAO",
+    "tags": ["bevy", "ao", "ssao", "vbao"],
+    "queryContext": "reference shader gap 2026-08-21: light + AO"
+  },
+  {
+    "claim": "Activision GTAO paper reports ~0.5 ms on PS4 at 1080p",
+    "url": "https://www.iryoku.com/downloads/Practical-Realtime-Strategies-for-Accurate-Indirect-Occlusion.pdf",
+    "title": "Practical Realtime Strategies for Accurate Indirect Occlusion (GTAO)",
+    "tags": ["ao", "gtao", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: light + AO"
+  },
+  {
+    "claim": "NVIDIA HBAO+ horizon-based ambient occlusion technology overview",
+    "url": "https://developer.nvidia.com/rendering-technologies/horizon-based-ambient-occlusion-plus",
+    "title": "NVIDIA HBAO+",
+    "tags": ["ao", "hbao", "nvidia"],
+    "queryContext": "reference shader gap 2026-08-21: light + AO"
+  },
+  {
+    "claim": "VXAO opacity voxelization ~3-5 ms and cone tracing ~2.5-3.5 ms on GTX 980 1080p",
+    "url": "https://docs.huihoo.com/gputechconf/gtc2015/S5670-NVIDIA-VXGI-Dynamic-Global-Illumination-for-Games.pdf",
+    "title": "NVIDIA GTC 2015 — VXGI Dynamic Global Illumination for Games",
+    "tags": ["ao", "voxel", "cone-tracing", "vxao", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: light + AO"
+  },
+  {
+    "claim": "NVIDIA GDC 2016 advanced AO overview including VXAO",
+    "url": "https://developer.download.nvidia.com/gameworks/events/GDC2016/atatarinov_alpanteleev_advanced_ao.pdf",
+    "title": "NVIDIA GDC 2016 — Advanced Ambient Occlusion",
+    "tags": ["ao", "vxao", "nvidia"],
+    "queryContext": "reference shader gap 2026-08-21: light + AO"
+  },
+  {
+    "claim": "Bevy StandardMaterial supports normal map, metallic-roughness packed texture, occlusion, emissive, clearcoat, anisotropy",
+    "url": "https://docs.rs/bevy/latest/bevy/pbr/struct.StandardMaterial.html",
+    "title": "Bevy StandardMaterial docs",
+    "tags": ["bevy", "pbr", "material"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "Bevy PBR example demonstrates StandardMaterial usage",
+    "url": "https://bevy.org/examples/3d-rendering/pbr/",
+    "title": "Bevy PBR example",
+    "tags": ["bevy", "pbr", "example"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "Bevy 0.11 added parallax mapping to StandardMaterial",
+    "url": "https://bevy.org/news/bevy-0-11/",
+    "title": "Bevy 0.11 release notes — parallax mapping",
+    "tags": ["bevy", "pbr", "parallax"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "LabPBR specular map packs red=smoothness, green=metalness/F0 reflectance, blue=porosity/SSS, alpha=emission; this differs from glTF metallic-roughness (green=roughness, blue=metallic)",
+    "url": "https://optimumrealism.com/info/what-is-pbr-in-minecraft",
+    "title": "OptimumRealism — What Is PBR in Minecraft? LabPBR Explained",
+    "tags": ["minecraft", "pbr", "labpbr"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "Measured POM costs: +0.07 ms on RTX 4090 @ 32 samples, +0.5-3 ms on Intel Iris Xe integrated GPU",
+    "url": "https://github.com/mfagerlund/parallax-mapping-demo",
+    "title": "mfagerlund/parallax-mapping-demo measured costs",
+    "tags": ["pom", "parallax", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "Tatarchuk SIGGRAPH 2006 Parallax Occlusion Mapping paper",
+    "url": "https://www.realtimerendering.com/advances/s2006/Tatarchuk-POM.pdf",
+    "title": "Parallax Occlusion Mapping (SIGGRAPH 2006)",
+    "tags": ["pom", "parallax", "paper"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "plumesplat extends Bevy StandardMaterial with triplanar mapping and texture-array splatting up to 256 materials",
+    "url": "https://github.com/DrewRidley/plumesplat",
+    "title": "plumesplat — triplanar PBR splatting for Bevy",
+    "tags": ["bevy", "triplanar", "pbr", "terrain"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "bevy_triplanar_splatting provides TriplanarMaterial blending up to 4 materials for Bevy",
+    "url": "https://github.com/bonsairobo/bevy_triplanar_splatting",
+    "title": "bevy_triplanar_splatting",
+    "tags": ["bevy", "triplanar", "pbr"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "Triplanar mapping overview: samples texture 3 times per axis and blends by normal",
+    "url": "https://nhance-school.com/tools/glossary/triplanar-mapping",
+    "title": "What is Triplanar Mapping?",
+    "tags": ["triplanar", "texturing"],
+    "queryContext": "reference shader gap 2026-08-21: PBR materials"
+  },
+  {
+    "claim": "Bevy custom water refraction shader example using view_transmission_texture and depth_prepass_texture",
+    "url": "https://github.com/bevyengine/bevy/discussions/22643",
+    "title": "Bevy Discussion — Performant water refraction shader example",
+    "tags": ["bevy", "water", "refraction"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "Bevy 0.12 added StandardMaterial transmission properties and view_transmission_texture for screen-space refraction",
+    "url": "https://bevy.org/news/bevy-0-12/",
+    "title": "Bevy 0.12 release notes — PBR transmission / screen-space refraction",
+    "tags": ["bevy", "water", "refraction", "transmission"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "Unity thesis measured planar reflection ~1.5 us render + cheap lookup; GrabPass refraction ~1 us",
+    "url": "https://projekter.aau.dk/projekter/files/213101783/Thesis_final_writing.pdf",
+    "title": "Aalborg University thesis — Reflection/refraction performance in Unity",
+    "tags": ["water", "reflection", "refraction", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "Unity FFT ocean 3 cascades 256x256 ~1.65 ms on RTX 4070",
+    "url": "https://80.lv/articles/real-time-physically-accurate-ocean-surface-simulation-in-unity",
+    "title": "80.lv — Real-Time Physically Accurate Ocean Surface Simulation in Unity",
+    "tags": ["water", "ocean", "fft", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "NVIDIA Ocean SDK compute-shader FFT ocean surface simulation slides",
+    "url": "https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/OceanCS_Slides.pdf",
+    "title": "NVIDIA Ocean Surface Simulation slides",
+    "tags": ["water", "ocean", "fft", "nvidia"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "Godot Rain Puddles shader layers albedo, normal, roughness, AO, specular, puddle mask, SSR, and ripples",
+    "url": "https://godotshaders.com/shader/rain-puddles-v1/",
+    "title": "GodotShaders — Rain Puddles V3",
+    "tags": ["wetness", "puddle", "rain", "shader"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "Wetness can be implemented cheaply via global specular/diffuse darkening or expensively via puddles with SSR/planar reflections",
+    "url": "https://osg-users.openscenegraph.narkive.com/iTu0dVTp/shader-composition-opengl-modes-and-custom-modes",
+    "title": "OpenSceneGraph users — Shader composition / wetness LOD cost",
+    "tags": ["wetness", "puddle", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: water + wetness"
+  },
+  {
+    "claim": "Bevy 0.16 adds procedural atmospheric scattering with Atmosphere component, low cost, mobile/WebGPU ready",
+    "url": "https://bevy.org/news/bevy-0-16/",
+    "title": "Bevy 0.16 release notes — Procedural atmospheric scattering",
+    "tags": ["bevy", "sky", "atmosphere", "scattering"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "bevy-volumetric-clouds renders Horizon Zero Dawn-style volumetric clouds in Bevy 0.17/0.18",
+    "url": "https://github.com/evroon/bevy-volumetric-clouds",
+    "title": "bevy-volumetric-clouds",
+    "tags": ["bevy", "clouds", "volumetric"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "Unreal Engine 4.27 volumetric clouds documentation describes shadow tracing and Beer Shadow Map cost drivers",
+    "url": "https://dev.epicgames.com/documentation/unreal-engine/volumetric-clouds?application_version=4.27",
+    "title": "Unreal Engine 4.27 — Volumetric Clouds",
+    "tags": ["clouds", "volumetric", "unreal"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "TU Wien 2026 thesis reports WebGPU volumetric cloud ray-marcher ~2.25 ms under heavy cloud coverage",
+    "url": "https://www.cg.tuwien.ac.at/research/publications/2026/muth-2026-clouds/",
+    "title": "TU Wien — Real-Time Volumetric Rendering of Meteorological Cloud Data",
+    "tags": ["clouds", "volumetric", "performance", "webgpu"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "Chalmers thesis efficient dynamic atmospheric scattering: precompute ~3.45 ms, render quad ~0.03 ms, dynamic updates under 0.1 ms",
+    "url": "https://publications.lib.chalmers.se/records/fulltext/203057/203057.pdf",
+    "title": "Efficient and Dynamic Atmospheric Scattering (Chalmers thesis)",
+    "tags": ["sky", "atmosphere", "scattering", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "Volumetric lighting / god rays performance considerations and half-resolution optimization",
+    "url": "https://moonjump.com/game-dev-mechanics-volumetric-lighting-god-rays-how-it-works/",
+    "title": "Moonjump — Volumetric Lighting (God Rays)",
+    "tags": ["god-rays", "volumetric", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "Chetan Jags sun shafts radial-blur algorithm overview",
+    "url": "https://chetanjags.wordpress.com/2016/02/02/volumetric-lighting-sunshafts/",
+    "title": "Volumetric Lighting: SunShafts",
+    "tags": ["god-rays", "sun-shafts"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "Bevy issue #18151 proposes physically based unified volumetrics system integrating Atmosphere and FogVolume",
+    "url": "https://github.com/bevyengine/bevy/issues/18151",
+    "title": "Bevy issue #18151 — Physically based unified volumetrics system",
+    "tags": ["bevy", "volumetrics", "fog", "clouds"],
+    "queryContext": "reference shader gap 2026-08-21: sky + clouds"
+  },
+  {
+    "claim": "Cyanilux soft foliage shader uses sine wave time-based vertex displacement with vertex-color wind weights",
+    "url": "https://www.cyanilux.com/tutorials/soft-foliage-shader-breakdown/",
+    "title": "Cyanilux — Soft Foliage Shader Breakdown",
+    "tags": ["foliage", "wind", "vertex-shader"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  },
+  {
+    "claim": "NVIDIA GPU Gems classic reference for animating grass in vertex shader",
+    "url": "https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-7-rendering-countless-blades-of-waving-grass",
+    "title": "NVIDIA GPU Gems — Rendering Countless Blades of Waving Grass",
+    "tags": ["foliage", "wind", "grass", "nvidia"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  },
+  {
+    "claim": "NVIDIA GPU Gems 3 procedural wind animations for trees performance: 1.34-37.61 ms for 30-1000 instances depending on branch count",
+    "url": "https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-6-gpu-generated-procedural-wind-animations-trees",
+    "title": "NVIDIA GPU Gems 3 — GPU-Generated Procedural Wind Animations for Trees",
+    "tags": ["foliage", "wind", "trees", "nvidia", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  },
+  {
+    "claim": "Vegetation wind pass typically 0.5-1 ms in Unity URP and 1-2 ms in HDRP depending on density",
+    "url": "https://truetech.dev/games-development/services/vfx/vegetation-and-wind-shader-development.html",
+    "title": "TRUETECH — Vegetation Shaders and Wind Animation",
+    "tags": ["foliage", "wind", "performance"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  },
+  {
+    "claim": "bevy_feronia is a Bevy crate for foliage/grass scattering and wind simulation supporting Bevy 0.18",
+    "url": "https://lib.rs/crates/bevy_feronia",
+    "title": "bevy_feronia — foliage/grass scattering crate for Bevy",
+    "tags": ["bevy", "foliage", "wind", "grass"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  },
+  {
+    "claim": "bevy_open_vat is a Vertex Animation Texture plugin for Bevy enabling instanced GPU animation",
+    "url": "https://github.com/HK416/bevy_open_vat",
+    "title": "bevy_open_vat — Vertex Animation Texture plugin for Bevy",
+    "tags": ["bevy", "foliage", "vat", "animation"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  },
+  {
+    "claim": "UDK wind vertex shader uses 71-95 shader instructions depending on settings",
+    "url": "https://minifloppy.it/posts/2014/udk-wind-vertex-shader/",
+    "title": "Francesco's GameDev Corner — UDK Wind Vertex Shader",
+    "tags": ["foliage", "wind", "shader-instructions"],
+    "queryContext": "reference shader gap 2026-08-21: foliage wind"
+  }
+]
