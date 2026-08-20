@@ -1294,6 +1294,31 @@ pub(crate) fn remesh_chunk_entity(
         }
     }
 
+    // Lamps emit real light, not just a glowing face — one warm shadowless
+    // point light per LAMP block at the block centre. Chunk-local position;
+    // the chunk entity carries the world translation (see `spawn_chunk_parent`).
+    // Shadowless on purpose: a shadow map is binary, and a dozen shadow-casting
+    // lamps would swamp the shadow pass for a soft indoor glow.
+    for y in 0..CHUNK {
+        for z in 0..CHUNK {
+            for x in 0..CHUNK {
+                if chunk.get(x, y, z) == BlockId::LAMP {
+                    commands.spawn((
+                        PointLight {
+                            color: Color::srgb(1.0, 0.55, 0.25),
+                            intensity: 40_000.0,
+                            range: 9.0,
+                            shadow_maps_enabled: false,
+                            ..default()
+                        },
+                        Transform::from_xyz(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
+                        ChildOf(entity),
+                    ));
+                }
+            }
+        }
+    }
+
     quads
 }
 
