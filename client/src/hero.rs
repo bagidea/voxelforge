@@ -11,10 +11,14 @@
 //! can be overridden by env vars parsed in `main::read_cfg`, so the scene can be
 //! tuned and re-screenshotted WITHOUT another (slow) Bevy recompile.
 //!
-//! Those overrides are a TUNING path, not the source of truth. The CEO-approved
-//! recipe is baked in `mod recipe` below, so running the shot binary with NO env at
-//! all reproduces `docs/assets/wide-hero-final.png`. See `mod recipe` for why (it
-//! did not, and the frame you got instead was red-clipped).
+//! Those overrides are a TUNING path, not the source of truth. The approved recipe
+//! is baked in `mod recipe` below, so running the shot binary with NO env at all
+//! reproduces the approved frame. See `mod recipe` for why (it did not, and the
+//! frame you got instead was red-clipped).
+//!
+//! Current baked recipe: INTERIOR **s2** (2026-08-20), reference plate
+//! `_pixel_hero/s2.png`, rationale in `docs/VERDICT-pixel-interior-s2-2026-08-20.md`.
+//! It supersedes PILE A, whose plate was `docs/assets/wide-hero-final.png`.
 
 /// Set to `true` when the overlap gate fails. A static atomic so Bevy's window
 /// close handler (which resets `AppExit` to `Success` during shutdown) cannot
@@ -147,10 +151,21 @@ mod pal {
 /// could not see the failure. Two sources of truth, and the wrong one was the
 /// default.
 ///
-/// Every value below is copied verbatim from `scripts/render_wide_hero.sh` (the
-/// recipe that produced the locked `docs/assets/wide-hero-final.png`). The env
-/// vars still override for no-recompile sweeps — they are now a TUNING path, not
-/// the only path to the shipped look.
+/// The env vars still override for no-recompile sweeps — they are a TUNING path,
+/// not the only path to the shipped look.
+///
+/// LINEAGE of the values below:
+/// * The camera/DOF/fog/dust half is copied verbatim from
+///   `scripts/render_wide_hero.sh`, the recipe that produced the locked
+///   `docs/assets/wide-hero-final.png`.
+/// * The nine LIGHT/GRADE levers — `SUN`, `AMBIENT`, `AMBCOLOR`, `BOUNCE`,
+///   `BOUNCE2`, `RIM`, `GRADE`, `SHOULDER`, `EXPOSURE` — are INTERIOR **s2**
+///   (2026-08-20), copied verbatim from `scripts/_pixel_hero_ladder2.ps1` arm s2
+///   (its lines 63-69), the arm that produced `_pixel_hero/s2.png`. They supersede
+///   the PILE A values for those nine. Every one of them carries a per-const note
+///   below saying what moved and why; see
+///   `docs/VERDICT-pixel-interior-s2-2026-08-20.md` for the comparison against
+///   round 1's r1/r3.
 mod recipe {
     /// `VOXELFORGE_CAM` — TILT-DOWN wide-B establishing cam: eye → target, fov.
     pub const CAM: [f32; 7] = [7.6, 6.4, -6.0, 7.6, 2.7, 8.0, 60.0];
@@ -158,16 +173,25 @@ mod recipe {
     /// stays crisp voxel geometry (G1). The old f/1.4 default melted it.
     pub const DOF: [f32; 2] = [8.0, 10.0];
     /// `VOXELFORGE_SUN` — elevation°, azimuth°, illuminance. Key-light-dominant.
-    pub const SUN: [f32; 3] = [19.0, 196.0, 26000.0];
-    /// `VOXELFORGE_AMBIENT` — the old 4200 default was the ambient-DOMINATED
-    /// balance that rendered flat fire-orange; 2800 hands the frame to the sun.
     ///
-    /// PILE A raises it to **3900**, and the "flat fire-orange" objection does
-    /// not carry over: it was an objection to more power on an AMBER fill. This
-    /// fill is sky-blue now (see `AMBCOLOR`), so the same power buys the two
-    /// things the old balance had no way to buy — shadow % down (60 → ≤ 45) and
-    /// cool % up (0 → ≥ 12) — instead of one more stop of orange.
-    pub const AMBIENT: f32 = 3900.0;
+    /// INTERIOR s2 (2026-08-20) raises illuminance **26000 → 32000**. Elevation and
+    /// azimuth are untouched — the window throw was already aimed correctly, it was
+    /// merely not *unmistakably* the light source: with the fill cut to 1700 (below)
+    /// a 26000 key left the room evenly lit from nowhere in particular. The extra
+    /// 6000 lux is what makes the throw on the floor read as coming FROM the opening.
+    pub const SUN: [f32; 3] = [19.0, 196.0, 32000.0];
+    /// `VOXELFORGE_AMBIENT` — the flat, directionless fill.
+    ///
+    /// History: 4200 (amber, flat fire-orange) → 2800 → PILE A 3900 (sky-blue fill,
+    /// bought shadow % down and cool % up at once).
+    ///
+    /// INTERIOR s2 (2026-08-20) cuts it hard to **1700**. PILE A's 3900 is what
+    /// measured as a BLUE WASH — 87 % cool, hue spread 84.6°, L_mean 0.426 and no
+    /// local contrast anywhere: a fill that reaches every face is by construction a
+    /// fill that flattens every face, and at 3900 it out-powered the key. 1700 keeps
+    /// the cool channel PILE A opened (the fill is still sky, see `AMBCOLOR`) while
+    /// handing the frame back to `SUN` — which is where local contrast comes from.
+    pub const AMBIENT: f32 = 1700.0;
     /// `VOXELFORGE_BLUESCALE` — the scalar that pulls the blue leg of sun + fog
     /// down. 0.50 → 0.85 → **1.00**.
     ///
@@ -177,37 +201,47 @@ mod recipe {
     /// their shape and `VOXELFORGE_BLUESCALE=0.85` reproduces the old frame's
     /// sun + fog exactly.
     pub const BLUESCALE: f32 = 1.00;
-    /// `VOXELFORGE_EXPOSURE` — ev100. 9.0 → **8.15**.
+    /// `VOXELFORGE_EXPOSURE` — ev100. 9.0 → 8.15 → **8.80**.
     ///
-    /// PILE A luminance target: mean luma 79.5 → ≥ 105, shadow 60 % → ≤ 45 %.
-    /// Exposure is the only knob that moves BOTH without touching hue, and the
-    /// highlight half of that target is paid for by `SHOULDER` below rather than
-    /// by holding exposure down — which is what crushed the frame in the first
-    /// place. Lower ev100 = brighter: 9.0 → 8.15 is +0.85 stop.
-    pub const EXPOSURE: f32 = 8.15;
+    /// Lower ev100 = brighter. PILE A took 9.0 → 8.15 (+0.85 stop) to hit a mean-luma
+    /// target, but it took that stop on top of a 3900 fill, so what it actually bought
+    /// was a washed-out plaster wall (L_mean 0.426, everything pale).
+    ///
+    /// INTERIOR s2 (2026-08-20) walks it back to **8.80** — roughly −0.65 stop from
+    /// PILE A. The brightness that stop was carrying is now carried by `SUN` at 32000
+    /// instead, which puts the light back where it belongs (a directional throw, not
+    /// a global gain) and lets the plaster hold its value.
+    pub const EXPOSURE: f32 = 8.80;
     /// `VOXELFORGE_GRADE` — temperature, post_saturation, contrast.
-    /// `[0.02, 1.00, 1.30]` → **`[-0.06, 0.80, 1.16]`**.
+    /// `[0.02, 1.00, 1.30]` → PILE A `[-0.06, 0.80, 1.16]` →
+    /// **`[-0.01, 1.00, 1.32]`**.
     ///
-    /// PILE A, three targets in one triple:
-    /// * temperature 0.02 → −0.06: the old value pushed an already-warm frame
-    ///   redder. Negative is the post-tonemap half of the cool channel — it is
-    ///   NOT the source of it (the lights below are), it just stops the grade
-    ///   undoing them.
-    /// * post_saturation 1.00 → 0.80: sat mean measured **0.863** against a
-    ///   ≤ 0.75 ceiling. A monochrome frame at 0.86 is not "punchy", it is
-    ///   clipped — see the `#48230c / #5d2603 / #a53901` k-means centres.
-    /// * contrast 1.30 → 1.16: midtone contrast is what pushed 60 % of the frame
-    ///   under luma 85. The micro-contrast it was bought for is now carried by
-    ///   the warm/cool split instead, which is cheaper in shadow %.
-    pub const GRADE: [f32; 3] = [-0.06, 0.80, 1.16];
-    /// `VOXELFORGE_SHOULDER` — filmic highlight roll-off. 0.64 → **0.92**.
+    /// INTERIOR s2 (2026-08-20) — round 1 (r1/r3) proved the room reads as a real
+    /// room again; what it still read as was FLAT. All three legs move for that:
+    /// * temperature −0.06 → **−0.01**: PILE A needed a strong negative to stop the
+    ///   grade undoing the new cool lights. With the fill cut to 1700 the cool now
+    ///   comes from the lights alone, so the grade no longer has to push against a
+    ///   warm bias — and −0.06 on top of a sky fill is what tipped round 1's PILE A
+    ///   plate to 87 % cool. Near-neutral holds r1's warm-led ratio.
+    /// * post_saturation 0.80 → **1.00**: 0.80 was the answer to a *clipped* frame
+    ///   (sat mean 0.863 on a red-crushed plate). This frame is not clipped, so the
+    ///   same 0.80 just drains it — it is a direct cause of the pale read.
+    /// * contrast 1.16 → **1.32**: the flatness lever. PILE A cut contrast to buy
+    ///   shadow %, but shadow % is now paid for by the 32000 key + `SHOULDER`, so the
+    ///   midtone contrast can come back and do what it is for.
+    pub const GRADE: [f32; 3] = [-0.01, 1.00, 1.32];
+    /// `VOXELFORGE_SHOULDER` — filmic highlight roll-off (1.0 = no shoulder).
+    /// 0.64 → PILE A 0.92 → **0.72**.
     ///
-    /// PILE A: highlight % measured **8.7** against a ≥ 20 floor, and 0.64 is
-    /// exactly what put it there — the shoulder was tuned to seat window p95
-    /// inside a 150..185 band, i.e. to *forbid* the top of the range. Opening it
-    /// to 0.92 also buys sat std (≥ 0.22): near-white highlights read sat ≈ 0 and
-    /// widen the spread the old flat-saturated frame had none of (0.173).
-    pub const SHOULDER: f32 = 0.92;
+    /// PILE A opened it to 0.92 to raise highlight % off an 8.7 floor. Paired with
+    /// s2's 32000 key that is too much headroom given away: the window throw and the
+    /// pane blow toward flat white instead of rolling.
+    ///
+    /// INTERIOR s2 (2026-08-20) closes it to **0.72** — well clear of the old 0.64,
+    /// which was tuned to seat window p95 inside a 150..185 band and so *forbade* the
+    /// top of the range. 0.72 keeps a real shoulder on the key's highlights while
+    /// leaving the range open, and it is where the frame's local contrast is bought.
+    pub const SHOULDER: f32 = 0.72;
     /// `VOXELFORGE_DUST` — mote density in the god-ray corridor.
     pub const DUST: f32 = 3.0;
     /// GATE G4a — directional shadow-map resolution, and the ONLY lever on this
@@ -232,20 +266,33 @@ mod recipe {
     /// boilerplate. Sweep with `VOXELFORGE_SHADOWMAP=<n>` before moving it.
     pub const SHADOW_MAP: u32 = 2048;
     /// `VOXELFORGE_BOUNCE` / `_BOUNCE2` — floor-bounce and dark-lifter cards.
-    pub const BOUNCE: f32 = 1.0;
-    pub const BOUNCE2: f32 = 1.9;
-    /// `VOXELFORGE_AMBCOLOR` — the flat fill's colour. AMBER `[0.70, 0.60, 0.44]`
-    /// → **SKY `[0.30, 0.45, 0.80]`**.
     ///
-    /// PILE A, and the single biggest lever in it. `AmbientLight` reaches every
-    /// face the key cannot, so whatever colour it is, the frame's whole shadow
-    /// mass is that colour — an amber flat fill is *by construction* a frame with
-    /// no cool pixels, which is exactly what measured (`cool 0.000 %`,
-    /// `warm 97.1 %`, hue spread 24°). Flipping it to sky-blue is the interior's
-    /// answer to "where does the cool come from" that the art-gap report asks
-    /// for: **window sky light, not the sea**. B > G > R, mirroring the daylight
-    /// hemisphere the +X window opening actually looks at.
-    pub const AMBCOLOR: [f32; 3] = [0.30, 0.45, 0.80];
+    /// INTERIOR s2 (2026-08-20) swaps their weighting: card 1 **1.0 → 2.6**, card 2
+    /// **1.9 → 1.1**. This is the other half of the `AMBIENT` cut. The 2200 lux of
+    /// flat fill removed above has to come back as light that has a DIRECTION, or
+    /// the shade goes black; card 1 is the warm sunlit-parquet bounce (`BOUNCE1_COLOR`)
+    /// and it is aimed, so power there lifts the shade while still modelling form.
+    /// Card 2 is the dark-lifter — at 1.9 under a 1700 fill it would be re-flattening
+    /// the darkest 5 %, so it steps down as card 1 steps up. Net: warm-led, per r1.
+    pub const BOUNCE: f32 = 2.6;
+    pub const BOUNCE2: f32 = 1.1;
+    /// `VOXELFORGE_AMBCOLOR` — the flat fill's colour. AMBER `[0.70, 0.60, 0.44]`
+    /// → PILE A SKY `[0.30, 0.45, 0.80]` → **`[0.38, 0.51, 0.80]`**.
+    ///
+    /// PILE A's flip to sky-blue was the single biggest lever in it, and it stands:
+    /// `AmbientLight` reaches every face the key cannot, so whatever colour it is,
+    /// the frame's whole shadow mass is that colour — an amber flat fill is *by
+    /// construction* a frame with no cool pixels (`cool 0.000 %`, `warm 97.1 %`, hue
+    /// spread 24°). Sky-blue is the interior's honest answer to "where does the cool
+    /// come from": **window sky light, not the sea**. B > G > R still holds.
+    ///
+    /// INTERIOR s2 (2026-08-20) desaturates it slightly (R +0.08, G +0.06, B held).
+    /// At 3900 lux the pure `[0.30, 0.45, 0.80]` fill tinted the entire shadow mass
+    /// hard enough to read as a colour cast rather than as sky — 87 % of the frame
+    /// cool. The fill is much weaker now, but the shade it does light should read as
+    /// *shade lit by a blue sky*, not as blue paint; pulling R/G up does that while
+    /// keeping the B lead intact.
+    pub const AMBCOLOR: [f32; 3] = [0.38, 0.51, 0.80];
     /// `VOXELFORGE_SUNCOLOR` — the key's own colour. Unchanged in value
     /// (`[1.0, 0.80, 0.52]`, warm golden-hour) and hoisted to a const only so the
     /// warm half of the warm/cool split is swept from the same place as the cool
@@ -277,7 +324,14 @@ mod recipe {
     /// surfaces (counter tops, island top, bowl rim, floor near the window) go
     /// cool, side faces stay golden. That is the warm-key / cool-sky read the
     /// reference gets for free from a real sky, and the rim that `sat std` needs.
-    pub const RIM: [f32; 4] = [0.46, 0.62, 1.0, 5200.0];
+    ///
+    /// INTERIOR s2 (2026-08-20) keeps the colour exactly and drops the lux
+    /// **5200 → 3400**. The rim is a shadowless card, so every lux it spends is spent
+    /// on flatness — it was sized against a 26000 key and is now sitting under a
+    /// 32000 one, so holding 5200 would both over-cool the up-faces (round 1's
+    /// 87 %-cool problem, restated) and wash the very tops the key is meant to own.
+    /// 3400 preserves the elevation split that makes the effect read at all.
+    pub const RIM: [f32; 4] = [0.46, 0.62, 1.0, 3400.0];
     /// `VOXELFORGE_PANELO` / `_PANEHI` — the emissive window pane, in two bands.
     ///
     /// PILE A: the pane is the one place in this room where the sky is literally
@@ -969,9 +1023,12 @@ pub fn setup_hero(
     // scales both cards (0 = old flat look) and pairs with a cut to AMBIENT so
     // total exposure is held while the fill gains directionality.
     if wide {
-        // Two bounce cards, independently scaled so the tuning can push the
-        // dark-lifter (card 2) hard for G3's p05 WITHOUT the broad floor bounce
-        // (card 1) inflating the p95 highlight band — they pull opposite axes.
+        // Two bounce cards, independently scaled because they pull opposite axes:
+        // card 2 is the dark-lifter (G3's p05), card 1 the broad floor bounce (the
+        // p95 contributor). INTERIOR s2 (2026-08-20) runs card 1 HOT and card 2 low
+        // (`recipe::BOUNCE` 2.6 / `BOUNCE2` 1.1 — the reverse of PILE A's 1.0/1.9):
+        // with `AMBIENT` cut to 1700 the shade has to be lifted by light that has a
+        // DIRECTION, and card 1 is the aimed one. See the consts for the full why.
         let b1: f32 = cfg.bounce.unwrap_or(recipe::BOUNCE);
         let b2: f32 = cfg.bounce2.unwrap_or(recipe::BOUNCE2);
         let c1 = env_rgb("VOXELFORGE_BOUNCE1COLOR", recipe::BOUNCE1_COLOR);
@@ -980,7 +1037,9 @@ pub fn setup_hero(
         //    across toward the shaded -X wall. Lights undersides (counter lip,
         //    bowl foot, table edge) + the far shade wall with indirect amber that
         //    the top-down sun never reaches. Travels up + toward -X/+Z. Broad
-        //    coverage → the main p95 contributor of the two, so kept modest.
+        //    coverage → the main p95 contributor of the two. It was "kept modest"
+        //    under PILE A's 3900 flat fill; under s2's 1700 it is the primary shade
+        //    lifter and runs at 2.6 (`recipe::BOUNCE`), with the shoulder holding p95.
         commands.spawn((
             DirectionalLight {
                 color: Color::srgb(c1[0], c1[1], c1[2]),
@@ -1083,12 +1142,12 @@ pub fn setup_hero(
     // this bake (the approved wide-hero-final.png measures the same 0.17/0.18).
     // Env still overrides for re-framing.
     let (focus, aperture) = cfg.dof.unwrap_or(recipe::DOF).into_tuple2();
-    // Exposure = `recipe::EXPOSURE` (ev100 9.0). Reins in the blown right-side wall /
-    // window highlights, keeping filmic roll-off instead of clipping to paper-white.
-    // It runs a half-stop HOTTER than the old 9.5 narrow-hero default because the
-    // wide recipe pairs it with a real highlight shoulder (0.64) that the narrow path
-    // never applied; measured together they land p95 177.36 inside the 150..185 band.
-    // Exposure alone is not the highlight tool here — see the shoulder note below.
+    // Exposure = `recipe::EXPOSURE` (ev100 8.80 as of INTERIOR s2, 2026-08-20 — see
+    // the const's own note for the 9.0 → 8.15 → 8.80 history). Lower ev100 = brighter.
+    // It is deliberately NOT the brightness tool: s2 walks the stop back ~0.65 from
+    // PILE A's 8.15 and hands that brightness to `recipe::SUN` (32000) instead, so the
+    // light has a direction. Highlights are held by the shoulder (`recipe::SHOULDER`,
+    // 0.72), not by exposure — see the shoulder note below.
     // Env `VOXELFORGE_EXPOSURE` overrides.
     let exposure_ev = cfg.exposure.unwrap_or(recipe::EXPOSURE);
     // P0 post color-grade (grade-vs-golden, applied AFTER AcesFitted tonemap):
@@ -1118,13 +1177,12 @@ pub fn setup_hero(
     let shoulder: f32 = cfg.shoulder.unwrap_or(recipe::SHOULDER);
     let (hi_contrast, hi_gain) = if wide { (1.0, shoulder) } else { (g_contrast, 1.0) };
 
-    // Warm-bounce fill COLOUR = `recipe::AMBCOLOR` (0.70,0.60,0.44) — AMBER, matching
-    // the ref's higher G leg. The old default was the narrow hero's honey tint with a
-    // bscale-derived blue leg (0.784, 0.541, 0.180 × bscale ≈ 0.09): under it the WIDE
-    // frame — which is ambient-DOMINATED over huge floor/wall areas — collapsed to
-    // FIRE-RED and clipped. All three legs are now explicit, so the fill colour no
-    // longer moves when someone sweeps VOXELFORGE_BLUESCALE. `VOXELFORGE_AMBCOLOR`
-    // still overrides.
+    // Flat-fill COLOUR = `recipe::AMBCOLOR` (0.38,0.51,0.80) — SKY, B > G > R. It is
+    // the frame's COOL source, not its warm one: warmth comes from the key. History
+    // AMBER (0.70,0.60,0.44) → PILE A sky (0.30,0.45,0.80) → s2's slightly desaturated
+    // sky; the const's own note carries the why. All three legs are explicit, so the
+    // fill colour no longer moves when someone sweeps VOXELFORGE_BLUESCALE.
+    // `VOXELFORGE_AMBCOLOR` still overrides.
     let amb_col = cfg.ambcolor.unwrap_or(recipe::AMBCOLOR);
     let clear = env_rgb("VOXELFORGE_CLEAR", recipe::CLEAR);
     // One line in the runlog carrying every value the Pile A plate is graded on, so
@@ -1153,12 +1211,12 @@ pub fn setup_hero(
         }),
         Transform::from_translation(eye).looking_at(target, Vec3::Y),
         Msaa::Off, // SSAO requires MSAA off; edges stay crisp anyway (voxel look)
-        // Warm-bounce fill (bible pass #2). DESATURATED honey — old (0.78,0.55,0.30)
-        // was so orange it dyed every surface one hue (monochrome collapse); lifting
-        // B 0.30→0.50 keeps it warm (R>G>B) while letting materials hold their own
-        // colour (cream ceramic / grey steel / green accent survive). Brighter floor
-        // (env `VOXELFORGE_AMBIENT`) pulls open-shadow luminance off pure black so the
-        // wood grain stays readable in shade (G3).
+        // The flat fill (bible pass #2). As of INTERIOR s2 it is COOL SKY and WEAK —
+        // colour `recipe::AMBCOLOR` (0.38,0.51,0.80), power `recipe::AMBIENT` (1700).
+        // It exists to pull open-shadow luminance off pure black so wood grain stays
+        // readable in shade (G3), and for nothing else; form and warmth are the key's
+        // job. The historical amber/honey rounds below are kept as lineage — they are
+        // NOT what this fill is now.
         AmbientLight {
             // P0-BLUEWASH (grade-vs-golden): the fill was tinted (0.90,0.66,0.42) — its
             // B/G leg was washing the midtones cool (measured midtone B high, saturation
@@ -1173,7 +1231,8 @@ pub fn setup_hero(
             //
             // PILE A REVERSES THAT, deliberately and with its cost stated. The two
             // P0-BLUEWASH rounds above were a campaign to make shade pixels NOT cool,
-            // and they won: the shipped frame measures cool 0.000 %, warm 97.1 %, hue
+            // and they won: the PRE-PILE-A plate (`docs/assets/wide-hero-final.png`,
+            // not the current default) measured cool 0.000 %, warm 97.1 %, hue
             // spread 24° against a reference at 17 % / 65 % / 202°. `AMBCOLOR` is now
             // B > G > R (`recipe::AMBCOLOR`), so this fill is the frame's cool source
             // rather than its warmest light. The gate those rounds were chasing
@@ -1182,14 +1241,18 @@ pub fn setup_hero(
             // golden-hour room actually comes from, and it is checked on the plate
             // rather than asserted here.
             color: Color::srgb(amb_col[0], amb_col[1], amb_col[2]),
-            // Ambient POWER = `recipe::AMBIENT` (2800). The narrow hero climbed this to
-            // 4200 because there, ambient power was what drove warmth (R-B) and cutting
-            // it collapsed the axis. The WIDE recipe reaches warmth a different way —
-            // KEY-LIGHT-DOMINANT: sun illuminance more than doubles (12000 → 26000) and
-            // ambient drops to 2800, plus two directional bounce cards below carry the
-            // fill. An ambient-DOMINATED wide frame is precisely what rendered flat
-            // fire-orange. Measured on the baked default: warmth 125.90, G3 interior
-            // p05-L 14.3 % (gate >=8). Env `VOXELFORGE_AMBIENT` overrides.
+            // Ambient POWER = `recipe::AMBIENT` (1700 as of INTERIOR s2, 2026-08-20;
+            // history 4200 → 2800 → PILE A 3900 → 1700, see the const's own note).
+            // KEY-LIGHT-DOMINANT is the whole idea: the sun carries the frame
+            // (`recipe::SUN` = 32000 lux) and this flat term only fills. PILE A's 3900
+            // out-powered the key and measured as a blue wash with no local contrast —
+            // a fill that reaches every face is by construction a fill that flattens
+            // every face. The 2200 lux removed here comes back as DIRECTIONAL light on
+            // the bounce cards below (`recipe::BOUNCE` 2.6 / `BOUNCE2` 1.1).
+            // Do NOT quote per-frame measurements here — they date instantly; the
+            // numbers behind s2 live in
+            // `docs/VERDICT-pixel-interior-s2-2026-08-20.md`.
+            // Env `VOXELFORGE_AMBIENT` overrides.
             brightness: cfg.ambient.unwrap_or(recipe::AMBIENT),
             affects_lightmapped_meshes: false,
         },
