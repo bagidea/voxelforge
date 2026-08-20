@@ -13,6 +13,7 @@ mod anim;
 mod audio;
 mod beach_shot;
 mod block_atlas;
+mod block_shapes;
 mod characters;
 mod combat;
 mod cutscene;
@@ -1235,6 +1236,12 @@ pub(crate) fn remesh_chunk_entity(
 
     let mut quads = 0usize;
     for (key, mesh, n) in greedy_mesh_chunk_split(chunk) {
+        // Shaped blocks (stair/slab/fence/pane/cross) are not cubes: the greedy
+        // path would paint them as 6 full faces, so skip them here and emit
+        // their real geometry in the shaped loop below.
+        if key.block.is_shaped() {
+            continue;
+        }
         // A block id past the table can only come from a corrupt map file. The
         // atlas path renders it as the clamped edge tile rather than a hole, so
         // do the same here — a wrong texture beats missing geometry. The
@@ -1266,6 +1273,27 @@ pub(crate) fn remesh_chunk_entity(
             commands.entity(child).insert(water::WaterSurface);
         }
     }
+
+    // The shaped palette — stair, slab, fence, pane, cross. Real per-block
+    // geometry with chunk-local positions (the chunk entity carries the world
+    // translation, the same convention the cube children above use).
+    for (block, face, mesh) in block_shapes::emit_chunk_shapes(chunk, &|v| get_world_voxel(world, v)) {
+        let material = world
+            .block_materials
+            .get(voxel::material_index(block, face))
+            .unwrap_or(&world.block_materials[voxel::material_index(BlockId::STONE, face)]);
+        let child = commands
+            .spawn((
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(material.clone()),
+                ChildOf(entity),
+            ))
+            .id();
+        if !voxel::casts_shadow(block) {
+            commands.entity(child).insert(bevy::light::NotShadowCaster);
+        }
+    }
+
     quads
 }
 

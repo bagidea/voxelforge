@@ -427,7 +427,7 @@ impl Default for BlockSurface {
 /// * **emitter** — [`LAMP`].
 pub fn block_surface(id: BlockId) -> BlockSurface {
     match id {
-        BlockId::WOOD => BlockSurface {
+        BlockId::WOOD | BlockId::STAIR_WOOD | BlockId::FENCE_WOOD => BlockSurface {
             perceptual_roughness: 0.58,
             reflectance: 0.34,
             ..default()
@@ -467,7 +467,7 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
         // result reads as a ghost block rather than as glass in a frame.
         //
         // `glass_opaque()` is the A/B lever that puts it back the way it was.
-        BlockId::GLASS => BlockSurface {
+        BlockId::GLASS | BlockId::PANE_GLASS => BlockSurface {
             perceptual_roughness: 0.08,
             metallic: 0.0,
             reflectance: 0.50,
@@ -510,6 +510,18 @@ pub fn block_surface(id: BlockId) -> BlockSurface {
             // Warm lantern, pushed past 1.0 so Flamingo's bloom actually catches
             // it instead of merely tinting the texel.
             emissive: LinearRgba::rgb(9.0, 4.6, 1.5),
+            ..default()
+        },
+        // The cross-quad billboard plant. See-through is a hard alpha cutout
+        // (alpha_mask), not a blend — a blended leaf sorts wrong against other
+        // translucent surfaces — and `double_sided` lights the back of each
+        // quad (the cross is two interleaved quads, so one is always
+        // back-facing).
+        BlockId::PLANT_CROSS => BlockSurface {
+            perceptual_roughness: 0.90,
+            reflectance: 0.12,
+            alpha_mask: true,
+            double_sided: true,
             ..default()
         },
         // STONE, DIRT, COBBLESTONE, GRAVEL, BRICK, CLAY — matte mineral.
@@ -993,7 +1005,9 @@ pub fn casts_shadow(id: BlockId) -> bool {
     if id == BlockId::WATER {
         return false;
     }
-    id != BlockId::GLASS || glass_opaque()
+    // The thin pane is the same glass material as the cube — transparent by
+    // default, opaque under the A/B lever — so it follows the same rule.
+    (id != BlockId::GLASS && id != BlockId::PANE_GLASS) || glass_opaque()
 }
 
 /// The single shared material for the atlas path ([`greedy_mesh_chunk`]).
