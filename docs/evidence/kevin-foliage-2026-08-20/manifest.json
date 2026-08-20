@@ -1,0 +1,32 @@
+[
+  {
+    "before_path": "docs/evidence/kevin-foliage-2026-08-20/foliage_off.png",
+    "before_label": "BEFORE  foliage off",
+    "before_file": "client/src/scene.rs",
+    "before_caption": "VOXELFORGE_FOLIAGE=off (no plants)",
+    "after_path": "docs/evidence/kevin-foliage-2026-08-20/foliage_on.png",
+    "after_label": "AFTER  foliage on",
+    "after_file": "client/src/scene.rs",
+    "after_caption": "default scatter, wind frozen (163 plants, 7 kinds)"
+  },
+  {
+    "before_path": "docs/evidence/kevin-foliage-2026-08-20/wind_phase_a.png",
+    "before_label": "PHASE A  T0=0.0",
+    "before_file": "client/src/foliage.rs",
+    "before_caption": "VOXELFORGE_FOLIAGE_WIND_T0=0.0 (wind on)",
+    "after_path": "docs/evidence/kevin-foliage-2026-08-20/wind_phase_b.png",
+    "after_label": "PHASE B  T0=1.8",
+    "after_file": "client/src/foliage.rs",
+    "after_caption": "VOXELFORGE_FOLIAGE_WIND_T0=1.8 (wind on, ~half sway period later)"
+  },
+  {
+    "before_path": "docs/evidence/kevin-foliage-2026-08-20/foliage_on.png",
+    "before_label": "FROZEN  sway_amp=0",
+    "before_file": "client/src/scene.rs",
+    "before_caption": "VOXELFORGE_FOLIAGE_WIND_OFF=1 (static plants)",
+    "after_path": "docs/evidence/kevin-foliage-2026-08-20/wind_phase_a.png",
+    "after_label": "MOVING  sway_amp=0.16",
+    "after_file": "client/src/foliage.rs",
+    "after_caption": "default wind (wind on)"
+  }
+]
