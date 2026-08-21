@@ -31,6 +31,7 @@ mod hud;
 mod import;
 mod inventory;
 mod look;
+pub(crate) mod player_tuning;
 mod main_menu;
 mod mapfile;
 mod quest;
@@ -48,7 +49,7 @@ mod water;
 // submodule of `editor_config` (`#[path="input_map.rs"] pub mod input_map;`).
 // Declaring it here too would compile the file twice into two distinct type sets.
 
-use bevy::camera::Exposure;
+use bevy::camera::{Exposure, Projection};
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::ecs::system::ParamSet;
@@ -94,6 +95,9 @@ pub(crate) struct Cfg {
     edit_demo: bool,
     /// Scripted walk-physics demo (headless proof of gravity + voxel collision).
     walk_demo: bool,
+    /// CEO feel-demo: auto-play walk→run→jump→land so the before/after footage is
+    /// reproducible without a human at the keyboard. Gated by `VOXELFORGE_FEEL_DEMO`.
+    feel_demo: bool,
     /// Scripted combat demo (headless proof of attack→hit→stamina→dodge i-frames).
     combat_demo: bool,
     /// Scripted quest demo (headless proof of accept→complete→reward→next quest opens).
@@ -223,6 +227,11 @@ fn read_cfg() -> Cfg {
     let hero = std::env::var("VOXELFORGE_HERO").is_ok();
     let edit_demo = std::env::var("VOXELFORGE_EDIT_DEMO").is_ok();
     let walk_demo = std::env::var("VOXELFORGE_WALK_DEMO").is_ok();
+    // Filming implies the demo: `VOXELFORGE_FEEL_DEMO_FILM=<dir>` runs the same
+    // scripted walk→run→jump→land stick, captured as every frame instead of the
+    // nine stills `FEEL_DEMO_SHOT_BEATS` samples (see `feel_demo_film_dir`).
+    let feel_demo =
+        std::env::var("VOXELFORGE_FEEL_DEMO").is_ok() || feel_demo_film_dir().is_some();
     let editor_demo = std::env::var("VOXELFORGE_EDITOR_DEMO").is_ok();
     let shot = std::env::var("VOXELFORGE_SHOT").ok().filter(|s| !s.is_empty());
     let map_load = std::env::var("VOXELFORGE_MAP_LOAD").ok().filter(|s| !s.is_empty());
@@ -235,6 +244,7 @@ fn read_cfg() -> Cfg {
         || combat_demo
         || quest_demo
         || beauty_tour
+        || feel_demo
         || has_arg("--play")
         || std::env::var("VOXELFORGE_PLAY").is_ok();
 
@@ -271,6 +281,7 @@ fn read_cfg() -> Cfg {
             .max(1),
         edit_demo,
         walk_demo,
+        feel_demo,
         combat_demo,
         quest_demo,
         strict_exit: has_arg("--strict-exit") || std::env::var("VOXELFORGE_STRICT_EXIT").is_ok(),
@@ -402,13 +413,23 @@ pub(crate) struct FlyCam {
     /// The direction the avatar is currently turned to face (smoothed toward the
     /// movement direction each frame). Drives the body mesh's rotation.
     pub(crate) face_yaw: f32,
-    /// Vertical (+residual) velocity used by walk mode's gravity/jump; unused in fly.
+    /// Velocity used by walk mode: `.x`/`.z` are the accel/decel-curved horizontal
+    /// ground speed (see `player_tuning::WALK_ACCEL` etc.), `.y` is vertical
+    /// gravity/jump speed. Unused in fly (noclip moves the transform directly).
     pub(crate) vel: Vec3,
     /// true = grounded walking body (gravity + AABB voxel collision); false =
     /// free noclip fly (EDIT mode building). Toggled live with F.
     pub(crate) walking: bool,
     /// Set the frame the body rests on a solid voxel below — gates the jump.
     pub(crate) grounded: bool,
+    /// Seconds since `grounded` was last true. Feeds coyote time: a jump press
+    /// shortly after walking off a ledge still fires, matching what the player's
+    /// eye read as "I was still on the ground" a moment ago.
+    pub(crate) time_since_grounded: f32,
+    /// Seconds since Space was last pressed. Feeds the jump buffer: a jump press
+    /// shortly *before* landing still fires the instant the body touches down,
+    /// instead of being eaten by the one bad frame where `grounded` was false.
+    pub(crate) time_since_jump_pressed: f32,
 }
 
 /// The orbit camera — rides a spring-arm/boom behind + above the avatar (Roblox
@@ -428,6 +449,13 @@ pub(crate) struct OrbitCam {
     /// `VOXELFORGE_LOOK_CAM` to frame a proof shot (a long boom for a vista, a
     /// short one for a character close-up) without a second camera path.
     pub(crate) want_dist: f32,
+    /// Spring-damped follow pivot (world space) — trails the avatar's real pivot
+    /// with weight instead of locking to it every frame. `camera_boom` /
+    /// `camera_lens_clear` still re-resolve wall collision fresh from this point
+    /// each frame, so the spring lag never lets the lens clip through geometry.
+    pub(crate) smoothed_pivot: Vec3,
+    /// Velocity state for the `smoothed_pivot` spring-damper (m/s).
+    pub(crate) pivot_vel: Vec3,
 }
 
 #[derive(Component)]
@@ -480,7 +508,14 @@ fn main() -> AppExit {
     // instead of loading — the menu is an overlay on an already-ready world. `play`
     // is set true so `scene::ScenePlugin` and `quest::QuestPlugin` (both gated on
     // `cfg.play`) come alive; `boot_state` still routes the *state* to MainMenu.
-    if (cfg.play || cfg.menu) && cfg.map_load.is_none() {
+    //
+    // A film run is the exception: the subject is the BODY, not the village.
+    // Edhari spawns the avatar in a walled lane where the boom docks against a
+    // wall within a stride, and the frames come back full of brick — see
+    // `_poppy_hero/after/feel_walk_a.png`, shot exactly that way. Leaving
+    // `map_load` unset drops the demo on the procedural surface instead, which
+    // `find_spawn` already certifies as open ground.
+    if (cfg.play || cfg.menu) && cfg.map_load.is_none() && feel_demo_film_dir().is_none() {
         cfg.map_load = scene::play_map();
     }
     if cfg.menu {
@@ -502,6 +537,16 @@ fn main() -> AppExit {
             if let Err(e) = std::fs::create_dir_all(dir) {
                 eprintln!("BEAUTY_TOUR warning: cannot create shots dir {dir}: {e}");
             }
+        }
+    }
+
+    // A film is a capture too, and for the same two reasons: the HUD text, the
+    // crosshair and the dialogue card sit exactly where the body does, and
+    // `save_to_disk` will not create the frame directory itself.
+    if let Some(dir) = feel_demo_film_dir() {
+        std::env::set_var("VOXELFORGE_NOHUD", "1");
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            eprintln!("FEEL_FILM warning: cannot create frame dir {dir}: {e}");
         }
     }
 
@@ -681,6 +726,7 @@ fn main() -> AppExit {
             })
             .insert_resource(EditDemo { done: false })
             .insert_resource(WalkDemo { done: false })
+            .insert_resource(FeelDemoShots::default())
             .insert_resource(MapSaveDemo { done: false })
             .insert_resource(EditorPaintDemo { done: false })
             .insert_resource(Encounter { spawned: false })
@@ -744,6 +790,7 @@ fn main() -> AppExit {
                     bench_ramp,
                     screenshot_once,
                     fps_bench_sampler,
+                    feel_demo_shots.run_if(feel_demo_run),
                 ),
             )
             // Combat systems. gather_input → player_combat → husk AI run before the
@@ -789,6 +836,20 @@ fn main() -> AppExit {
                     .run_if(beauty_tour_run)
                     .before(TransformSystems::Propagate),
             );
+    }
+
+    // A film writes a PNG every frame, and a 1280x720 encode costs several times
+    // a frame of simulation — so on the wall clock the body would advance in
+    // 60-80 ms lurches and the footage would libel the game's smoothness.
+    // `ManualDuration` hands `Time` exactly [`FEEL_FILM_DT`] every frame no matter
+    // how long the encode took, so one rendered frame is always one film frame:
+    // the capture runs slower than real time but the FOOTAGE is a true 30 fps.
+    // Everything downstream reads the same pinned `dt` — `move_body`'s gravity,
+    // `anim::animate_rigs`'s stride phase, and `feel_demo_input`'s timeline.
+    if feel_demo_film_dir().is_some() {
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            std::time::Duration::from_secs_f32(FEEL_FILM_DT),
+        ));
     }
 
     app.add_systems(Last, check_gate_on_exit);
@@ -851,7 +912,11 @@ fn spawn_encounter(
     mut enc: ResMut<Encounter>,
     player: Query<&Transform, With<FlyCam>>,
 ) {
-    if enc.spawned || cfg.map_load.is_some() {
+    // A film run has no map, so it would otherwise get the sandbox encounter
+    // spawned five metres ahead — and a Husk that walks into frame swinging turns
+    // a locomotion film into a fight it was not shot to show (and can end it
+    // early, since a downed player folds and respawns).
+    if enc.spawned || cfg.map_load.is_some() || feel_demo_film_dir().is_some() {
         return;
     }
     let Ok(tf) = player.single() else {
@@ -1064,6 +1129,8 @@ fn setup(
                 vel: Vec3::ZERO,
                 walking,
                 grounded: false,
+                time_since_grounded: 0.0,
+                time_since_jump_pressed: player_tuning::JUMP_BUFFER_TIME + 1.0,
             },
             // Combat kit (§8.1–3, §3): state machine, stamina, HP, poise.
             combat::player_bundle(),
@@ -1103,6 +1170,8 @@ fn setup(
                 pitch: orbit_pitch,
                 dist: boom,
                 want_dist: boom,
+                smoothed_pivot: eye + Vec3::Y * PIVOT_UP,
+                pivot_vel: Vec3::ZERO,
             },
             // Warm bounce fill. `look::apply_look_to_cameras` re-colours and
             // re-powers this for the live hour; these are the neutral values the
@@ -1567,6 +1636,31 @@ pub(crate) fn find_spawn(cx: i32, cz: i32) -> (i32, i32, i32) {
     (cx, cz, terrain_height(cx as f32, cz as f32))
 }
 
+/// Reproducible input sequence for the CEO feel-demo (walk→run→jump→land).
+/// Returns `(wish_dir, run_pressed, jump_pressed)`.
+fn feel_demo_input(t: f32, flat_fwd: Vec3) -> (Vec3, bool, bool) {
+    // Give the avatar a brief moment to settle on the ground.
+    let t = t - 0.5;
+    if t < 0.0 {
+        return (Vec3::ZERO, false, false);
+    }
+    if t < 2.0 {
+        // 0.0–2.0 s: walking.
+        (flat_fwd, false, false)
+    } else if t < 3.5 {
+        // 2.0–3.5 s: running.
+        (flat_fwd, true, false)
+    } else if t < 3.7 {
+        // 3.5–3.7 s: jump input (held long enough to survive any frame timing).
+        (flat_fwd, true, true)
+    } else if t < 6.0 {
+        // Resume walking after the landing.
+        (flat_fwd, false, false)
+    } else {
+        (Vec3::ZERO, false, false)
+    }
+}
+
 /// Rotate an angle toward a target by at most `max_step` radians, taking the
 /// short way round the circle (used to swing the avatar's facing to its heading).
 fn turn_toward(cur: f32, target: f32, max_step: f32) -> f32 {
@@ -1592,6 +1686,7 @@ pub(crate) fn fly_camera(
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
     mut player_q: Query<(&mut Transform, &mut FlyCam), Without<OrbitCam>>,
     mut cam_q: Query<(&mut Transform, &mut OrbitCam)>,
+    mut proj_q: Query<&mut Projection, With<OrbitCam>>,
     world: Option<Res<World>>,
 ) {
     let Ok((mut ptf, mut fly)) = player_q.single_mut() else {
@@ -1661,16 +1756,88 @@ pub(crate) fn fly_camera(
         }
     }
     let wish = wish.normalize_or_zero();
+    let run_pressed = keys.pressed(KeyCode::ControlLeft);
+    let jump_pressed_now = keys.just_pressed(KeyCode::Space);
+
+    // CEO feel-demo overrides input for reproducible before/after footage.
+    //
+    // The stills lane walks the avatar away down `flat_fwd`, which is the right
+    // read for a still (you see the back of the stride and the terrain ahead).
+    // A film wants the opposite: a walk cycle is unreadable from directly behind
+    // — the legs occlude each other and the arm swing is a silhouette — so a film
+    // run sends the same stick along the camera's RIGHT instead. The body turns
+    // onto its heading (`turn_toward` below already does that) and crosses the
+    // lens in profile, and because it is the same `feel_demo_input`, every beat
+    // still lands at the second `FEEL_DEMO_SHOT_BEATS` documents.
+    let demo_dir = if feel_demo_film_dir().is_some() { flat_right } else { flat_fwd };
+    let (wish, run_pressed, jump_pressed_now) = if cfg.feel_demo {
+        feel_demo_input(time.elapsed_secs(), demo_dir)
+    } else {
+        (wish, run_pressed, jump_pressed_now)
+    };
 
     if fly.walking {
         // ---- WALK: grounded body — reuse move_body's gravity/collision/step-up.
         if let Some(world) = world.as_deref() {
-            let speed = if keys.pressed(KeyCode::ControlLeft) { 10.0 } else { 6.0 };
-            let horiz = wish * speed * dt;
-            fly.vel.y = (fly.vel.y - GRAVITY * dt).max(-TERMINAL);
-            if fly.grounded && keys.just_pressed(KeyCode::Space) {
-                fly.vel.y = JUMP_SPEED;
+            // Coyote time (late jump after leaving a ledge) + jump buffer (early
+            // jump before landing) are both just "how long ago" trackers, updated
+            // every frame regardless of whether a jump actually fires this frame.
+            fly.time_since_grounded =
+                if fly.grounded { 0.0 } else { fly.time_since_grounded + dt };
+            fly.time_since_jump_pressed =
+                if jump_pressed_now { 0.0 } else { fly.time_since_jump_pressed + dt };
+
+            // Acceleration/deceleration curve toward the target ground speed —
+            // never an instant velocity set, so starting, stopping and turning
+            // all read as *effort* instead of a teleporting foot. Sprint's own
+            // ramp-up falls out of the same curve (RUN_ACCEL_TIME > WALK_ACCEL_
+            // TIME): holding Ctrl doesn't snap to top speed, it builds to it.
+            // Air control is the same curve scaled down (AIR_ACCEL_FACTOR) so
+            // mid-jump steering is soft, not free — grounded footing still wins.
+            let run = run_pressed;
+            let target_speed =
+                if run { player_tuning::RUN_SPEED_MAX } else { player_tuning::WALK_SPEED_MAX };
+            let target_vel = Vec2::new(wish.x, wish.z) * target_speed;
+            let cur_vel = Vec2::new(fly.vel.x, fly.vel.z);
+            let (accel, decel) = if run {
+                (player_tuning::RUN_ACCEL, player_tuning::RUN_DECEL)
+            } else {
+                (player_tuning::WALK_ACCEL, player_tuning::WALK_DECEL)
+            };
+            let mut rate =
+                if target_vel.length_squared() > cur_vel.length_squared() { accel } else { decel };
+            if !fly.grounded {
+                rate *= player_tuning::AIR_ACCEL_FACTOR;
             }
+            let diff = target_vel - cur_vel;
+            let diff_len = diff.length();
+            let max_step = rate * dt;
+            let new_vel = if diff_len <= max_step || diff_len < 1.0e-5 {
+                target_vel
+            } else {
+                cur_vel + diff * (max_step / diff_len)
+            };
+            fly.vel.x = new_vel.x;
+            fly.vel.z = new_vel.y;
+
+            // Jump arc: gravity is steeper on the way down than on the way up, so
+            // the apex holds for a readable beat and the landing doesn't float —
+            // an asymmetric arc, not a lobbed parabola.
+            let gravity = if fly.vel.y > 0.0 { GRAVITY_RISE } else { GRAVITY_FALL };
+            fly.vel.y = (fly.vel.y - gravity * dt).max(-TERMINAL);
+
+            // Both grace windows gate the same trigger ("is a jump owed right
+            // now"); consuming both the instant it fires stops one press from
+            // launching twice (once buffered, once for real on the next landing).
+            let can_jump = fly.grounded || fly.time_since_grounded <= COYOTE_TIME;
+            let jump_owed = fly.time_since_jump_pressed <= JUMP_BUFFER_TIME;
+            if can_jump && jump_owed {
+                fly.vel.y = JUMP_SPEED;
+                fly.time_since_jump_pressed = JUMP_BUFFER_TIME + 1.0;
+                fly.time_since_grounded = COYOTE_TIME + 1.0;
+            }
+
+            let horiz = Vec3::new(fly.vel.x, 0.0, fly.vel.z) * dt;
             let delta = Vec3::new(horiz.x, fly.vel.y * dt, horiz.z);
             let can_step = fly.grounded && fly.vel.y <= 0.0;
             let (np, grounded) = move_body(world, ptf.translation, delta, can_step);
@@ -1702,9 +1869,43 @@ pub(crate) fn fly_camera(
     }
     ptf.rotation = Quat::from_axis_angle(Vec3::Y, fly.face_yaw);
 
-    // ---- Camera follow: ride the boom behind + above the avatar, pulled in when
-    // a wall would come between the camera and the avatar (so it never clips).
-    let pivot = ptf.translation + Vec3::Y * PIVOT_UP;
+    // ---- Camera follow: spring-damped chase behind + above the avatar, with a
+    // look-ahead lead so the frame shows where you're going, not just where you
+    // are — not hard-locked to the head. Wall collision (`camera_boom` /
+    // `camera_lens_clear` below) still re-resolves fresh from the *smoothed*
+    // pivot every frame, so the spring's lag never lets the lens trail through
+    // geometry — only the framing gets weight, not the safety.
+    let horiz_speed = Vec2::new(fly.vel.x, fly.vel.z).length();
+    let look_ahead_len =
+        (horiz_speed * player_tuning::CAM_LOOKAHEAD_TIME).min(player_tuning::CAM_LOOKAHEAD_MAX);
+    let look_ahead = if horiz_speed > 0.01 {
+        Vec3::new(fly.vel.x, 0.0, fly.vel.z).normalize() * look_ahead_len
+    } else {
+        Vec3::ZERO
+    };
+    let target_pivot = ptf.translation + Vec3::Y * PIVOT_UP + look_ahead;
+
+    if (target_pivot - orbit.smoothed_pivot).length() > player_tuning::CAM_SNAP_DIST {
+        // Teleport / respawn / scene warp — snap instead of swooping the camera
+        // across the map on a spring tuned for footsteps, not warps.
+        orbit.smoothed_pivot = target_pivot;
+        orbit.pivot_vel = Vec3::ZERO;
+    } else {
+        // Semi-implicit damped spring: accel = w²·(target - x) - 2·ζ·w·v. Clamp
+        // the integration dt so a frame hitch can't fling the spring into an
+        // overshoot the next 60 frames spend ringing down.
+        let spring_dt = dt.min(0.05);
+        let w = std::f32::consts::TAU * player_tuning::CAM_SPRING_FREQ;
+        let zeta = player_tuning::CAM_SPRING_DAMP;
+        let accel = (target_pivot - orbit.smoothed_pivot) * (w * w)
+            - orbit.pivot_vel * (2.0 * zeta * w);
+        orbit.pivot_vel += accel * spring_dt;
+        // Bound through a local: `orbit.smoothed_pivot += orbit.pivot_vel * ..`
+        // borrows `orbit` mutably and immutably in one expression (E0502).
+        let step = orbit.pivot_vel * spring_dt;
+        orbit.smoothed_pivot += step;
+    }
+    let pivot = orbit.smoothed_pivot;
     let back = cam_rot * Vec3::Z; // pivot → camera (opposite the camera's forward)
     let want = orbit.want_dist;
     let mut dist = match world.as_deref() {
@@ -1739,6 +1940,20 @@ pub(crate) fn fly_camera(
     orbit.dist = dist;
     ctf.translation = pivot + back * dist;
     ctf.rotation = cam_rot;
+
+    // Sprint sells itself a second way: a touch of FOV widening, eased in/out so
+    // it never pops. Speed-fractional rather than a flat run/walk flag so the
+    // accel curve's ramp-up carries through to the lens too.
+    if let Ok(mut proj) = proj_q.single_mut() {
+        if let Projection::Perspective(persp) = proj.as_mut() {
+            let speed_frac = (horiz_speed / player_tuning::RUN_SPEED_MAX).clamp(0.0, 1.0);
+            let target_fov = (player_tuning::CAM_FOV_WALK
+                + (player_tuning::CAM_FOV_RUN - player_tuning::CAM_FOV_WALK) * speed_frac)
+                .to_radians();
+            let k = 1.0 - (-player_tuning::CAM_FOV_LERP_SPEED * dt).exp();
+            persp.fov += (target_fov - persp.fov) * k;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1801,23 +2016,31 @@ pub(crate) fn get_world_voxel(world: &World, voxel: IVec3) -> BlockId {
 // ---------------------------------------------------------------------------
 
 /// The player capsule approximated as an axis-aligned box, in voxel units.
-pub(crate) const PLAYER_HALF_W: f32 = 0.3; // half of the 0.6-wide footprint
-const PLAYER_HEIGHT: f32 = 1.8; // feet → crown
-pub(crate) const EYE_HEIGHT: f32 = 1.62; // feet → camera (0.18 head clearance)
-const GRAVITY: f32 = 28.0; // voxel/s²
-const JUMP_SPEED: f32 = 9.0; // ~1.4-block hop
-const TERMINAL: f32 = 55.0; // fall-speed clamp
-const STEP_HEIGHT: f32 = 1.0; // auto-climb a single-block ledge while walking
-const STEP_CLEAR: f32 = 0.2; // extra head-room probed above the ledge before stepping
+///
+/// Sourced from `player_tuning` (single source of truth for feel constants);
+/// re-declared as local consts here because half the codebase already reaches
+/// for the bare names (`crate::BOOM_DIST`, `PIVOT_UP`, …) and a `const X: f32 =
+/// player_tuning::X;` re-export keeps every one of those call sites unchanged.
+pub(crate) const PLAYER_HALF_W: f32 = player_tuning::PLAYER_HALF_W; // half of the 0.6-wide footprint
+const PLAYER_HEIGHT: f32 = player_tuning::PLAYER_HEIGHT; // feet → crown
+pub(crate) const EYE_HEIGHT: f32 = player_tuning::EYE_HEIGHT; // feet → camera (0.18 head clearance)
+const JUMP_SPEED: f32 = player_tuning::JUMP_SPEED; // ~1.4-block hop
+const GRAVITY_RISE: f32 = player_tuning::GRAVITY_RISE; // voxel/s², applied while vel_y > 0
+const GRAVITY_FALL: f32 = player_tuning::GRAVITY_FALL; // voxel/s², applied while vel_y <= 0 — steeper, snappier landing
+const TERMINAL: f32 = player_tuning::TERMINAL_VELOCITY; // fall-speed clamp
+const STEP_HEIGHT: f32 = player_tuning::STEP_HEIGHT; // auto-climb a single-block ledge while walking
+const STEP_CLEAR: f32 = player_tuning::STEP_CLEAR; // extra head-room probed above the ledge before stepping
+const COYOTE_TIME: f32 = player_tuning::COYOTE_TIME; // late jump grace after walking off a ledge
+const JUMP_BUFFER_TIME: f32 = player_tuning::JUMP_BUFFER_TIME; // early jump grace before landing
 
 // ---- Third-person orbit camera (spring-arm / boom) ------------------------
-pub(crate) const BOOM_DIST: f32 = 6.5; // how far the camera sits behind the avatar (max)
-const BOOM_MARGIN: f32 = 0.9; // keep the camera this far off a wall it pulls up to (was 0.35 — a wall at 0.35 fills >30% of the frame)
-const BOOM_RADIUS: f32 = 0.7; // treat the lens as a disc this wide so walls beside the boom (corners, parallel faces) pull it in too — not just a wall dead on the boom axis (was 0.4 — missed blocks beside a wall-hugging camera)
-pub(crate) const PIVOT_UP: f32 = 0.35; // lift the look-pivot a touch above the eye for framing
-const PITCH_MIN: f32 = -1.35; // clamp: don't roll under the avatar
-const PITCH_MAX: f32 = 1.20; // clamp: don't roll over the top
-const TURN_RATE: f32 = 12.0; // how fast the avatar turns to face its movement (rad/s)
+pub(crate) const BOOM_DIST: f32 = player_tuning::BOOM_DIST; // how far the camera sits behind the avatar (max)
+const BOOM_MARGIN: f32 = player_tuning::BOOM_MARGIN; // keep the camera this far off a wall it pulls up to (was 0.35 — a wall at 0.35 fills >30% of the frame)
+const BOOM_RADIUS: f32 = player_tuning::BOOM_RADIUS; // treat the lens as a disc this wide so walls beside the boom (corners, parallel faces) pull it in too — not just a wall dead on the boom axis (was 0.4 — missed blocks beside a wall-hugging camera)
+pub(crate) const PIVOT_UP: f32 = player_tuning::PIVOT_UP; // lift the look-pivot a touch above the eye for framing
+const PITCH_MIN: f32 = player_tuning::PITCH_MIN; // clamp: don't roll under the avatar
+const PITCH_MAX: f32 = player_tuning::PITCH_MAX; // clamp: don't roll over the top
+const TURN_RATE: f32 = player_tuning::AVATAR_TURN_RATE; // how fast the avatar turns to face its movement (rad/s)
 
 /// Does the player body — camera (eye) at `eye` — overlap any solid voxel? A tiny
 /// epsilon inset stops a body that merely *touches* a block face from sticking.
@@ -3292,6 +3515,121 @@ fn screenshot_once(
     }
     if bench.took_shot && now > 4.4 {
         // Exit code decided after app.run() via the GATE_FAILED static.
+        exit.write(AppExit::Success);
+    }
+}
+
+/// `VOXELFORGE_FEEL_DEMO_SHOTS=<dir>` — capture a still at each named beat of the
+/// `--feel-demo` walk→run→jump→land timeline into <dir>, so the rig's read at
+/// each phase can be checked as stills instead of trusting a live window. Times
+/// are wall-clock seconds since app start, matching the offset `feel_demo_input`
+/// bakes in (walk 0.5–2.5 s, run 2.5–4.0 s, jump input 4.0–4.2 s, walk resumed
+/// 4.2–6.5 s): `walk_a..walk_d` span more than one full stride cycle
+/// (`player_tuning::FOOTSTEP_INTERVAL_WALK` × 2 ≈ 0.9 s), and `jump_rise` /
+/// `jump_apex` / `jump_fall` land inside the three blend regions `airborne()`
+/// reads off real `vel_y` (apex at `JUMP_SPEED / GRAVITY_RISE` ≈ 0.32 s after
+/// launch; landing a further ≈0.26 s after that under the steeper fall gravity).
+const FEEL_DEMO_SHOT_BEATS: [(f32, &str); 9] = [
+    (0.9, "walk_a"),
+    (1.4, "walk_b"),
+    (1.9, "walk_c"),
+    (2.3, "walk_d"),
+    (3.2, "run"),
+    (4.05, "jump_rise"),
+    (4.30, "jump_apex"),
+    (4.50, "jump_fall"),
+    (5.2, "walk_resumed"),
+];
+
+/// Wall-clock second the feel-demo exits (past the last beat, with margin).
+const FEEL_DEMO_EXIT_AT: f32 = 6.0;
+
+fn feel_demo_run(cfg: Res<Cfg>) -> bool {
+    cfg.feel_demo
+}
+
+fn feel_demo_shots_dir() -> Option<&'static str> {
+    static DIR: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| std::env::var("VOXELFORGE_FEEL_DEMO_SHOTS").ok().filter(|s| !s.is_empty()))
+        .as_deref()
+}
+
+/// `VOXELFORGE_FEEL_DEMO_FILM=<dir>` — write EVERY rendered frame of the feel demo
+/// to `<dir>/f%05d.png` instead of sampling nine beats, so the result can be
+/// encoded into a video.
+///
+/// Nine stills cannot answer the question the CEO actually asked. The claim under
+/// review is that idle→walk→run→jump→land *blends* rather than snaps, and a
+/// sampled film is precisely the artefact that cannot tell a blend from a snap:
+/// every one of those nine frames is consistent with a rig that teleports between
+/// poses. Every frame, or it proves nothing.
+///
+/// Cached in a `OnceLock` because `read_cfg`, the clock override in `main` and
+/// `feel_demo_shots` all need it, and the first two run before `Cfg` is a resource.
+fn feel_demo_film_dir() -> Option<&'static str> {
+    static DIR: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| std::env::var("VOXELFORGE_FEEL_DEMO_FILM").ok().filter(|s| !s.is_empty()))
+        .as_deref()
+}
+
+/// Seconds of simulated time per rendered frame while filming — see the clock
+/// note in `main`.
+const FEEL_FILM_DT: f32 = 1.0 / 30.0;
+
+/// First frame written. The rig attaches one frame after the avatar exists and
+/// the terrain streams in over the first few, so filming from zero would open on
+/// a body standing in a hole.
+const FEEL_FILM_FROM: f32 = 0.30;
+
+/// `save_to_disk` runs in an observer on the frame AFTER the screenshot is taken,
+/// so a film that quits on the same tick as its final capture loses its tail —
+/// and a film whose last beat is missing is a film that ends mid-stride.
+const FEEL_FILM_QUIT_MARGIN: f32 = 0.2;
+
+#[derive(Resource, Default)]
+struct FeelDemoShots {
+    taken: usize,
+    frames: u32,
+}
+
+fn feel_demo_shots(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut state: ResMut<FeelDemoShots>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let now = time.elapsed_secs();
+    if let Some(dir) = feel_demo_shots_dir() {
+        if state.taken < FEEL_DEMO_SHOT_BEATS.len() {
+            let (at, label) = FEEL_DEMO_SHOT_BEATS[state.taken];
+            if now >= at {
+                let path = format!("{dir}/feel_{label}.png");
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path.clone()));
+                state.taken += 1;
+                println!("FEEL_SHOT beat={label} -> {path}");
+            }
+        }
+    }
+    if let Some(dir) = feel_demo_film_dir() {
+        if (FEEL_FILM_FROM..FEEL_DEMO_EXIT_AT).contains(&now) {
+            let path = format!("{dir}/f{:05}.png", state.frames);
+            commands
+                .spawn(Screenshot::primary_window())
+                .observe(save_to_disk(path));
+            state.frames += 1;
+        }
+        if now >= FEEL_DEMO_EXIT_AT + FEEL_FILM_QUIT_MARGIN {
+            println!(
+                "FEEL_FILM done t={now:.2} frames={} dt={FEEL_FILM_DT:.4} dir={dir}",
+                state.frames
+            );
+            exit.write(AppExit::Success);
+        }
+        return;
+    }
+    if now >= FEEL_DEMO_EXIT_AT {
         exit.write(AppExit::Success);
     }
 }

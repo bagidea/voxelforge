@@ -505,6 +505,19 @@ fn pose_override() -> Option<OverridePose> {
     })
 }
 
+/// `VOXELFORGE_ANIM_RIG_OFF=1` — build no rigs at all, leaving every actor in the
+/// placeholder box/capsule its own spawn site gave it.
+///
+/// This is the BEFORE half of the showcase A/B (see `attach_rigs`), and it is a
+/// `OnceLock` for the same reason `pose_override` is: read once, so a film cannot
+/// change bodies halfway through because something touched the environment.
+fn rig_disabled() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| {
+        std::env::var("VOXELFORGE_ANIM_RIG_OFF").map(|v| v != "0").unwrap_or(false)
+    })
+}
+
 /// A detached Husk body. `husk_ai` despawns the real enemy on the frame its HP hits
 /// zero, so the fall is played by this stand-in, spawned one system earlier.
 #[derive(Component)]
@@ -1423,6 +1436,16 @@ fn attach_rigs(
     let Some(assets) = assets else {
         return;
     };
+    // A/B lever, for the showcase film and nothing else: with it set, no actor is
+    // ever dressed, so the avatar keeps the orange placeholder capsule `main::setup`
+    // spawns and the Husk keeps its box. That makes the BEFORE plate of a
+    // before/after pair come out of the SAME binary, the same camera and the same
+    // scripted stick as the AFTER plate — the only difference between the two
+    // films is this branch. (Two binaries could not promise that; see
+    // `docs/note-commit-time-is-not-build-time.md`.)
+    if rig_disabled() {
+        return;
+    }
 
     let mut dress = |entity: Entity,
                      tf: &Transform,
