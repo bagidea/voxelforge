@@ -301,7 +301,7 @@ fn drive_water_from_sun(
     // lit by a stale sun vector would glint in the wrong direction from the top
     // quad it touches. Three writes at most (see [`WaterMats`]).
     for handle in cache.0.values() {
-        let Some(mat) = mats.get_mut(handle) else {
+        let Some(mut mat) = mats.get_mut(handle) else {
             continue;
         };
         mat.extension.sun_dir = sun_dir;
